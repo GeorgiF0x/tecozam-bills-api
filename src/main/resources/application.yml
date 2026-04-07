@@ -1,0 +1,105 @@
+# ═══════════════════════════════════════════════════════════════════
+# Tecozam Bills Manager — Base Configuration
+# ═══════════════════════════════════════════════════════════════════
+
+spring:
+  application:
+    name: tecozam-bills-api
+
+  # ─── Microsoft SQL Server Datasource ─────────────────────────────
+  datasource:
+    url: jdbc:sqlserver://${MSSQL_HOST:localhost}:${MSSQL_PORT:1433};databaseName=${MSSQL_DB:tecozam_bills};encrypt=true;trustServerCertificate=true
+    username: ${MSSQL_USER:sa}
+    password: ${MSSQL_PASSWORD:}
+    driver-class-name: com.microsoft.sqlserver.jdbc.SQLServerDriver
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 2
+      idle-timeout: 300000
+      connection-timeout: 20000
+      max-lifetime: 1200000
+
+  # ─── JPA / Hibernate ────────────────────────────────────────────
+  jpa:
+    database-platform: org.hibernate.dialect.SQLServerDialect
+    hibernate:
+      ddl-auto: validate
+    show-sql: false
+    open-in-view: false
+    properties:
+      hibernate:
+        format_sql: true
+        jdbc:
+          time_zone: UTC
+
+  # ─── Flyway Migrations ──────────────────────────────────────────
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+    sql-migration-prefix: V
+    sql-migration-separator: __
+
+  # ─── Jackson Serialization ──────────────────────────────────────
+  jackson:
+    serialization:
+      write-dates-as-timestamps: false
+      fail-on-empty-beans: false
+    deserialization:
+      fail-on-unknown-properties: false
+    default-property-inclusion: non_null
+    date-format: yyyy-MM-dd'T'HH:mm:ss.SSSZ
+
+  # ─── Multipart File Uploads ─────────────────────────────────────
+  servlet:
+    multipart:
+      max-file-size: 50MB
+      max-request-size: 50MB
+
+  # ─── Email (SMTP) ──────────────────────────────────────────────
+  mail:
+    host: ${SMTP_HOST:smtp.mailtrap.io}
+    port: ${SMTP_PORT:587}
+    username: ${SMTP_USERNAME:}
+    password: ${SMTP_PASSWORD:}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+
+# ─── Server ───────────────────────────────────────────────────────
+server:
+  port: 8080
+  error:
+    include-message: always
+    include-binding-errors: always
+
+# ─── Application Custom Properties ───────────────────────────────
+app:
+  jwt:
+    secret: ${JWT_SECRET:change-me-in-production}
+    expiration: ${JWT_EXPIRATION:900000}
+    refresh-expiration: ${JWT_REFRESH_EXPIRATION:604800000}
+  aes:
+    secret-key: ${AES_SECRET_KEY:change-me-in-production}
+  mail:
+    from: ${MAIL_FROM:noreply@tecozam.com}
+    alert-recipients: ${MAIL_ALERT_RECIPIENTS:admin@tecozam.com}
+  storage:
+    path: ${STORAGE_PATH:./uploads}
+  n8n:
+    webhook-url: ${N8N_WEBHOOK_URL:https://n8n.z-innova.com/webhook/ocr-ticket}
+  openai:
+    api-key: ${OPENAI_API_KEY:}
+    model: ${OPENAI_MODEL:gpt-4.1-mini}
+
+# ─── Logging ──────────────────────────────────────────────────────
+logging:
+  level:
+    root: INFO
+    com.tecozam.bills: INFO
+    org.springframework: WARN
+    org.hibernate.SQL: WARN
+    org.flywaydb: INFO

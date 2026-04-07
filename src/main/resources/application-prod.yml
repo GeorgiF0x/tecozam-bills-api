@@ -1,0 +1,29 @@
+# ═══════════════════════════════════════════════════════════════════
+# Tecozam Bills Manager — Production Profile
+# ═══════════════════════════════════════════════════════════════════
+
+spring:
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: false
+
+  flyway:
+    enabled: true
+
+  datasource:
+    hikari:
+      maximum-pool-size: 20
+      minimum-idle: 5
+      idle-timeout: 300000
+      connection-timeout: 30000
+      max-lifetime: 1800000
+      leak-detection-threshold: 60000
+
+logging:
+  level:
+    root: WARN
+    com.tecozam.bills: INFO
+    org.springframework: WARN
+    org.hibernate.SQL: WARN
+    org.flywaydb: INFO

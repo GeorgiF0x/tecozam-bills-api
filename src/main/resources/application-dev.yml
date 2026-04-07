@@ -1,0 +1,21 @@
+# ═══════════════════════════════════════════════════════════════════
+# Tecozam Bills Manager — Development Profile
+# ═══════════════════════════════════════════════════════════════════
+
+spring:
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+
+  # Flyway disabled in dev to let Hibernate auto-update schema
+  flyway:
+    enabled: false
+
+logging:
+  level:
+    root: INFO
+    com.tecozam.bills: DEBUG
+    org.springframework.web: DEBUG
+    org.hibernate.SQL: DEBUG
+    org.hibernate.orm.jdbc.bind: TRACE
