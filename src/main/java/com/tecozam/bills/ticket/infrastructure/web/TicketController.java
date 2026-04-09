@@ -104,122 +104,137 @@ public class TicketController {
         return ResponseEntity.ok(updated);
     }
 
+    @Value("${app.openai.api-key:}")
+    private String openaiApiKey;
+
     @PostMapping("/ocr")
-    @PreAuthorize("hasAnyRole('ADMIN', 'GESTOR')")
-    @Operation(summary = "OCR de ticket", description = "Envía una imagen de ticket a n8n para OCR y guarda el ticket localmente")
+    @PreAuthorize("hasAnyRole('ADMIN', 'GESTOR', 'CONSULTA')")
+    @Operation(summary = "OCR de ticket", description = "Extrae datos de un ticket vía OpenAI Vision y guarda el ticket localmente")
     public ResponseEntity<Map<String, Object>> ocrTicket(@RequestParam("imagen") MultipartFile imagen) {
         try {
             if (imagen == null || imagen.isEmpty()) {
                 return ResponseEntity.badRequest().body(Map.of("error", "La imagen es obligatoria"));
             }
-
-            String base64 = Base64.getEncoder().encodeToString(imagen.getBytes());
-
-            // Build the n8n webhook URL
-            String webhookUrl = n8nWebhookBaseUrl;
-            if (!webhookUrl.contains("ocr-ticket")) {
-                webhookUrl = webhookUrl.replaceAll("/webhook/.*$", "/webhook/ocr-ticket");
+            if (openaiApiKey == null || openaiApiKey.isBlank()) {
+                return ResponseEntity.internalServerError().body(Map.of("error", "OCR no configurado: falta OPENAI_API_KEY"));
             }
 
-            String requestBody = "{\"imagen\":\"" + base64 + "\"}";
+            String base64 = Base64.getEncoder().encodeToString(imagen.getBytes());
+            String mimeType = imagen.getContentType() != null ? imagen.getContentType() : "image/jpeg";
 
-            HttpClient client = HttpClient.newBuilder()
-                    .connectTimeout(Duration.ofSeconds(10))
-                    .build();
+            // Call OpenAI Vision API directly
+            String prompt = "Extrae los datos de este ticket de gasolinera o peaje español. " +
+                    "Devuelve SOLO un JSON válido con estos campos exactos: " +
+                    "{ \"proveedor\": \"REPSOL o MOEVE_CEPSA u otro\", " +
+                    "\"estacion\": \"nombre de la estación\", " +
+                    "\"direccion\": \"dirección completa o null\", " +
+                    "\"fecha\": \"YYYY-MM-DD\", " +
+                    "\"hora\": \"HH:MM\", " +
+                    "\"numTarjeta4ultimos\": \"últimos 4 dígitos o null\", " +
+                    "\"matricula\": \"matrícula o null\", " +
+                    "\"kms\": número o null, " +
+                    "\"producto\": \"tipo de combustible\", " +
+                    "\"litros\": número con decimales, " +
+                    "\"precioLitro\": número con 3 decimales, " +
+                    "\"importeTotal\": número con 2 decimales, " +
+                    "\"numRecibo\": \"número de ticket/recibo o null\", " +
+                    "\"nifEstacion\": \"NIF o null\" }. " +
+                    "Usa punto como separador decimal. Si un campo no es legible, pon null. " +
+                    "NO incluyas texto adicional, SOLO el JSON.";
 
+            String requestBody = "{" +
+                    "\"model\":\"gpt-4.1-mini\"," +
+                    "\"messages\":[{\"role\":\"user\",\"content\":[" +
+                    "{\"type\":\"text\",\"text\":\"" + escapeJson(prompt) + "\"}," +
+                    "{\"type\":\"image_url\",\"image_url\":{\"url\":\"data:" + mimeType + ";base64," + base64 + "\"}}" +
+                    "]}]," +
+                    "\"max_tokens\":800," +
+                    "\"temperature\":0" +
+                    "}";
+
+            HttpClient client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(15)).build();
             HttpRequest request = HttpRequest.newBuilder()
-                    .uri(URI.create(webhookUrl))
+                    .uri(URI.create("https://api.openai.com/v1/chat/completions"))
                     .header("Content-Type", "application/json")
+                    .header("Authorization", "Bearer " + openaiApiKey)
                     .POST(HttpRequest.BodyPublishers.ofString(requestBody))
                     .timeout(Duration.ofSeconds(60))
                     .build();
 
             HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+            log.info("[OCR] OpenAI status: {}", response.statusCode());
 
-            if (response.statusCode() < 200 || response.statusCode() >= 300) {
-                return ResponseEntity.status(response.statusCode()).body(Map.of(
-                        "error", "Error en n8n OCR",
+            if (response.statusCode() != 200) {
+                log.error("[OCR] OpenAI error: {}", response.body());
+                return ResponseEntity.status(422).body(Map.of(
+                        "error", "Error al procesar imagen con IA",
                         "detail", response.body()
                 ));
             }
 
-            // Parse n8n response and create ticket locally
-            String n8nBody = response.body();
-            log.info("[OCR] n8n raw response: {}", n8nBody);
+            // Extract content from OpenAI response
+            var mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+            var aiResponse = mapper.readTree(response.body());
+            String content = aiResponse.at("/choices/0/message/content").asText("");
+            log.info("[OCR] AI content: {}", content);
+
+            // Clean the content — remove markdown code fences if present
+            content = content.replaceAll("```json\\s*", "").replaceAll("```\\s*", "").trim();
+
+            // Parse the JSON
+            var data = mapper.readTree(content);
+
+            String estacion = getField(data, "estacion");
+            String fechaStr = getField(data, "fecha");
+            String horaStr = getFieldOr(data, "hora", "00:00");
+            double importeTotal = getNumField(data, "importeTotal", "importe_total", "total");
+            double litros = getNumField(data, "litros", "cantidad");
+            double precioLitro = getNumField(data, "precioLitro", "precio_litro", "precio");
+            String producto = getFieldAny(data, "producto", "concepto", "combustible");
+            String numRecibo = getFieldAny(data, "numRecibo", "num_recibo", "referencia");
+            int kms = (int) getNumField(data, "kms", "kilometros");
+
+            // Build fechaHora
+            java.time.LocalDateTime fechaHora;
             try {
-                var mapper = new com.fasterxml.jackson.databind.ObjectMapper();
-                var json = mapper.readTree(n8nBody);
-
-                // n8n may return the OCR data directly or wrapped in a "data" field
-                var data = json.has("data") ? json.get("data") : json;
-
-                // Try to find the actual OCR JSON — n8n sometimes nests it
-                if (data.has("output") && data.get("output").isTextual()) {
-                    try { data = mapper.readTree(data.get("output").asText()); } catch (Exception ignored) {}
-                }
-                if (data.has("message") && data.get("message").isObject()) {
-                    data = data.get("message");
-                }
-                if (data.has("content") && data.get("content").isTextual()) {
-                    try { data = mapper.readTree(data.get("content").asText()); } catch (Exception ignored) {}
-                }
-
-                log.info("[OCR] Parsed data fields: {}", data.fieldNames());
-
-                String estacion = getField(data, "estacion");
-                String fechaStr = getField(data, "fecha");
-                String horaStr = getFieldOr(data, "hora", "00:00");
-                double importeTotal = getNumField(data, "importeTotal", "importe_total", "total", "importe");
-                double litros = getNumField(data, "litros", "cantidad");
-                double precioLitro = getNumField(data, "precioLitro", "precio_litro", "precio");
-                String producto = getFieldAny(data, "producto", "concepto", "combustible");
-                String numRecibo = getFieldAny(data, "numRecibo", "num_recibo", "referencia", "ticket");
-
-                // Build fechaHora
-                java.time.LocalDateTime fechaHora;
-                try {
-                    java.time.LocalDate fecha = java.time.LocalDate.parse(fechaStr);
-                    String[] hm = horaStr.split(":");
-                    fechaHora = fecha.atTime(Integer.parseInt(hm[0]), Integer.parseInt(hm.length > 1 ? hm[1] : "0"));
-                } catch (Exception e) {
-                    fechaHora = java.time.LocalDateTime.now();
-                }
-
-                // Create ticket via service
-                var ticketRequest = new CreateTicketManualRequest(
-                        null, null, null, null,
-                        estacion.isBlank() ? "OCR" : estacion,
-                        fechaHora,
-                        java.math.BigDecimal.valueOf(importeTotal > 0 ? importeTotal : 0.01),
-                        litros > 0 ? java.math.BigDecimal.valueOf(litros) : null,
-                        precioLitro > 0 ? java.math.BigDecimal.valueOf(precioLitro) : null,
-                        null,
-                        producto.isBlank() ? null : producto,
-                        "OCR automático" + (numRecibo != null ? " — Recibo: " + numRecibo : "")
-                );
-
-                TicketDTO savedTicket = ticketService.createManual(ticketRequest);
-
-                return ResponseEntity.ok(Map.of(
-                        "status", "ok",
-                        "message", "Ticket creado desde OCR: " + estacion + " — " + importeTotal + "€",
-                        "ticketId", savedTicket.id(),
-                        "ocrData", n8nBody
-                ));
-            } catch (Exception parseEx) {
-                // n8n responded OK but we couldn't parse — return raw data
-                return ResponseEntity.ok(Map.of(
-                        "status", "partial",
-                        "message", "OCR procesado pero no se pudo crear el ticket automáticamente. Datos: " + n8nBody,
-                        "ocrRaw", n8nBody
-                ));
+                java.time.LocalDate fecha = java.time.LocalDate.parse(fechaStr);
+                String[] hm = horaStr.split(":");
+                fechaHora = fecha.atTime(Integer.parseInt(hm[0]), Integer.parseInt(hm.length > 1 ? hm[1] : "0"));
+            } catch (Exception e) {
+                fechaHora = java.time.LocalDateTime.now();
             }
+
+            // Create ticket
+            var ticketRequest = new CreateTicketManualRequest(
+                    null, null, null, null,
+                    estacion.isBlank() ? "OCR" : estacion,
+                    fechaHora,
+                    java.math.BigDecimal.valueOf(importeTotal > 0 ? importeTotal : 0.01),
+                    litros > 0 ? java.math.BigDecimal.valueOf(litros) : null,
+                    precioLitro > 0 ? java.math.BigDecimal.valueOf(precioLitro) : null,
+                    kms > 0 ? kms : null,
+                    producto.isBlank() ? null : producto,
+                    "OCR automático (OpenAI Vision)" + (numRecibo != null && !numRecibo.isEmpty() ? " — Recibo: " + numRecibo : "")
+            );
+
+            TicketDTO savedTicket = ticketService.createManual(ticketRequest);
+
+            return ResponseEntity.ok(Map.of(
+                    "status", "ok",
+                    "message", "Ticket creado: " + estacion + " — " + importeTotal + "€ — " + litros + "L",
+                    "ticketId", savedTicket.id(),
+                    "ocrData", content
+            ));
         } catch (Exception e) {
             log.error("[OCR] Exception: {}", e.getMessage(), e);
             return ResponseEntity.internalServerError().body(Map.of(
                     "error", "Error al procesar OCR: " + e.getMessage()
             ));
         }
+    }
+
+    private String escapeJson(String s) {
+        return s == null ? "" : s.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n");
     }
 
     // ─── OCR field extraction helpers ─────────────────────────────────────────
