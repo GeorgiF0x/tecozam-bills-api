@@ -145,6 +145,7 @@ public class TicketController {
 
             // Parse n8n response and create ticket locally
             String n8nBody = response.body();
+            log.info("[OCR] n8n raw response: {}", n8nBody);
             try {
                 var mapper = new com.fasterxml.jackson.databind.ObjectMapper();
                 var json = mapper.readTree(n8nBody);
@@ -152,14 +153,27 @@ public class TicketController {
                 // n8n may return the OCR data directly or wrapped in a "data" field
                 var data = json.has("data") ? json.get("data") : json;
 
-                String estacion = data.has("estacion") ? data.get("estacion").asText("") : "";
-                String fechaStr = data.has("fecha") ? data.get("fecha").asText("") : "";
-                String horaStr = data.has("hora") ? data.get("hora").asText("00:00") : "00:00";
-                double importeTotal = data.has("importeTotal") ? data.get("importeTotal").asDouble(0) : 0;
-                double litros = data.has("litros") ? data.get("litros").asDouble(0) : 0;
-                double precioLitro = data.has("precioLitro") ? data.get("precioLitro").asDouble(0) : 0;
-                String producto = data.has("producto") ? data.get("producto").asText("") : "";
-                String numRecibo = data.has("numRecibo") ? data.get("numRecibo").asText(null) : null;
+                // Try to find the actual OCR JSON — n8n sometimes nests it
+                if (data.has("output") && data.get("output").isTextual()) {
+                    try { data = mapper.readTree(data.get("output").asText()); } catch (Exception ignored) {}
+                }
+                if (data.has("message") && data.get("message").isObject()) {
+                    data = data.get("message");
+                }
+                if (data.has("content") && data.get("content").isTextual()) {
+                    try { data = mapper.readTree(data.get("content").asText()); } catch (Exception ignored) {}
+                }
+
+                log.info("[OCR] Parsed data fields: {}", data.fieldNames());
+
+                String estacion = getField(data, "estacion");
+                String fechaStr = getField(data, "fecha");
+                String horaStr = getFieldOr(data, "hora", "00:00");
+                double importeTotal = getNumField(data, "importeTotal", "importe_total", "total", "importe");
+                double litros = getNumField(data, "litros", "cantidad");
+                double precioLitro = getNumField(data, "precioLitro", "precio_litro", "precio");
+                String producto = getFieldAny(data, "producto", "concepto", "combustible");
+                String numRecibo = getFieldAny(data, "numRecibo", "num_recibo", "referencia", "ticket");
 
                 // Build fechaHora
                 java.time.LocalDateTime fechaHora;
@@ -201,9 +215,42 @@ public class TicketController {
                 ));
             }
         } catch (Exception e) {
+            log.error("[OCR] Exception: {}", e.getMessage(), e);
             return ResponseEntity.internalServerError().body(Map.of(
                     "error", "Error al procesar OCR: " + e.getMessage()
             ));
         }
     }
+
+    // ─── OCR field extraction helpers ─────────────────────────────────────────
+
+    private static String getField(com.fasterxml.jackson.databind.JsonNode data, String key) {
+        return data.has(key) && !data.get(key).isNull() ? data.get(key).asText("") : "";
+    }
+
+    private static String getFieldOr(com.fasterxml.jackson.databind.JsonNode data, String key, String defaultValue) {
+        String val = getField(data, key);
+        return val.isEmpty() ? defaultValue : val;
+    }
+
+    private static String getFieldAny(com.fasterxml.jackson.databind.JsonNode data, String... keys) {
+        for (String key : keys) {
+            String val = getField(data, key);
+            if (!val.isEmpty()) return val;
+        }
+        return "";
+    }
+
+    private static double getNumField(com.fasterxml.jackson.databind.JsonNode data, String... keys) {
+        for (String key : keys) {
+            if (data.has(key) && !data.get(key).isNull()) {
+                try {
+                    return data.get(key).asDouble(0);
+                } catch (Exception ignored) {}
+            }
+        }
+        return 0;
+    }
+
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(TicketController.class);
 }
