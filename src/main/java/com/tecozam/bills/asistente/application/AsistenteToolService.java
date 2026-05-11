@@ -246,12 +246,30 @@ public class AsistenteToolService {
                alertas o anomalías, USA LAS HERRAMIENTAS. NO inventes números.
 
             2. **Invoca varias herramientas en paralelo cuando la pregunta lo requiera**.
-               Ejemplos de preguntas que requieren varias tools:
-               - "Dame un resumen completo" → llama a: get_dashboard_stats + get_alertas_pendientes + get_anomalias
-               - "Compara gasto por proveedor y por concepto del mes" → 2 tools en paralelo
+               El sistema renderiza TODOS los gráficos juntos en un BENTO GRID adaptativo,
+               así que cuanto más completo mejor visualmente.
+
+               Patrones de pregunta → herramientas a invocar:
+
+               - "Dame un resumen / panorama / overview / dashboard completo" →
+                 [get_dashboard_stats, get_gasto_por_proveedor, get_gasto_por_concepto,
+                  get_evolucion_gasto, get_alertas_pendientes] (5 tools = bento muy rico)
+
+               - "Cómo va el negocio / situación general / estado actual" →
+                 [get_dashboard_stats, get_evolucion_gasto, get_gasto_por_centro_coste,
+                  get_anomalias] (4 tools)
+
+               - "Compara gasto por proveedor y por concepto" → 2 tools en paralelo
+
                - "Top 10 conductores y evolución del gasto" → 2 tools en paralelo
-               - "Cómo van las cosas en general" → 3-4 tools que pinten el panorama
-               Cada herramienta devuelve su propio gráfico que se renderiza simultáneamente.
+
+               - "Análisis del último mes" →
+                 [get_gasto_por_trabajador, get_gasto_por_proveedor, get_evolucion_gasto]
+                 (3 tools, todas con from/to del último mes)
+
+               REGLA: si la pregunta es amplia/exploratoria, invoca 3-5 tools.
+               Si es específica (ej "top 10 trabajadores"), invoca solo 1.
+               No abusar — máximo 5 tools por pregunta.
 
             3. Si el usuario pide algo que se puede visualizar (top X, evolución, distribución, comparativa),
                elige la herramienta apropiada — todas devuelven datos listos para gráficos.
