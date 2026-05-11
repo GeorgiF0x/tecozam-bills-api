@@ -1,9 +1,14 @@
 package com.tecozam.bills.auth.application;
 
 import com.tecozam.bills.auth.domain.Usuario;
+import com.tecozam.bills.auth.domain.UsuarioCampo;
+import com.tecozam.bills.auth.domain.UsuarioOficina;
 import com.tecozam.bills.auth.dto.LoginRequest;
 import com.tecozam.bills.auth.dto.TokenResponse;
+import com.tecozam.bills.auth.infrastructure.persistence.UsuarioCampoRepository;
+import com.tecozam.bills.auth.infrastructure.persistence.UsuarioOficinaRepository;
 import com.tecozam.bills.auth.infrastructure.persistence.UsuarioRepository;
+import com.tecozam.bills.shared.domain.enums.EstadoRegistro;
 import com.tecozam.bills.shared.infrastructure.config.JwtConfig;
 import com.tecozam.bills.shared.infrastructure.exception.BusinessException;
 import com.tecozam.bills.shared.infrastructure.security.JwtTokenProvider;
@@ -21,6 +26,7 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
 import java.util.List;
+import java.util.Optional;
 
 @Service
 @Transactional
@@ -29,33 +35,76 @@ import java.util.List;
 public class AuthService {
 
     private final UsuarioRepository usuarioRepository;
+    private final UsuarioOficinaRepository usuarioOficinaRepository;
+    private final UsuarioCampoRepository usuarioCampoRepository;
     private final JwtTokenProvider jwtTokenProvider;
     private final PasswordEncoder passwordEncoder;
     private final JwtConfig jwtConfig;
 
+    /**
+     * Login legacy — busca primero en usuarios_oficina, luego en usuarios_campo.
+     * La tabla usuarios original ya no se consulta para autenticación.
+     *
+     * @deprecated Usar /api/auth/oficina/login o /api/auth/campo/login
+     */
+    @Deprecated
     public TokenResponse login(LoginRequest request) {
-        Usuario usuario = usuarioRepository.findByUsernameAndActivoTrue(request.username())
-                .orElseThrow(() -> new BusinessException("Credenciales inválidas"));
+        log.warn("Endpoint legacy /api/auth/login en uso por {}. Migrar a /api/auth/oficina/login o /api/auth/campo/login",
+                request.username());
 
-        if (!passwordEncoder.matches(request.password(), usuario.getPassword())) {
-            throw new BusinessException("Credenciales inválidas");
+        // Buscar en usuarios_oficina
+        Optional<UsuarioOficina> oficinaOpt = usuarioOficinaRepository.findByUsername(request.username());
+        if (oficinaOpt.isPresent()) {
+            UsuarioOficina oficina = oficinaOpt.get();
+            if (!oficina.isActivo()) {
+                throw new BusinessException("Credenciales inválidas");
+            }
+            if (oficina.getEstadoRegistro() != EstadoRegistro.ACTIVO) {
+                throw new BusinessException("Tu cuenta está pendiente de activación o ha sido rechazada");
+            }
+            if (!passwordEncoder.matches(request.password(), oficina.getPassword())) {
+                throw new BusinessException("Credenciales inválidas");
+            }
+            UserDetails userDetails = new User(
+                    oficina.getUsername(),
+                    oficina.getPassword(),
+                    List.of(new SimpleGrantedAuthority("ROLE_" + oficina.getRol().name())));
+            String accessToken = jwtTokenProvider.generateAccessToken(userDetails, "OFICINA");
+            String refreshToken = jwtTokenProvider.generateRefreshToken(userDetails, "OFICINA");
+            oficina.setRefreshToken(hashSha256(refreshToken));
+            usuarioOficinaRepository.save(oficina);
+            log.info("Login legacy (oficina) exitoso para usuario: {}", oficina.getUsername());
+            return new TokenResponse(accessToken, refreshToken, oficina.getRol().name(),
+                    oficina.getUsername(), jwtConfig.getExpiration());
         }
 
-        UserDetails userDetails = toUserDetails(usuario);
-        String accessToken = jwtTokenProvider.generateAccessToken(userDetails);
-        String refreshToken = jwtTokenProvider.generateRefreshToken(userDetails);
+        // Buscar en usuarios_campo
+        Optional<UsuarioCampo> campoOpt = usuarioCampoRepository.findByUsername(request.username());
+        if (campoOpt.isPresent()) {
+            UsuarioCampo campo = campoOpt.get();
+            if (!campo.isActivo()) {
+                throw new BusinessException("Credenciales inválidas");
+            }
+            if (campo.getEstadoRegistro() != EstadoRegistro.ACTIVO) {
+                throw new BusinessException("Tu cuenta está pendiente de activación o ha sido rechazada");
+            }
+            if (!passwordEncoder.matches(request.password(), campo.getPassword())) {
+                throw new BusinessException("Credenciales inválidas");
+            }
+            UserDetails userDetails = new User(
+                    campo.getUsername(),
+                    campo.getPassword(),
+                    List.of(new SimpleGrantedAuthority("ROLE_CAMPO")));
+            String accessToken = jwtTokenProvider.generateAccessToken(userDetails, "CAMPO");
+            String refreshToken = jwtTokenProvider.generateRefreshToken(userDetails, "CAMPO");
+            campo.setRefreshToken(hashSha256(refreshToken));
+            usuarioCampoRepository.save(campo);
+            log.info("Login legacy (campo) exitoso para usuario: {}", campo.getUsername());
+            return new TokenResponse(accessToken, refreshToken, "CAMPO",
+                    campo.getUsername(), jwtConfig.getExpiration());
+        }
 
-        usuario.setRefreshToken(hashSha256(refreshToken));
-        usuarioRepository.save(usuario);
-
-        log.info("Login exitoso para usuario: {}", usuario.getUsername());
-
-        return new TokenResponse(
-                accessToken,
-                refreshToken,
-                usuario.getRol().name(),
-                usuario.getUsername(),
-                jwtConfig.getExpiration());
+        throw new BusinessException("Credenciales inválidas");
     }
 
     public TokenResponse refresh(String refreshToken) {
@@ -67,6 +116,7 @@ public class AuthService {
         }
 
         String username = jwtTokenProvider.getUsernameFromToken(refreshToken);
+        // Legacy refresh: intentar en la tabla original
         Usuario usuario = usuarioRepository.findByUsernameAndActivoTrue(username)
                 .orElseThrow(() -> new BusinessException("Usuario no encontrado o inactivo"));
 
@@ -82,7 +132,7 @@ public class AuthService {
         usuario.setRefreshToken(hashSha256(newRefreshToken));
         usuarioRepository.save(usuario);
 
-        log.info("Token renovado para usuario: {}", username);
+        log.info("Token renovado (legacy) para usuario: {}", username);
 
         return new TokenResponse(
                 newAccessToken,

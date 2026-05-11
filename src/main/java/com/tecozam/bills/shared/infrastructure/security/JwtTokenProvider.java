@@ -38,9 +38,35 @@ public class JwtTokenProvider {
                 .compact();
     }
 
+    public String generateAccessToken(UserDetails userDetails, String tipo) {
+        String role = userDetails.getAuthorities().stream()
+                .findFirst()
+                .map(GrantedAuthority::getAuthority)
+                .orElse("ROLE_CONSULTA");
+
+        return Jwts.builder()
+                .subject(userDetails.getUsername())
+                .claim("rol", role)
+                .claim("tipo", tipo)
+                .issuedAt(new Date())
+                .expiration(new Date(System.currentTimeMillis() + jwtConfig.getExpiration()))
+                .signWith(getSigningKey())
+                .compact();
+    }
+
     public String generateRefreshToken(UserDetails userDetails) {
         return Jwts.builder()
                 .subject(userDetails.getUsername())
+                .issuedAt(new Date())
+                .expiration(new Date(System.currentTimeMillis() + jwtConfig.getRefreshExpiration()))
+                .signWith(getSigningKey())
+                .compact();
+    }
+
+    public String generateRefreshToken(UserDetails userDetails, String tipo) {
+        return Jwts.builder()
+                .subject(userDetails.getUsername())
+                .claim("tipo", tipo)
                 .issuedAt(new Date())
                 .expiration(new Date(System.currentTimeMillis() + jwtConfig.getRefreshExpiration()))
                 .signWith(getSigningKey())
@@ -53,6 +79,10 @@ public class JwtTokenProvider {
 
     public String getRoleFromToken(String token) {
         return extractClaims(token).get("rol", String.class);
+    }
+
+    public String getTipoFromToken(String token) {
+        return extractClaims(token).get("tipo", String.class);
     }
 
     public boolean validateToken(String token) {
