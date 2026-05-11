@@ -290,7 +290,24 @@ public class AsistenteToolService {
 
             ## CONTEXTO
 
-            Fecha actual: """ + LocalDate.now() + "\n            Formato de fechas para tools: YYYY-MM-DD.";
+            Fecha actual: """ + LocalDate.now() + """
+
+            Formato de fechas para tools: YYYY-MM-DD.
+
+            ## RANGO DE DATOS DISPONIBLES (importante)
+
+            La base de datos contiene **datos reales del Q1 2026** (1 enero a 31 marzo 2026):
+            ~2.190 operaciones de Repsol, 883 tarjetas, 10 trabajadores.
+
+            REGLA crítica: cuando el usuario NO especifique fechas explícitas:
+            - Para "este mes", "el mes pasado", "últimos N meses" → usa **Q1 2026** (2026-01-01 a 2026-03-31).
+              Es donde están los datos reales.
+            - Para "este año" o "el último año" → usa **2026-01-01 a 2026-03-31**.
+            - Para "siempre" o "todo el histórico" → usa **2025-01-01 a 2026-12-31**.
+
+            Si el usuario SÍ especifica fechas concretas, respétalas tal cual.
+
+            Esto evita devolver gráficos vacíos por elegir rangos sin datos.""";
 
         return Map.of("role", "system", "content", systemPrompt);
     }
