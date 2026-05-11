@@ -5,6 +5,8 @@ import java.time.LocalDateTime;
 public record VehiculoDTO(
         Long id,
         String matricula,
+        String codigoObra,
+        String categoria,
         String tipo,
         String descripcion,
         String estado,

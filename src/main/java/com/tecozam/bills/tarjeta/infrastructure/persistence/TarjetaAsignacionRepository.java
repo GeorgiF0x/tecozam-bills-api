@@ -13,4 +13,8 @@ public interface TarjetaAsignacionRepository extends JpaRepository<TarjetaAsigna
     List<TarjetaAsignacion> findByTarjetaIdOrderByFechaDesdeDesc(Long tarjetaId);
 
     Optional<TarjetaAsignacion> findByTarjetaIdAndFechaHastaIsNull(Long tarjetaId);
+
+    List<TarjetaAsignacion> findByTrabajadorIdAndFechaHastaIsNull(Long trabajadorId);
+
+    Optional<TarjetaAsignacion> findByTarjetaIdAndTrabajadorIdAndFechaHastaIsNull(Long tarjetaId, Long trabajadorId);
 }

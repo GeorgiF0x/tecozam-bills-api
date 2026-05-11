@@ -6,16 +6,21 @@ import com.tecozam.bills.factura.domain.Operacion;
 import com.tecozam.bills.factura.infrastructure.persistence.OperacionRepository;
 import com.tecozam.bills.proveedor.domain.Proveedor;
 import com.tecozam.bills.proveedor.infrastructure.persistence.ProveedorRepository;
+import com.tecozam.bills.shared.infrastructure.exception.BusinessException;
 import com.tecozam.bills.shared.infrastructure.exception.ResourceNotFoundException;
 import com.tecozam.bills.tarjeta.domain.Tarjeta;
+import com.tecozam.bills.tarjeta.domain.TarjetaAsignacion;
+import com.tecozam.bills.tarjeta.infrastructure.persistence.TarjetaAsignacionRepository;
 import com.tecozam.bills.tarjeta.infrastructure.persistence.TarjetaRepository;
 import com.tecozam.bills.ticket.domain.Ticket;
 import com.tecozam.bills.ticket.dto.CotejoResultDTO;
 import com.tecozam.bills.ticket.dto.CreateTicketManualRequest;
+import com.tecozam.bills.ticket.dto.CreateTicketOcrValidadoRequest;
 import com.tecozam.bills.ticket.dto.TicketDTO;
 import com.tecozam.bills.ticket.infrastructure.persistence.TicketRepository;
 import com.tecozam.bills.trabajador.domain.Trabajador;
 import com.tecozam.bills.trabajador.infrastructure.persistence.TrabajadorRepository;
+import com.tecozam.bills.vehiculo.domain.CategoriaRecurso;
 import com.tecozam.bills.vehiculo.domain.Vehiculo;
 import com.tecozam.bills.vehiculo.infrastructure.persistence.VehiculoRepository;
 import lombok.RequiredArgsConstructor;
@@ -23,6 +28,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -37,6 +43,7 @@ public class TicketService {
     private final ProveedorRepository proveedorRepository;
     private final TrabajadorRepository trabajadorRepository;
     private final TarjetaRepository tarjetaRepository;
+    private final TarjetaAsignacionRepository tarjetaAsignacionRepository;
     private final VehiculoRepository vehiculoRepository;
     private final UsuarioRepository usuarioRepository;
 
@@ -266,6 +273,126 @@ public class TicketService {
         Ticket saved = ticketRepository.save(ticket);
         log.info("Incidencia resuelta en ticket: id={}", id);
         return toDTO(saved);
+    }
+
+    /**
+     * Crea un ticket validado con PIN a partir de datos OCR ya extraídos.
+     * Valida la asignación activa de tarjeta, el PIN y la categoría del recurso.
+     * Intenta cotejo automático si el importe coincide con una operación pendiente.
+     *
+     * @param username     username del usuario autenticado
+     * @param request      parámetros de validación (tarjetaId, pin, vehiculoId, etc.)
+     * @param estacion     nombre de la estación detectado por OCR
+     * @param fechaHora    fecha/hora detectada por OCR
+     * @param importeTotal importe total detectado por OCR
+     * @param litros       litros detectados por OCR (puede ser null)
+     * @param precioLitro  precio por litro detectado por OCR (puede ser null)
+     * @param producto     producto detectado por OCR (puede ser null)
+     * @param numRecibo    número de recibo detectado por OCR (puede ser null)
+     * @return TicketDTO del ticket creado
+     */
+    public TicketDTO createOcrValidado(
+            String username,
+            CreateTicketOcrValidadoRequest request,
+            String estacion,
+            LocalDateTime fechaHora,
+            BigDecimal importeTotal,
+            BigDecimal litros,
+            BigDecimal precioLitro,
+            String producto,
+            String numRecibo) {
+
+        // Resolve usuario y trabajador
+        Usuario usuario = usuarioRepository.findByUsername(username)
+                .orElseThrow(() -> new ResourceNotFoundException("Usuario", username));
+        Trabajador trabajador = usuario.getTrabajador();
+        if (trabajador == null) {
+            throw new BusinessException("El usuario no tiene un trabajador asociado", "usuario");
+        }
+
+        // Verify tarjeta assignment
+        Tarjeta tarjeta = tarjetaRepository.findById(request.tarjetaId())
+                .orElseThrow(() -> new ResourceNotFoundException("Tarjeta", request.tarjetaId()));
+
+        TarjetaAsignacion asignacion = tarjetaAsignacionRepository
+                .findByTarjetaIdAndTrabajadorIdAndFechaHastaIsNull(request.tarjetaId(), trabajador.getId())
+                .orElseThrow(() -> new BusinessException(
+                        "No tienes asignación activa para esta tarjeta", "tarjetaId"));
+
+        // Verify PIN
+        if (tarjeta.getPinEncrypted() == null) {
+            throw new BusinessException("La tarjeta no tiene PIN configurado", "pin");
+        }
+        if (!tarjeta.getPinEncrypted().equals(request.pin())) {
+            log.warn("[OCR-VALIDADO] PIN incorrecto para tarjeta id={} usuario={}", request.tarjetaId(), username);
+            throw new BusinessException("PIN incorrecto", "pin");
+        }
+
+        // Verify vehículo
+        Vehiculo vehiculo = vehiculoRepository.findById(request.vehiculoId())
+                .orElseThrow(() -> new ResourceNotFoundException("Vehiculo", request.vehiculoId()));
+
+        if (CategoriaRecurso.VEHICULO.equals(request.categoriaRecurso())) {
+            if (vehiculo.getMatricula() == null || vehiculo.getMatricula().isBlank()) {
+                throw new BusinessException("El vehículo seleccionado no tiene matrícula", "vehiculoId");
+            }
+        } else if (CategoriaRecurso.INDUSTRIAL_MAQUINARIA.equals(request.categoriaRecurso())) {
+            if (vehiculo.getCodigoObra() == null || vehiculo.getCodigoObra().isBlank()) {
+                throw new BusinessException("El recurso industrial no tiene código de obra", "vehiculoId");
+            }
+        }
+
+        // Build and save ticket
+        String observacionesTicket = "OCR validado con PIN"
+                + (numRecibo != null && !numRecibo.isBlank() ? " — Recibo: " + numRecibo : "");
+
+        Ticket ticket = Ticket.builder()
+                .origen("OCR_VALIDADO")
+                .estadoCotejo("PENDIENTE")
+                .trabajador(trabajador)
+                .tarjeta(tarjeta)
+                .vehiculo(vehiculo)
+                .estacion(estacion.isBlank() ? "OCR" : estacion)
+                .fechaHora(fechaHora)
+                .importeTotal(importeTotal)
+                .litros(litros)
+                .precioLitro(precioLitro)
+                .kms(request.kilometros())
+                .concepto(producto)
+                .observaciones(observacionesTicket)
+                .build();
+
+        ticket = ticketRepository.save(ticket);
+        log.info("[OCR-VALIDADO] Ticket creado: id={} tarjeta={} trabajador={}", ticket.getId(),
+                request.tarjetaId(), trabajador.getId());
+
+        // Attempt auto-cotejo
+        try {
+            LocalDateTime desde = fechaHora.minusHours(2);
+            LocalDateTime hasta = fechaHora.plusHours(2);
+            String ultimos4 = tarjeta.getNumeroTarjeta();
+            if (ultimos4.length() >= 4) ultimos4 = ultimos4.substring(ultimos4.length() - 4);
+
+            List<Operacion> candidatas = operacionRepository.findParaCotejoConTarjeta(
+                    desde, hasta, importeTotal, ultimos4);
+
+            if (candidatas.size() == 1) {
+                Operacion op = candidatas.get(0);
+                String discrepancia = detectarDiscrepancia(ticket, op);
+                if (discrepancia == null) {
+                    ticket.setOperacionCotejada(op);
+                    ticket.setEstadoCotejo("COTEJADO");
+                    ticket = ticketRepository.save(ticket);
+                    log.info("[OCR-VALIDADO] Cotejo automático exitoso: ticket={} operacion={}", ticket.getId(), op.getId());
+                } else {
+                    log.info("[OCR-VALIDADO] Discrepancia en cotejo automático: ticket={} tipo={}", ticket.getId(), discrepancia);
+                }
+            }
+        } catch (Exception e) {
+            log.warn("[OCR-VALIDADO] Error en cotejo automático para ticket={}: {}", ticket.getId(), e.getMessage());
+        }
+
+        return toDTO(ticket);
     }
 
     private TicketDTO toDTO(Ticket t) {

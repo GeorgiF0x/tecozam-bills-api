@@ -4,6 +4,7 @@ import com.tecozam.bills.shared.domain.enums.EstadoRecurso;
 import com.tecozam.bills.shared.infrastructure.exception.BusinessException;
 import com.tecozam.bills.shared.infrastructure.exception.DuplicateResourceException;
 import com.tecozam.bills.shared.infrastructure.exception.ResourceNotFoundException;
+import com.tecozam.bills.vehiculo.domain.CategoriaRecurso;
 import com.tecozam.bills.vehiculo.domain.Vehiculo;
 import com.tecozam.bills.vehiculo.dto.CreateVehiculoRequest;
 import com.tecozam.bills.vehiculo.dto.UpdateVehiculoRequest;
@@ -42,12 +43,25 @@ public class VehiculoService {
     }
 
     public VehiculoDTO create(CreateVehiculoRequest request) {
-        if (vehiculoRepository.existsByMatricula(request.matricula())) {
-            throw new DuplicateResourceException("Vehiculo", "matricula", request.matricula());
+        CategoriaRecurso categoria = parseCategoria(request.categoria());
+
+        if (categoria == CategoriaRecurso.VEHICULO) {
+            if (request.matricula() == null || request.matricula().isBlank()) {
+                throw new BusinessException("La matrícula es obligatoria para la categoría VEHICULO");
+            }
+            if (vehiculoRepository.existsByMatricula(request.matricula())) {
+                throw new DuplicateResourceException("Vehiculo", "matricula", request.matricula());
+            }
+        } else {
+            if (request.codigoObra() == null || request.codigoObra().isBlank()) {
+                throw new BusinessException("El código de obra es obligatorio para la categoría INDUSTRIAL_MAQUINARIA");
+            }
         }
 
         Vehiculo vehiculo = Vehiculo.builder()
                 .matricula(request.matricula())
+                .codigoObra(request.codigoObra())
+                .categoria(categoria)
                 .tipo(request.tipo())
                 .descripcion(request.descripcion())
                 .estado(EstadoRecurso.DISPONIBLE)
@@ -104,10 +118,24 @@ public class VehiculoService {
         }
     }
 
+    private CategoriaRecurso parseCategoria(String categoriaStr) {
+        if (categoriaStr == null || categoriaStr.isBlank()) {
+            return CategoriaRecurso.VEHICULO;
+        }
+        try {
+            return CategoriaRecurso.valueOf(categoriaStr.toUpperCase());
+        } catch (IllegalArgumentException e) {
+            throw new BusinessException(
+                    "Categoría inválida: " + categoriaStr + ". Valores permitidos: VEHICULO, INDUSTRIAL_MAQUINARIA");
+        }
+    }
+
     private VehiculoDTO toDTO(Vehiculo vehiculo) {
         return new VehiculoDTO(
                 vehiculo.getId(),
                 vehiculo.getMatricula(),
+                vehiculo.getCodigoObra(),
+                vehiculo.getCategoria() != null ? vehiculo.getCategoria().name() : null,
                 vehiculo.getTipo(),
                 vehiculo.getDescripcion(),
                 vehiculo.getEstado().name(),

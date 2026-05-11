@@ -22,8 +22,16 @@ import lombok.NoArgsConstructor;
 @EqualsAndHashCode(callSuper = true)
 public class Vehiculo extends BaseEntity {
 
-    @Column(nullable = false, unique = true, length = 20)
+    @Column(length = 20)
     private String matricula;
+
+    @Column(name = "codigo_obra", length = 50)
+    private String codigoObra;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "categoria", nullable = false, length = 30)
+    @Builder.Default
+    private CategoriaRecurso categoria = CategoriaRecurso.VEHICULO;
 
     @Column(nullable = false, length = 30)
     private String tipo;

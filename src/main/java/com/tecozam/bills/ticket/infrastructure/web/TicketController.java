@@ -3,6 +3,7 @@ package com.tecozam.bills.ticket.infrastructure.web;
 import com.tecozam.bills.ticket.application.TicketService;
 import com.tecozam.bills.ticket.dto.CotejoResultDTO;
 import com.tecozam.bills.ticket.dto.CreateTicketManualRequest;
+import com.tecozam.bills.ticket.dto.CreateTicketOcrValidadoRequest;
 import com.tecozam.bills.ticket.dto.TicketDTO;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -11,6 +12,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -18,6 +20,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
 
 import org.springframework.beans.factory.annotation.Value;
@@ -229,6 +232,135 @@ public class TicketController {
             log.error("[OCR] Exception: {}", e.getMessage(), e);
             return ResponseEntity.internalServerError().body(Map.of(
                     "error", "Error al procesar OCR: " + e.getMessage()
+            ));
+        }
+    }
+
+    @PostMapping("/ocr-validado")
+    @PreAuthorize("isAuthenticated()")
+    @Operation(summary = "OCR validado con PIN",
+            description = "Extrae datos del ticket vía OCR, valida asignación de tarjeta y PIN, y crea el ticket con origen OCR_VALIDADO")
+    public ResponseEntity<Map<String, Object>> ocrValidado(
+            @RequestParam("imagen") MultipartFile imagen,
+            @RequestPart("params") @Valid CreateTicketOcrValidadoRequest params,
+            Authentication authentication) {
+        try {
+            if (imagen == null || imagen.isEmpty()) {
+                return ResponseEntity.badRequest().body(Map.of("error", "La imagen es obligatoria"));
+            }
+            if (openaiApiKey == null || openaiApiKey.isBlank()) {
+                return ResponseEntity.internalServerError()
+                        .body(Map.of("error", "OCR no configurado: falta OPENAI_API_KEY"));
+            }
+
+            // ── OCR call (same logic as /ocr) ──────────────────────────────
+            String base64 = Base64.getEncoder().encodeToString(imagen.getBytes());
+            String mimeType = imagen.getContentType() != null ? imagen.getContentType() : "image/jpeg";
+
+            String prompt = "Extrae los datos de este ticket de gasolinera o peaje español. " +
+                    "Devuelve SOLO un JSON válido con estos campos exactos: " +
+                    "{ \"proveedor\": \"REPSOL o MOEVE_CEPSA u otro\", " +
+                    "\"estacion\": \"nombre de la estación\", " +
+                    "\"direccion\": \"dirección completa o null\", " +
+                    "\"fecha\": \"YYYY-MM-DD\", " +
+                    "\"hora\": \"HH:MM\", " +
+                    "\"numTarjeta4ultimos\": \"últimos 4 dígitos o null\", " +
+                    "\"matricula\": \"matrícula o null\", " +
+                    "\"kms\": número o null, " +
+                    "\"producto\": \"tipo de combustible\", " +
+                    "\"litros\": número con decimales, " +
+                    "\"precioLitro\": número con 3 decimales, " +
+                    "\"importeTotal\": número con 2 decimales, " +
+                    "\"numRecibo\": \"número de ticket/recibo o null\", " +
+                    "\"nifEstacion\": \"NIF o null\" }. " +
+                    "Usa punto como separador decimal. Si un campo no es legible, pon null. " +
+                    "NO incluyas texto adicional, SOLO el JSON.";
+
+            String requestBody = "{" +
+                    "\"model\":\"gpt-4.1-mini\"," +
+                    "\"messages\":[{\"role\":\"user\",\"content\":[" +
+                    "{\"type\":\"text\",\"text\":\"" + escapeJson(prompt) + "\"}," +
+                    "{\"type\":\"image_url\",\"image_url\":{\"url\":\"data:" + mimeType + ";base64," + base64 + "\"}}" +
+                    "]}]," +
+                    "\"max_tokens\":800," +
+                    "\"temperature\":0" +
+                    "}";
+
+            HttpClient client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(15)).build();
+            HttpRequest httpRequest = HttpRequest.newBuilder()
+                    .uri(URI.create("https://api.openai.com/v1/chat/completions"))
+                    .header("Content-Type", "application/json")
+                    .header("Authorization", "Bearer " + openaiApiKey)
+                    .POST(HttpRequest.BodyPublishers.ofString(requestBody))
+                    .timeout(Duration.ofSeconds(60))
+                    .build();
+
+            HttpResponse<String> response = client.send(httpRequest, HttpResponse.BodyHandlers.ofString());
+            log.info("[OCR-VALIDADO] OpenAI status: {}", response.statusCode());
+
+            if (response.statusCode() != 200) {
+                log.error("[OCR-VALIDADO] OpenAI error: {}", response.body());
+                return ResponseEntity.status(422).body(Map.of(
+                        "error", "Error al procesar imagen con IA",
+                        "detail", response.body()
+                ));
+            }
+
+            var mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+            var aiResponse = mapper.readTree(response.body());
+            String content = aiResponse.at("/choices/0/message/content").asText("");
+            content = content.replaceAll("```json\\s*", "").replaceAll("```\\s*", "").trim();
+            var data = mapper.readTree(content);
+            log.info("[OCR-VALIDADO] AI content: {}", content);
+
+            String estacion = getField(data, "estacion");
+            String fechaStr = getField(data, "fecha");
+            String horaStr = getFieldOr(data, "hora", "00:00");
+            double importeTotal = getNumField(data, "importeTotal", "importe_total", "total");
+            double litros = getNumField(data, "litros", "cantidad");
+            double precioLitro = getNumField(data, "precioLitro", "precio_litro", "precio");
+            String producto = getFieldAny(data, "producto", "concepto", "combustible");
+            String numRecibo = getFieldAny(data, "numRecibo", "num_recibo", "referencia");
+
+            java.time.LocalDateTime fechaHora;
+            try {
+                java.time.LocalDate fecha = java.time.LocalDate.parse(fechaStr);
+                String[] hm = horaStr.split(":");
+                fechaHora = fecha.atTime(Integer.parseInt(hm[0]), Integer.parseInt(hm.length > 1 ? hm[1] : "0"));
+            } catch (Exception e) {
+                fechaHora = java.time.LocalDateTime.now();
+            }
+
+            // ── Validate PIN and create ticket ─────────────────────────────
+            try {
+                TicketDTO ticket = ticketService.createOcrValidado(
+                        authentication.getName(),
+                        params,
+                        estacion,
+                        fechaHora,
+                        java.math.BigDecimal.valueOf(importeTotal > 0 ? importeTotal : 0.01),
+                        litros > 0 ? java.math.BigDecimal.valueOf(litros) : null,
+                        precioLitro > 0 ? java.math.BigDecimal.valueOf(precioLitro) : null,
+                        producto.isBlank() ? null : producto,
+                        numRecibo.isBlank() ? null : numRecibo
+                );
+
+                return ResponseEntity.ok(Map.of(
+                        "status", "ok",
+                        "ticketId", ticket.id(),
+                        "message", "Ticket creado: " + estacion + " — " + importeTotal + "€ — " + litros + "L"
+                ));
+            } catch (com.tecozam.bills.shared.infrastructure.exception.BusinessException be) {
+                if ("PIN incorrecto".equals(be.getMessage())) {
+                    return ResponseEntity.status(401).body(Map.of("error", "PIN incorrecto"));
+                }
+                return ResponseEntity.badRequest().body(Map.of("error", be.getMessage()));
+            }
+
+        } catch (Exception e) {
+            log.error("[OCR-VALIDADO] Exception: {}", e.getMessage(), e);
+            return ResponseEntity.internalServerError().body(Map.of(
+                    "error", "Error al procesar OCR validado: " + e.getMessage()
             ));
         }
     }
