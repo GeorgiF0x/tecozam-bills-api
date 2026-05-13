@@ -12,7 +12,11 @@ public interface AlertaPrestamoRepository extends JpaRepository<AlertaPrestamo, 
 
     List<AlertaPrestamo> findByLeidaFalseOrderByFechaAlertaDesc();
 
+    List<AlertaPrestamo> findByLeidaFalseAndPrestamoTrabajadorIdOrderByFechaAlertaDesc(Long trabajadorId);
+
     long countByLeidaFalse();
+
+    long countByLeidaFalseAndPrestamoTrabajadorId(Long trabajadorId);
 
     boolean existsByPrestamoIdAndTipoAlertaAndFechaAlerta(Long prestamoId, String tipoAlerta, LocalDate fechaAlerta);
 }

@@ -1,5 +1,9 @@
 package com.tecozam.bills.prestamo.application;
 
+import com.tecozam.bills.auth.domain.Usuario;
+import com.tecozam.bills.auth.domain.UsuarioCampo;
+import com.tecozam.bills.auth.infrastructure.persistence.UsuarioCampoRepository;
+import com.tecozam.bills.auth.infrastructure.persistence.UsuarioRepository;
 import com.tecozam.bills.centrocoste.domain.CentroCoste;
 import com.tecozam.bills.centrocoste.infrastructure.persistence.CentroCosteRepository;
 import com.tecozam.bills.prestamo.domain.Prestamo;
@@ -38,6 +42,8 @@ public class PrestamoService {
     private final TarjetaRepository tarjetaRepository;
     private final ViatRepository viatRepository;
     private final VehiculoRepository vehiculoRepository;
+    private final UsuarioCampoRepository usuarioCampoRepository;
+    private final UsuarioRepository usuarioRepository;
 
     @Transactional(readOnly = true)
     public List<PrestamoDTO> findAll(String estado) {
@@ -52,6 +58,27 @@ public class PrestamoService {
         return prestamoRepository.findByTrabajadorId(trabajadorId).stream()
                 .map(this::toDTO)
                 .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public List<PrestamoDTO> findMisPrestamos(String username) {
+        Trabajador trabajador = resolveTrabajador(username);
+        if (trabajador == null) {
+            log.warn("Usuario {} sin trabajador asociado, devolviendo lista vacía", username);
+            return List.of();
+        }
+        return prestamoRepository.findByTrabajadorId(trabajador.getId()).stream()
+                .map(this::toDTO)
+                .toList();
+    }
+
+    private Trabajador resolveTrabajador(String username) {
+        UsuarioCampo campo = usuarioCampoRepository.findByUsername(username).orElse(null);
+        if (campo != null) {
+            return campo.getTrabajador();
+        }
+        Usuario legacy = usuarioRepository.findByUsername(username).orElse(null);
+        return legacy != null ? legacy.getTrabajador() : null;
     }
 
     @Transactional(readOnly = true)

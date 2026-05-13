@@ -11,6 +11,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -47,6 +48,13 @@ public class PrestamoController {
     @Operation(summary = "Préstamos por trabajador", description = "Obtiene todos los préstamos de un trabajador")
     public ResponseEntity<List<PrestamoDTO>> findByTrabajador(@PathVariable Long trabajadorId) {
         return ResponseEntity.ok(prestamoService.findByTrabajador(trabajadorId));
+    }
+
+    @GetMapping("/mis-prestamos")
+    @PreAuthorize("isAuthenticated()")
+    @Operation(summary = "Mis préstamos", description = "Devuelve los préstamos del trabajador autenticado.")
+    public ResponseEntity<List<PrestamoDTO>> misPrestamos(Authentication authentication) {
+        return ResponseEntity.ok(prestamoService.findMisPrestamos(authentication.getName()));
     }
 
     @PostMapping

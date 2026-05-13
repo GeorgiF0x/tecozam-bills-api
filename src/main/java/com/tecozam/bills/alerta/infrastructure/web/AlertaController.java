@@ -6,6 +6,8 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -28,10 +30,24 @@ public class AlertaController {
         return ResponseEntity.ok(alertaService.findPendientes());
     }
 
+    @GetMapping("/mis-pendientes")
+    @PreAuthorize("isAuthenticated()")
+    @Operation(summary = "Mis alertas pendientes", description = "Devuelve las alertas pendientes asociadas a préstamos del trabajador autenticado.")
+    public ResponseEntity<List<AlertaDTO>> findMisPendientes(Authentication authentication) {
+        return ResponseEntity.ok(alertaService.findMisPendientes(authentication.getName()));
+    }
+
     @GetMapping("/count")
     @Operation(summary = "Contar alertas pendientes", description = "Retorna el número de alertas no leídas")
     public ResponseEntity<Long> count() {
         return ResponseEntity.ok(alertaService.countPendientes());
+    }
+
+    @GetMapping("/mis-count")
+    @PreAuthorize("isAuthenticated()")
+    @Operation(summary = "Contar mis alertas pendientes", description = "Retorna el número de alertas pendientes del trabajador autenticado")
+    public ResponseEntity<Long> countMisPendientes(Authentication authentication) {
+        return ResponseEntity.ok(alertaService.countMisPendientes(authentication.getName()));
     }
 
     @PatchMapping("/{id}/leida")

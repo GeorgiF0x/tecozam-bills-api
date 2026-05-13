@@ -1,6 +1,7 @@
 package com.tecozam.bills.ticket.application;
 
 import com.tecozam.bills.auth.domain.Usuario;
+import com.tecozam.bills.auth.domain.UsuarioCampo;
 import com.tecozam.bills.auth.infrastructure.persistence.UsuarioRepository;
 import com.tecozam.bills.factura.domain.Operacion;
 import com.tecozam.bills.factura.infrastructure.persistence.OperacionRepository;
@@ -61,6 +62,27 @@ public class TicketService {
         Ticket ticket = ticketRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Ticket", id));
         return toDTO(ticket);
+    }
+
+    @Transactional(readOnly = true)
+    public List<TicketDTO> findMisTickets(String username) {
+        Trabajador trabajador = resolveTrabajadorByUsername(username);
+        if (trabajador == null) {
+            log.warn("Usuario {} sin trabajador asociado, devolviendo lista vacía", username);
+            return List.of();
+        }
+        return ticketRepository.findByTrabajadorId(trabajador.getId()).stream()
+                .map(this::toDTO)
+                .toList();
+    }
+
+    private Trabajador resolveTrabajadorByUsername(String username) {
+        UsuarioCampo campo = usuarioCampoRepository.findByUsername(username).orElse(null);
+        if (campo != null) {
+            return campo.getTrabajador();
+        }
+        Usuario legacy = usuarioRepository.findByUsername(username).orElse(null);
+        return legacy != null ? legacy.getTrabajador() : null;
     }
 
     public TicketDTO createManual(CreateTicketManualRequest req) {

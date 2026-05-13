@@ -53,6 +53,13 @@ public class TicketController {
         return ResponseEntity.ok(ticketService.findAll(estadoCotejo));
     }
 
+    @GetMapping("/mis-tickets")
+    @PreAuthorize("isAuthenticated()")
+    @Operation(summary = "Mis tickets", description = "Devuelve los tickets del trabajador autenticado.")
+    public ResponseEntity<List<TicketDTO>> misTickets(Authentication authentication) {
+        return ResponseEntity.ok(ticketService.findMisTickets(authentication.getName()));
+    }
+
     @GetMapping("/{id}")
     @Operation(summary = "Obtener ticket", description = "Obtiene un ticket por su ID")
     public ResponseEntity<TicketDTO> findById(@PathVariable Long id) {
