@@ -121,14 +121,12 @@ public class PrestamoService {
                     .map(v -> {
                         String desc = v.getMatricula() != null ? v.getMatricula() : "Vehículo #" + v.getId();
                         String detalle = null;
-                        String marca = v.getMarca();
-                        String modelo = v.getModelo();
-                        if (marca != null && modelo != null) {
-                            detalle = marca + " " + modelo;
-                        } else if (marca != null) {
-                            detalle = marca;
-                        } else if (modelo != null) {
-                            detalle = modelo;
+                        String tipo2 = v.getTipo();
+                        String descripcion = v.getDescripcion();
+                        if (descripcion != null && !descripcion.isBlank()) {
+                            detalle = descripcion;
+                        } else if (tipo2 != null) {
+                            detalle = tipo2;
                         }
                         return new RecursoDisponibleDTO(v.getId(), desc, detalle);
                     })
