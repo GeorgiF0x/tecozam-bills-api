@@ -46,6 +46,7 @@ public class TicketService {
     private final TarjetaAsignacionRepository tarjetaAsignacionRepository;
     private final VehiculoRepository vehiculoRepository;
     private final UsuarioRepository usuarioRepository;
+    private final com.tecozam.bills.auth.infrastructure.persistence.UsuarioCampoRepository usuarioCampoRepository;
 
     @Transactional(readOnly = true)
     public List<TicketDTO> findAll(String estadoCotejo) {
@@ -302,10 +303,12 @@ public class TicketService {
             String producto,
             String numRecibo) {
 
-        // Resolve usuario y trabajador
-        Usuario usuario = usuarioRepository.findByUsername(username)
-                .orElseThrow(() -> new ResourceNotFoundException("Usuario", username));
-        Trabajador trabajador = usuario.getTrabajador();
+        // Resolve trabajador del usuario actual (busca primero en usuarios_campo, luego legacy)
+        Trabajador trabajador = usuarioCampoRepository.findByUsername(username)
+                .map(u -> u.getTrabajador())
+                .orElseGet(() -> usuarioRepository.findByUsername(username)
+                        .map(Usuario::getTrabajador)
+                        .orElse(null));
         if (trabajador == null) {
             throw new BusinessException("El usuario no tiene un trabajador asociado", "usuario");
         }

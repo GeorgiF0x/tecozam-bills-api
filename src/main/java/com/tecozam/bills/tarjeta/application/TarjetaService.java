@@ -1,6 +1,8 @@
 package com.tecozam.bills.tarjeta.application;
 
 import com.tecozam.bills.auth.domain.Usuario;
+import com.tecozam.bills.auth.domain.UsuarioCampo;
+import com.tecozam.bills.auth.infrastructure.persistence.UsuarioCampoRepository;
 import com.tecozam.bills.auth.infrastructure.persistence.UsuarioRepository;
 import com.tecozam.bills.proveedor.domain.Proveedor;
 import com.tecozam.bills.proveedor.infrastructure.persistence.ProveedorRepository;
@@ -42,6 +44,7 @@ public class TarjetaService {
     private final TrabajadorRepository trabajadorRepository;
     private final VehiculoRepository vehiculoRepository;
     private final UsuarioRepository usuarioRepository;
+    private final UsuarioCampoRepository usuarioCampoRepository;
 
     @Transactional(readOnly = true)
     public List<TarjetaDTO> findAll(boolean soloActivas) {
@@ -157,16 +160,13 @@ public class TarjetaService {
      * ADMIN puede para cualquier tarjeta.
      */
     public void guardarPin(Long tarjetaId, String pin, String username) {
-        Usuario usuario = usuarioRepository.findByUsername(username)
-                .orElseThrow(() -> new ResourceNotFoundException("Usuario", username));
-
         Tarjeta tarjeta = tarjetaRepository.findById(tarjetaId)
                 .orElseThrow(() -> new ResourceNotFoundException("Tarjeta", tarjetaId));
 
-        boolean esAdmin = Rol.ADMIN.equals(usuario.getRol());
+        Trabajador trabajador = resolveTrabajador(username);
+        boolean esAdmin = isAdmin(username);
 
         if (!esAdmin) {
-            Trabajador trabajador = usuario.getTrabajador();
             if (trabajador == null) {
                 throw new BusinessException("El usuario no tiene un trabajador asociado", "usuario");
             }
@@ -183,13 +183,11 @@ public class TarjetaService {
 
     /**
      * Devuelve las tarjetas con asignación activa del trabajador del usuario autenticado.
+     * Busca el usuario en usuarios_campo primero, luego en usuarios legacy.
      */
     @Transactional(readOnly = true)
     public List<MiTarjetaDTO> findMisTarjetas(String username) {
-        Usuario usuario = usuarioRepository.findByUsername(username)
-                .orElseThrow(() -> new ResourceNotFoundException("Usuario", username));
-
-        Trabajador trabajador = usuario.getTrabajador();
+        Trabajador trabajador = resolveTrabajador(username);
         if (trabajador == null) {
             log.warn("Usuario {} no tiene trabajador asociado, devolviendo lista vacía", username);
             return List.of();
@@ -201,6 +199,28 @@ public class TarjetaService {
         return asignaciones.stream()
                 .map(a -> toMiTarjetaDTO(a.getTarjeta()))
                 .toList();
+    }
+
+    /**
+     * Resuelve el trabajador del usuario actual.
+     * Prioriza usuarios_campo (operarios) sobre usuarios legacy (admin/gestor).
+     */
+    private Trabajador resolveTrabajador(String username) {
+        // Buscar primero en usuarios_campo (operarios)
+        UsuarioCampo campo = usuarioCampoRepository.findByUsername(username).orElse(null);
+        if (campo != null) {
+            return campo.getTrabajador();
+        }
+        // Fallback a usuarios legacy
+        Usuario legacy = usuarioRepository.findByUsername(username).orElse(null);
+        return legacy != null ? legacy.getTrabajador() : null;
+    }
+
+    private boolean isAdmin(String username) {
+        // Solo los usuarios legacy/oficina pueden ser ADMIN
+        return usuarioRepository.findByUsername(username)
+                .map(u -> Rol.ADMIN.equals(u.getRol()))
+                .orElse(false);
     }
 
     private MiTarjetaDTO toMiTarjetaDTO(Tarjeta tarjeta) {
