@@ -15,6 +15,10 @@ import java.util.List;
 @Repository
 public interface OperacionRepository extends JpaRepository<Operacion, Long> {
 
+    /** Devuelve el rango de fechas disponible: [min, max] o null si no hay datos */
+    @Query("SELECT MIN(o.fechaHora), MAX(o.fechaHora) FROM Operacion o WHERE o.fechaHora IS NOT NULL")
+    Object[] findDateRange();
+
     @Query("SELECT o FROM Operacion o " +
             "LEFT JOIN FETCH o.tarjetaResumen tr " +
             "LEFT JOIN FETCH tr.factura f " +

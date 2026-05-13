@@ -33,6 +33,7 @@ public class AsistenteToolService {
 
     private final Map<String, Tool> tools;
     private final ObjectMapper objectMapper;
+    private final com.tecozam.bills.factura.infrastructure.persistence.OperacionRepository operacionRepository;
 
     @Value("${app.openai.api-key:}")
     private String apiKey;
@@ -40,8 +41,13 @@ public class AsistenteToolService {
     @Value("${app.openai.model:gpt-4.1-mini}")
     private String model;
 
-    public AsistenteToolService(List<Tool> toolList, ObjectMapper objectMapper) {
+    public AsistenteToolService(
+        List<Tool> toolList,
+        ObjectMapper objectMapper,
+        com.tecozam.bills.factura.infrastructure.persistence.OperacionRepository operacionRepository
+    ) {
         this.objectMapper = objectMapper;
+        this.operacionRepository = operacionRepository;
         this.tools = toolList.stream().collect(Collectors.toMap(Tool::getName, t -> t));
         log.info("[AsistenteTool] Registered tools: {}", this.tools.keySet());
     }
@@ -235,6 +241,42 @@ public class AsistenteToolService {
 
     // ── System prompt ─────────────────────────────────────────────────────────
 
+    /**
+     * Genera la descripción del rango de fechas con datos reales en BD
+     * para inyectarla en el system prompt. Evita que el LLM elija rangos vacíos.
+     */
+    private String describeDataRange() {
+        try {
+            Object[] result = operacionRepository.findDateRange();
+            // Spring devuelve Object[][] con 1 fila que contiene [min, max] o null/null
+            if (result == null || result.length == 0) {
+                return "No hay datos de operaciones disponibles aún.";
+            }
+            Object row = result[0];
+            Object[] arr;
+            if (row instanceof Object[]) {
+                arr = (Object[]) row;
+            } else {
+                arr = result;
+            }
+            if (arr.length < 2 || arr[0] == null || arr[1] == null) {
+                return "No hay datos de operaciones disponibles aún.";
+            }
+            java.time.LocalDateTime min = (java.time.LocalDateTime) arr[0];
+            java.time.LocalDateTime max = (java.time.LocalDateTime) arr[1];
+            LocalDate minDate = min.toLocalDate();
+            LocalDate maxDate = max.toLocalDate();
+            return String.format(
+                "La base de datos contiene operaciones reales desde **%s** hasta **%s**. " +
+                "Ese es el rango con datos. Fuera de él los gráficos saldrán vacíos.",
+                minDate, maxDate
+            );
+        } catch (Exception e) {
+            log.warn("[AsistenteTool] No se pudo determinar rango de datos: {}", e.getMessage());
+            return "Rango de datos no determinado. Usa fechas razonables.";
+        }
+    }
+
     private Map<String, Object> systemMessage() {
         String systemPrompt = """
             Eres el asistente de Tecozam Bills Manager, una plataforma de control de gastos de flota.
@@ -296,14 +338,13 @@ public class AsistenteToolService {
 
             ## RANGO DE DATOS DISPONIBLES (importante)
 
-            La base de datos contiene **datos reales del Q1 2026** (1 enero a 31 marzo 2026):
-            ~2.190 operaciones de Repsol, 883 tarjetas, 10 trabajadores.
+            """ + describeDataRange() + """
 
             REGLA crítica: cuando el usuario NO especifique fechas explícitas:
-            - Para "este mes", "el mes pasado", "últimos N meses" → usa **Q1 2026** (2026-01-01 a 2026-03-31).
-              Es donde están los datos reales.
-            - Para "este año" o "el último año" → usa **2026-01-01 a 2026-03-31**.
-            - Para "siempre" o "todo el histórico" → usa **2025-01-01 a 2026-12-31**.
+            - Para "este mes", "el mes pasado", "últimos N meses", "este año" → usa el
+              rango disponible indicado arriba.
+            - Si el usuario pide "los últimos 3 meses" pero solo tienes 2 meses de datos,
+              usa los 2 meses disponibles.
 
             Si el usuario SÍ especifica fechas concretas, respétalas tal cual.
 
