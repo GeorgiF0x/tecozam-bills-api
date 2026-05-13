@@ -40,7 +40,7 @@ public class PrestamoController {
         return ResponseEntity.ok(prestamoService.findAll(estado));
     }
 
-    @GetMapping("/{id}")
+    @GetMapping("/{id:\\d+}")
     @Operation(summary = "Obtener préstamo", description = "Obtiene un préstamo por su ID")
     public ResponseEntity<PrestamoDTO> findById(@PathVariable Long id) {
         return ResponseEntity.ok(prestamoService.findById(id));

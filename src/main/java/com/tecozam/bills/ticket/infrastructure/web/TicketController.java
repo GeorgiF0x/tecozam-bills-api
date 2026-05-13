@@ -60,7 +60,7 @@ public class TicketController {
         return ResponseEntity.ok(ticketService.findMisTickets(authentication.getName()));
     }
 
-    @GetMapping("/{id}")
+    @GetMapping("/{id:\\d+}")
     @Operation(summary = "Obtener ticket", description = "Obtiene un ticket por su ID")
     public ResponseEntity<TicketDTO> findById(@PathVariable Long id) {
         return ResponseEntity.ok(ticketService.findById(id));
