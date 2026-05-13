@@ -85,26 +85,55 @@ public class PrestamoService {
 
     @Transactional(readOnly = true)
     public List<RecursoDisponibleDTO> findRecursosDisponibles(String tipo) {
+        if (tipo == null) {
+            throw new BusinessException("tipoRecurso es obligatorio");
+        }
         return switch (tipo.toUpperCase()) {
             case "TARJETA" -> tarjetaRepository.findByEstadoAndActivaTrue(EstadoRecurso.DISPONIBLE).stream()
-                    .map(t -> new RecursoDisponibleDTO(
-                            t.getId(),
-                            t.getAlias() != null ? t.getAlias() : "Tarjeta " + t.getNumeroTarjeta(),
-                            t.getProveedor() != null ? t.getProveedor().getNombre() : null))
+                    .map(t -> {
+                        String desc;
+                        if (t.getAlias() != null && !t.getAlias().isBlank()) {
+                            desc = t.getAlias();
+                        } else if (t.getNumeroTarjeta() != null) {
+                            String num = t.getNumeroTarjeta();
+                            desc = "Tarjeta **** " + (num.length() >= 4 ? num.substring(num.length() - 4) : num);
+                        } else {
+                            desc = "Tarjeta #" + t.getId();
+                        }
+                        String detalle = null;
+                        try {
+                            if (t.getProveedor() != null) {
+                                detalle = t.getProveedor().getNombre();
+                            }
+                        } catch (Exception ignore) {
+                            // lazy init / proxy issue — no es crítico
+                        }
+                        return new RecursoDisponibleDTO(t.getId(), desc, detalle);
+                    })
                     .toList();
             case "VIAT" -> viatRepository.findByEstadoAndActivoTrue(EstadoRecurso.DISPONIBLE).stream()
-                    .map(v -> new RecursoDisponibleDTO(
-                            v.getId(),
-                            "Viat " + v.getCodigo(),
-                            v.getDescripcion()))
+                    .map(v -> {
+                        String desc = v.getCodigo() != null ? "Viat " + v.getCodigo() : "Viat #" + v.getId();
+                        return new RecursoDisponibleDTO(v.getId(), desc, v.getDescripcion());
+                    })
                     .toList();
             case "VEHICULO" -> vehiculoRepository.findByEstadoAndActivoTrue(EstadoRecurso.DISPONIBLE).stream()
-                    .map(v -> new RecursoDisponibleDTO(
-                            v.getId(),
-                            v.getMatricula(),
-                            v.getMarca() + " " + v.getModelo()))
+                    .map(v -> {
+                        String desc = v.getMatricula() != null ? v.getMatricula() : "Vehículo #" + v.getId();
+                        String detalle = null;
+                        String marca = v.getMarca();
+                        String modelo = v.getModelo();
+                        if (marca != null && modelo != null) {
+                            detalle = marca + " " + modelo;
+                        } else if (marca != null) {
+                            detalle = marca;
+                        } else if (modelo != null) {
+                            detalle = modelo;
+                        }
+                        return new RecursoDisponibleDTO(v.getId(), desc, detalle);
+                    })
                     .toList();
-            default -> throw new BusinessException("tipoRecurso no válido: " + tipo);
+            default -> throw new BusinessException("tipoRecurso no válido: " + tipo + ". Valores permitidos: TARJETA, VIAT, VEHICULO");
         };
     }
 
