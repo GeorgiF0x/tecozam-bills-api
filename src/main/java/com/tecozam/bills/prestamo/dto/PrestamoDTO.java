@@ -20,5 +20,6 @@ public record PrestamoDTO(
         LocalDate fechaFinPrevista,
         LocalDate fechaDevolucionReal,
         String observaciones,
+        boolean creadoPorCampo,
         LocalDateTime creadoEn
 ) {}

@@ -1,9 +1,11 @@
 package com.tecozam.bills.prestamo.infrastructure.web;
 
 import com.tecozam.bills.prestamo.application.PrestamoService;
+import com.tecozam.bills.prestamo.dto.CreateMiPrestamoRequest;
 import com.tecozam.bills.prestamo.dto.CreatePrestamoRequest;
 import com.tecozam.bills.prestamo.dto.DevolucionRequest;
 import com.tecozam.bills.prestamo.dto.PrestamoDTO;
+import com.tecozam.bills.prestamo.dto.RecursoDisponibleDTO;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -55,6 +57,34 @@ public class PrestamoController {
     @Operation(summary = "Mis préstamos", description = "Devuelve los préstamos del trabajador autenticado.")
     public ResponseEntity<List<PrestamoDTO>> misPrestamos(Authentication authentication) {
         return ResponseEntity.ok(prestamoService.findMisPrestamos(authentication.getName()));
+    }
+
+    @GetMapping("/recursos-disponibles")
+    @PreAuthorize("isAuthenticated()")
+    @Operation(summary = "Recursos disponibles", description = "Devuelve los recursos del tipo indicado en estado DISPONIBLE. Tipo: TARJETA | VIAT | VEHICULO.")
+    public ResponseEntity<List<RecursoDisponibleDTO>> recursosDisponibles(@RequestParam String tipo) {
+        return ResponseEntity.ok(prestamoService.findRecursosDisponibles(tipo));
+    }
+
+    @PostMapping("/mis-prestamos")
+    @PreAuthorize("isAuthenticated()")
+    @Operation(summary = "Crear préstamo self-service", description = "El operario se auto-asigna un recurso disponible. El trabajador se resuelve del JWT.")
+    public ResponseEntity<PrestamoDTO> crearMiPrestamo(
+            @Valid @RequestBody CreateMiPrestamoRequest request,
+            Authentication authentication) {
+        PrestamoDTO created = prestamoService.crearMiPrestamo(authentication.getName(), request);
+        return ResponseEntity.status(HttpStatus.CREATED).body(created);
+    }
+
+    @PostMapping("/{id}/mis-devoluciones")
+    @PreAuthorize("isAuthenticated()")
+    @Operation(summary = "Devolver mi préstamo", description = "Cierra un préstamo activo del trabajador autenticado y libera el recurso.")
+    public ResponseEntity<PrestamoDTO> miDevolucion(
+            @PathVariable Long id,
+            @RequestBody(required = false) DevolucionRequest request,
+            Authentication authentication) {
+        String obs = request != null ? request.observaciones() : null;
+        return ResponseEntity.ok(prestamoService.miDevolucion(authentication.getName(), id, obs));
     }
 
     @PostMapping

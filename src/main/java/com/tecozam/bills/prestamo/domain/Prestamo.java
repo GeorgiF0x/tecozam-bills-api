@@ -78,6 +78,11 @@ public class Prestamo {
     @Column(name = "observaciones", length = 500)
     private String observaciones;
 
+    /** True si el préstamo lo creó el propio operario desde la PWA (self-service). */
+    @Column(name = "creado_por_campo", nullable = false)
+    @Builder.Default
+    private boolean creadoPorCampo = false;
+
     @Column(name = "alerta_3d_enviada", nullable = false)
     @Builder.Default
     private boolean alerta3dEnviada = false;

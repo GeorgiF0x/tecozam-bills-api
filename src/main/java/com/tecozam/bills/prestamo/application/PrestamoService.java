@@ -7,9 +7,11 @@ import com.tecozam.bills.auth.infrastructure.persistence.UsuarioRepository;
 import com.tecozam.bills.centrocoste.domain.CentroCoste;
 import com.tecozam.bills.centrocoste.infrastructure.persistence.CentroCosteRepository;
 import com.tecozam.bills.prestamo.domain.Prestamo;
+import com.tecozam.bills.prestamo.dto.CreateMiPrestamoRequest;
 import com.tecozam.bills.prestamo.dto.CreatePrestamoRequest;
 import com.tecozam.bills.prestamo.dto.DevolucionRequest;
 import com.tecozam.bills.prestamo.dto.PrestamoDTO;
+import com.tecozam.bills.prestamo.dto.RecursoDisponibleDTO;
 import com.tecozam.bills.prestamo.infrastructure.persistence.PrestamoRepository;
 import com.tecozam.bills.shared.domain.enums.EstadoRecurso;
 import com.tecozam.bills.shared.infrastructure.exception.BusinessException;
@@ -79,6 +81,130 @@ public class PrestamoService {
         }
         Usuario legacy = usuarioRepository.findByUsername(username).orElse(null);
         return legacy != null ? legacy.getTrabajador() : null;
+    }
+
+    @Transactional(readOnly = true)
+    public List<RecursoDisponibleDTO> findRecursosDisponibles(String tipo) {
+        return switch (tipo.toUpperCase()) {
+            case "TARJETA" -> tarjetaRepository.findByEstadoAndActivaTrue(EstadoRecurso.DISPONIBLE).stream()
+                    .map(t -> new RecursoDisponibleDTO(
+                            t.getId(),
+                            t.getAlias() != null ? t.getAlias() : "Tarjeta " + t.getNumeroTarjeta(),
+                            t.getProveedor() != null ? t.getProveedor().getNombre() : null))
+                    .toList();
+            case "VIAT" -> viatRepository.findByEstadoAndActivoTrue(EstadoRecurso.DISPONIBLE).stream()
+                    .map(v -> new RecursoDisponibleDTO(
+                            v.getId(),
+                            "Viat " + v.getCodigo(),
+                            v.getDescripcion()))
+                    .toList();
+            case "VEHICULO" -> vehiculoRepository.findByEstadoAndActivoTrue(EstadoRecurso.DISPONIBLE).stream()
+                    .map(v -> new RecursoDisponibleDTO(
+                            v.getId(),
+                            v.getMatricula(),
+                            v.getMarca() + " " + v.getModelo()))
+                    .toList();
+            default -> throw new BusinessException("tipoRecurso no válido: " + tipo);
+        };
+    }
+
+    public PrestamoDTO crearMiPrestamo(String username, CreateMiPrestamoRequest req) {
+        Trabajador trabajador = resolveTrabajador(username);
+        if (trabajador == null) {
+            throw new BusinessException("El usuario no tiene un trabajador asociado", "usuario");
+        }
+
+        CentroCoste centroCoste = centroCosteRepository.findById(req.centroCosteId())
+                .orElseThrow(() -> new ResourceNotFoundException("CentroCoste", req.centroCosteId()));
+
+        Prestamo.PrestamoBuilder builder = Prestamo.builder()
+                .tipoRecurso(req.tipoRecurso())
+                .trabajador(trabajador)
+                .centroCoste(centroCoste)
+                .estado("ACTIVO")
+                .fechaInicio(req.fechaInicio())
+                .fechaFinPrevista(req.fechaFinPrevista())
+                .observaciones(req.observaciones())
+                .creadoPorCampo(true);
+
+        switch (req.tipoRecurso().toUpperCase()) {
+            case "TARJETA" -> {
+                if (req.tarjetaId() == null) {
+                    throw new BusinessException("tarjetaId es obligatorio para tipo TARJETA");
+                }
+                Tarjeta tarjeta = tarjetaRepository.findById(req.tarjetaId())
+                        .orElseThrow(() -> new ResourceNotFoundException("Tarjeta", req.tarjetaId()));
+                if (tarjeta.getEstado() != EstadoRecurso.DISPONIBLE) {
+                    throw new BusinessException("La tarjeta no está disponible. Estado actual: " + tarjeta.getEstado());
+                }
+                builder.tarjeta(tarjeta);
+                tarjeta.setEstado(EstadoRecurso.PRESTADO);
+                tarjetaRepository.save(tarjeta);
+            }
+            case "VIAT" -> {
+                if (req.viatId() == null) {
+                    throw new BusinessException("viatId es obligatorio para tipo VIAT");
+                }
+                Viat viat = viatRepository.findById(req.viatId())
+                        .orElseThrow(() -> new ResourceNotFoundException("Viat", req.viatId()));
+                if (viat.getEstado() != EstadoRecurso.DISPONIBLE) {
+                    throw new BusinessException("El viat no está disponible. Estado actual: " + viat.getEstado());
+                }
+                builder.viat(viat);
+                viat.setEstado(EstadoRecurso.PRESTADO);
+                viatRepository.save(viat);
+            }
+            case "VEHICULO" -> {
+                if (req.vehiculoId() == null) {
+                    throw new BusinessException("vehiculoId es obligatorio para tipo VEHICULO");
+                }
+                Vehiculo vehiculo = vehiculoRepository.findById(req.vehiculoId())
+                        .orElseThrow(() -> new ResourceNotFoundException("Vehiculo", req.vehiculoId()));
+                if (vehiculo.getEstado() != EstadoRecurso.DISPONIBLE) {
+                    throw new BusinessException("El vehículo no está disponible. Estado actual: " + vehiculo.getEstado());
+                }
+                builder.vehiculo(vehiculo);
+                vehiculo.setEstado(EstadoRecurso.PRESTADO);
+                vehiculoRepository.save(vehiculo);
+            }
+            default -> throw new BusinessException("tipoRecurso no válido: " + req.tipoRecurso());
+        }
+
+        Prestamo prestamo = prestamoRepository.save(builder.build());
+        log.info("Préstamo self-service creado: id={} tipo={} trabajador={} username={}",
+                prestamo.getId(), prestamo.getTipoRecurso(), trabajador.getId(), username);
+        return toDTO(prestamo);
+    }
+
+    public PrestamoDTO miDevolucion(String username, Long prestamoId, String observaciones) {
+        Trabajador trabajador = resolveTrabajador(username);
+        if (trabajador == null) {
+            throw new BusinessException("El usuario no tiene un trabajador asociado", "usuario");
+        }
+
+        Prestamo prestamo = prestamoRepository.findById(prestamoId)
+                .orElseThrow(() -> new ResourceNotFoundException("Prestamo", prestamoId));
+
+        if (prestamo.getTrabajador() == null || !prestamo.getTrabajador().getId().equals(trabajador.getId())) {
+            throw new BusinessException("Solo puedes devolver tus propios préstamos", "prestamoId");
+        }
+
+        if (!"ACTIVO".equals(prestamo.getEstado()) && !"VENCIDO".equals(prestamo.getEstado())) {
+            throw new BusinessException("Solo se pueden devolver préstamos en estado ACTIVO o VENCIDO. Estado actual: " + prestamo.getEstado());
+        }
+
+        prestamo.setEstado("DEVUELTO");
+        prestamo.setFechaDevolucionReal(LocalDate.now());
+
+        if (observaciones != null && !observaciones.isBlank()) {
+            String obsActual = prestamo.getObservaciones();
+            prestamo.setObservaciones(obsActual != null ? obsActual + " | " + observaciones : observaciones);
+        }
+
+        liberarRecurso(prestamo);
+        Prestamo saved = prestamoRepository.save(prestamo);
+        log.info("Devolución self-service: prestamoId={} username={}", prestamoId, username);
+        return toDTO(saved);
     }
 
     @Transactional(readOnly = true)
@@ -237,6 +363,7 @@ public class PrestamoService {
                 p.getFechaFinPrevista(),
                 p.getFechaDevolucionReal(),
                 p.getObservaciones(),
+                p.isCreadoPorCampo(),
                 p.getCreadoEn()
         );
     }
