@@ -292,6 +292,39 @@ public class TicketService {
      * @param numRecibo    número de recibo detectado por OCR (puede ser null)
      * @return TicketDTO del ticket creado
      */
+    /**
+     * Valida PIN y asignación activa de tarjeta SIN crear ticket.
+     * Se usa antes del OCR preview para evitar gastar OpenAI si el PIN es incorrecto.
+     */
+    @Transactional(readOnly = true)
+    public void validarPinYAsignacion(String username, Long tarjetaId, String pin) {
+        // Resolver trabajador
+        Trabajador trabajador = usuarioCampoRepository.findByUsername(username)
+                .map(u -> u.getTrabajador())
+                .orElseGet(() -> usuarioRepository.findByUsername(username)
+                        .map(Usuario::getTrabajador)
+                        .orElse(null));
+        if (trabajador == null) {
+            throw new BusinessException("El usuario no tiene un trabajador asociado", "usuario");
+        }
+
+        Tarjeta tarjeta = tarjetaRepository.findById(tarjetaId)
+                .orElseThrow(() -> new ResourceNotFoundException("Tarjeta", tarjetaId));
+
+        tarjetaAsignacionRepository
+                .findByTarjetaIdAndTrabajadorIdAndFechaHastaIsNull(tarjetaId, trabajador.getId())
+                .orElseThrow(() -> new BusinessException(
+                        "No tienes asignación activa para esta tarjeta", "tarjetaId"));
+
+        if (tarjeta.getPinEncrypted() == null) {
+            throw new BusinessException("La tarjeta no tiene PIN configurado", "pin");
+        }
+        if (!tarjeta.getPinEncrypted().equals(pin)) {
+            log.warn("[OCR-PREVIEW] PIN incorrecto para tarjeta id={} usuario={}", tarjetaId, username);
+            throw new BusinessException("PIN incorrecto", "pin");
+        }
+    }
+
     public TicketDTO createOcrValidado(
             String username,
             CreateTicketOcrValidadoRequest request,

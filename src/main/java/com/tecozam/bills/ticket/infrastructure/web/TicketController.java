@@ -238,9 +238,13 @@ public class TicketController {
 
     @PostMapping("/ocr-preview")
     @PreAuthorize("isAuthenticated()")
-    @Operation(summary = "Preview OCR de ticket",
-            description = "Extrae datos del ticket vía OpenAI Vision SIN crear ticket ni verificar PIN. Para mostrar al usuario los datos antes de confirmar el envío.")
-    public ResponseEntity<Map<String, Object>> ocrPreview(@RequestParam("imagen") MultipartFile imagen) {
+    @Operation(summary = "Preview OCR de ticket con autenticación PIN",
+            description = "Valida PIN y asignación de tarjeta. Si OK, extrae datos del ticket vía OpenAI Vision SIN crear ticket. Para mostrar al usuario los datos antes de la edición final.")
+    public ResponseEntity<Map<String, Object>> ocrPreview(
+            @RequestParam("imagen") MultipartFile imagen,
+            @RequestParam("tarjetaId") Long tarjetaId,
+            @RequestParam("pin") String pin,
+            Authentication authentication) {
         try {
             if (imagen == null || imagen.isEmpty()) {
                 return ResponseEntity.badRequest().body(Map.of("error", "La imagen es obligatoria"));
@@ -248,6 +252,17 @@ public class TicketController {
             if (openaiApiKey == null || openaiApiKey.isBlank()) {
                 return ResponseEntity.internalServerError()
                         .body(Map.of("error", "OCR no configurado: falta OPENAI_API_KEY"));
+            }
+
+            // ── Validar PIN + asignación ANTES de hacer OCR ──────────────
+            try {
+                ticketService.validarPinYAsignacion(
+                        authentication.getName(), tarjetaId, pin);
+            } catch (com.tecozam.bills.shared.infrastructure.exception.BusinessException be) {
+                if ("PIN incorrecto".equals(be.getMessage())) {
+                    return ResponseEntity.status(401).body(Map.of("error", "PIN incorrecto"));
+                }
+                return ResponseEntity.badRequest().body(Map.of("error", be.getMessage()));
             }
 
             OcrExtraction extracted = performOcr(imagen);
