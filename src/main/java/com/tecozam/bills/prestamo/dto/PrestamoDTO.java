@@ -1,6 +1,5 @@
 package com.tecozam.bills.prestamo.dto;
 
-import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 public record PrestamoDTO(
@@ -16,9 +15,9 @@ public record PrestamoDTO(
         String centroCosteNombre,
         String tipoPrestamo,
         String estado,
-        LocalDate fechaInicio,
-        LocalDate fechaFinPrevista,
-        LocalDate fechaDevolucionReal,
+        LocalDateTime fechaInicio,
+        LocalDateTime fechaFinPrevista,
+        LocalDateTime fechaDevolucionReal,
         String observaciones,
         boolean creadoPorCampo,
         LocalDateTime creadoEn

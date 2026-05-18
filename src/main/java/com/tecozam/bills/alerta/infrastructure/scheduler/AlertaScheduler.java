@@ -35,7 +35,9 @@ public class AlertaScheduler {
         for (Prestamo p : activos) {
             if (p.getFechaFinPrevista() == null) continue;
 
-            long dias = ChronoUnit.DAYS.between(hoy, p.getFechaFinPrevista());
+            // Las alertas siguen siendo por día: comparamos solo la parte de fecha
+            // del LocalDateTime con la fecha de hoy.
+            long dias = ChronoUnit.DAYS.between(hoy, p.getFechaFinPrevista().toLocalDate());
 
             if (dias == 3) crearAlertaSiNoExiste(p, "TRES_DIAS_ANTES", hoy);
             if (dias == 1) crearAlertaSiNoExiste(p, "UN_DIA_ANTES", hoy);
@@ -59,7 +61,7 @@ public class AlertaScheduler {
             alerta.setPrestamo(p);
             alerta.setTipoAlerta(tipo);
             alerta.setFechaAlerta(fecha);
-            alerta.setMensaje("Préstamo " + p.getTipoRecurso() + " vence " + p.getFechaFinPrevista());
+            alerta.setMensaje("Préstamo " + p.getTipoRecurso() + " vence " + p.getFechaFinPrevista().toLocalDate());
             alerta.setLeida(false);
             alerta.setEmailEnviado(false);
             alerta.setCreadoEn(LocalDateTime.now());

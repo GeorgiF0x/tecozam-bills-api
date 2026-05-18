@@ -21,7 +21,6 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 @Entity
@@ -67,13 +66,13 @@ public class Prestamo {
     private String estado = "ACTIVO";
 
     @Column(name = "fecha_inicio", nullable = false)
-    private LocalDate fechaInicio;
+    private LocalDateTime fechaInicio;
 
     @Column(name = "fecha_fin_prevista")
-    private LocalDate fechaFinPrevista;
+    private LocalDateTime fechaFinPrevista;
 
     @Column(name = "fecha_devolucion_real")
-    private LocalDate fechaDevolucionReal;
+    private LocalDateTime fechaDevolucionReal;
 
     @Column(name = "observaciones", length = 500)
     private String observaciones;

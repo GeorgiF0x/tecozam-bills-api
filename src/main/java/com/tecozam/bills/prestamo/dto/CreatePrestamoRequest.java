@@ -3,7 +3,7 @@ package com.tecozam.bills.prestamo.dto;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 
-import java.time.LocalDate;
+import java.time.LocalDateTime;
 
 public record CreatePrestamoRequest(
         @NotBlank String tipoRecurso,
@@ -13,7 +13,7 @@ public record CreatePrestamoRequest(
         @NotNull Long trabajadorId,
         @NotNull Long centroCosteId,
         @NotBlank String tipoPrestamo,
-        @NotNull LocalDate fechaInicio,
-        LocalDate fechaFinPrevista,
+        @NotNull LocalDateTime fechaInicio,
+        LocalDateTime fechaFinPrevista,
         String observaciones
 ) {}

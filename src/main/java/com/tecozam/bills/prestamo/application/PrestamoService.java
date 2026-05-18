@@ -29,7 +29,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 
 @Service
@@ -221,7 +221,7 @@ public class PrestamoService {
         }
 
         prestamo.setEstado("DEVUELTO");
-        prestamo.setFechaDevolucionReal(LocalDate.now());
+        prestamo.setFechaDevolucionReal(LocalDateTime.now());
 
         if (observaciones != null && !observaciones.isBlank()) {
             String obsActual = prestamo.getObservaciones();
@@ -315,7 +315,7 @@ public class PrestamoService {
         }
 
         prestamo.setEstado("DEVUELTO");
-        prestamo.setFechaDevolucionReal(LocalDate.now());
+        prestamo.setFechaDevolucionReal(LocalDateTime.now());
 
         if (req != null && req.observaciones() != null && !req.observaciones().isBlank()) {
             String obsActual = prestamo.getObservaciones();
