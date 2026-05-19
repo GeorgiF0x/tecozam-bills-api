@@ -1,6 +1,7 @@
 package com.tecozam.bills.admin.application;
 
 import com.tecozam.bills.admin.dto.ImportRepsolReportDTO;
+import com.tecozam.bills.admin.dto.ImportTarjetasReportDTO;
 import com.tecozam.bills.centrocoste.domain.CentroCoste;
 import com.tecozam.bills.centrocoste.infrastructure.persistence.CentroCosteRepository;
 import com.tecozam.bills.factura.domain.Factura;
@@ -109,10 +110,7 @@ public class RepsolImportService {
     public ImportRepsolReportDTO importExcel(InputStream inputStream) {
         long start = System.currentTimeMillis();
         List<String> errores = new ArrayList<>();
-
-        int centrosCreados = 0, centrosExistentes = 0;
-        int trabajadoresCreados = 0, trabajadoresExistentes = 0;
-        int tarjetasCreadas = 0, tarjetasExistentes = 0;
+        TarjetasImportCounters counters = new TarjetasImportCounters();
         int facturasCreadas = 0;
         int operacionesCreadas = 0;
 
@@ -125,87 +123,9 @@ public class RepsolImportService {
                 throw new BusinessException("No se encontró la hoja '" + SHEET_DATOS_MATRICULA + "'");
             }
 
-            // Caché para evitar consultas repetidas
             Map<String, CentroCoste> centrosCache = new HashMap<>();
             Map<String, Trabajador> trabajadoresCache = new HashMap<>();
-
-            int firstRow = datos.getFirstRowNum() + 1; // saltar cabecera
-            for (int i = firstRow; i <= datos.getLastRowNum(); i++) {
-                Row row = datos.getRow(i);
-                if (row == null) continue;
-
-                String numeroTarjeta = readString(row, COL_DM_NUMERO_TARJETA);
-                if (numeroTarjeta == null || numeroTarjeta.isBlank()) continue;
-
-                try {
-                    String matricula = readString(row, COL_DM_MATRICULA);
-                    String nombreCompleto = readString(row, COL_DM_NOMBRE);
-                    String centroRaw = readString(row, COL_DM_CENTRO_COSTE);
-
-                    // Centro de coste
-                    if (centroRaw != null && !centroRaw.isBlank()) {
-                        String codigo = centroRaw.trim();
-                        if (!centrosCache.containsKey(codigo)) {
-                            Optional<CentroCoste> existente = centroCosteRepository.findByCodigo(codigo);
-                            if (existente.isPresent()) {
-                                centrosCache.put(codigo, existente.get());
-                                centrosExistentes++;
-                            } else {
-                                CentroCoste cc = CentroCoste.builder()
-                                        .codigo(codigo)
-                                        .nombre(codigo)
-                                        .activo(true)
-                                        .build();
-                                centrosCache.put(codigo, centroCosteRepository.save(cc));
-                                centrosCreados++;
-                            }
-                        }
-                    }
-
-                    // Trabajador
-                    if (nombreCompleto != null && !nombreCompleto.isBlank()) {
-                        String email = slugifyEmail(nombreCompleto);
-                        if (!trabajadoresCache.containsKey(email)) {
-                            Optional<Trabajador> existente = trabajadorRepository.findByEmail(email);
-                            if (existente.isPresent()) {
-                                trabajadoresCache.put(email, existente.get());
-                                trabajadoresExistentes++;
-                            } else {
-                                String[] partes = splitNombre(nombreCompleto);
-                                Trabajador t = Trabajador.builder()
-                                        .nombre(partes[0])
-                                        .apellidos(partes[1])
-                                        .email(email)
-                                        .activo(true)
-                                        .build();
-                                trabajadoresCache.put(email, trabajadorRepository.save(t));
-                                trabajadoresCreados++;
-                            }
-                        }
-                    }
-
-                    // Tarjeta
-                    Optional<Tarjeta> tarjetaExistente = tarjetaRepository.findByNumeroTarjeta(numeroTarjeta.trim());
-                    if (tarjetaExistente.isPresent()) {
-                        tarjetasExistentes++;
-                    } else {
-                        Tarjeta t = Tarjeta.builder()
-                                .numeroTarjeta(numeroTarjeta.trim())
-                                .alias(matricula)
-                                .proveedor(repsol)
-                                .estado(EstadoRecurso.DISPONIBLE)
-                                .activa(true)
-                                .pinEncrypted("1234")
-                                .build();
-                        tarjetaRepository.save(t);
-                        tarjetasCreadas++;
-                    }
-                } catch (Exception ex) {
-                    String msg = "[DATOS MATRICULA fila " + (i + 1) + "] " + ex.getMessage();
-                    log.warn(msg, ex);
-                    errores.add(msg);
-                }
-            }
+            procesarHojaTarjetas(datos, repsol, centrosCache, trabajadoresCache, counters, errores, SHEET_DATOS_MATRICULA);
 
             // --- 2) Procesar hojas mensuales ---
             // Caché: numFactura -> Factura (creada en esta importación)
@@ -289,7 +209,7 @@ public class RepsolImportService {
                                         .pinEncrypted("1234")
                                         .build();
                                 tarjeta = tarjetaRepository.save(tarjeta);
-                                tarjetasCreadas++;
+                                counters.tarjetasCreadas++;
                             }
                             tarjetaCache.put(numTarjeta, tarjeta);
                         }
@@ -347,17 +267,155 @@ public class RepsolImportService {
 
         long duracionMs = System.currentTimeMillis() - start;
         return new ImportRepsolReportDTO(
-                centrosCreados,
-                centrosExistentes,
-                trabajadoresCreados,
-                trabajadoresExistentes,
-                tarjetasCreadas,
-                tarjetasExistentes,
+                counters.centrosCreados,
+                counters.centrosExistentes,
+                counters.trabajadoresCreados,
+                counters.trabajadoresExistentes,
+                counters.tarjetasCreadas,
+                counters.tarjetasExistentes,
                 facturasCreadas,
                 operacionesCreadas,
                 errores,
                 duracionMs
         );
+    }
+
+    /**
+     * Importa el listado plano de tarjetas (LISTADO TARJETAS REPSOL.xlsx).
+     * Estructura idéntica a la hoja DATOS MATRICULA del Excel maestro,
+     * pero como Excel independiente con una sola hoja.
+     */
+    @Transactional
+    public ImportTarjetasReportDTO importTarjetasListado(InputStream inputStream) {
+        long start = System.currentTimeMillis();
+        List<String> errores = new ArrayList<>();
+        TarjetasImportCounters counters = new TarjetasImportCounters();
+
+        try (Workbook workbook = new XSSFWorkbook(inputStream)) {
+            if (workbook.getNumberOfSheets() == 0) {
+                throw new BusinessException("El Excel no contiene ninguna hoja");
+            }
+            Sheet sheet = workbook.getSheetAt(0);
+            String sheetLabel = sheet.getSheetName();
+
+            Proveedor repsol = resolverProveedorRepsol();
+            Map<String, CentroCoste> centrosCache = new HashMap<>();
+            Map<String, Trabajador> trabajadoresCache = new HashMap<>();
+            procesarHojaTarjetas(sheet, repsol, centrosCache, trabajadoresCache, counters, errores, sheetLabel);
+        } catch (IOException e) {
+            throw new BusinessException("Error leyendo el Excel: " + e.getMessage(), e);
+        }
+
+        long duracionMs = System.currentTimeMillis() - start;
+        return new ImportTarjetasReportDTO(
+                counters.centrosCreados,
+                counters.centrosExistentes,
+                counters.trabajadoresCreados,
+                counters.trabajadoresExistentes,
+                counters.tarjetasCreadas,
+                counters.tarjetasExistentes,
+                errores,
+                duracionMs
+        );
+    }
+
+    /**
+     * Procesa una hoja con estructura de listado de tarjetas Repsol:
+     * NUMERO_TARJETA | MATRICULA (alias) | NOMBRE | CENTRO_COSTE | DES_PRODU.
+     * Crea centros, trabajadores y tarjetas con skip silencioso si ya existen.
+     */
+    private void procesarHojaTarjetas(
+            Sheet sheet,
+            Proveedor repsol,
+            Map<String, CentroCoste> centrosCache,
+            Map<String, Trabajador> trabajadoresCache,
+            TarjetasImportCounters counters,
+            List<String> errores,
+            String sheetLabel
+    ) {
+        int firstRow = sheet.getFirstRowNum() + 1; // saltar cabecera
+        for (int i = firstRow; i <= sheet.getLastRowNum(); i++) {
+            Row row = sheet.getRow(i);
+            if (row == null) continue;
+
+            String numeroTarjeta = readString(row, COL_DM_NUMERO_TARJETA);
+            if (numeroTarjeta == null || numeroTarjeta.isBlank()) continue;
+
+            try {
+                String matricula = readString(row, COL_DM_MATRICULA);
+                String nombreCompleto = readString(row, COL_DM_NOMBRE);
+                String centroRaw = readString(row, COL_DM_CENTRO_COSTE);
+
+                if (centroRaw != null && !centroRaw.isBlank()) {
+                    String codigo = centroRaw.trim();
+                    if (!centrosCache.containsKey(codigo)) {
+                        Optional<CentroCoste> existente = centroCosteRepository.findByCodigo(codigo);
+                        if (existente.isPresent()) {
+                            centrosCache.put(codigo, existente.get());
+                            counters.centrosExistentes++;
+                        } else {
+                            CentroCoste cc = CentroCoste.builder()
+                                    .codigo(codigo)
+                                    .nombre(codigo)
+                                    .activo(true)
+                                    .build();
+                            centrosCache.put(codigo, centroCosteRepository.save(cc));
+                            counters.centrosCreados++;
+                        }
+                    }
+                }
+
+                if (nombreCompleto != null && !nombreCompleto.isBlank()) {
+                    String email = slugifyEmail(nombreCompleto);
+                    if (!trabajadoresCache.containsKey(email)) {
+                        Optional<Trabajador> existente = trabajadorRepository.findByEmail(email);
+                        if (existente.isPresent()) {
+                            trabajadoresCache.put(email, existente.get());
+                            counters.trabajadoresExistentes++;
+                        } else {
+                            String[] partes = splitNombre(nombreCompleto);
+                            Trabajador t = Trabajador.builder()
+                                    .nombre(partes[0])
+                                    .apellidos(partes[1])
+                                    .email(email)
+                                    .activo(true)
+                                    .build();
+                            trabajadoresCache.put(email, trabajadorRepository.save(t));
+                            counters.trabajadoresCreados++;
+                        }
+                    }
+                }
+
+                Optional<Tarjeta> tarjetaExistente = tarjetaRepository.findByNumeroTarjeta(numeroTarjeta.trim());
+                if (tarjetaExistente.isPresent()) {
+                    counters.tarjetasExistentes++;
+                } else {
+                    Tarjeta t = Tarjeta.builder()
+                            .numeroTarjeta(numeroTarjeta.trim())
+                            .alias(matricula)
+                            .proveedor(repsol)
+                            .estado(EstadoRecurso.DISPONIBLE)
+                            .activa(true)
+                            .pinEncrypted("1234")
+                            .build();
+                    tarjetaRepository.save(t);
+                    counters.tarjetasCreadas++;
+                }
+            } catch (Exception ex) {
+                String msg = "[" + sheetLabel + " fila " + (i + 1) + "] " + ex.getMessage();
+                log.warn(msg, ex);
+                errores.add(msg);
+            }
+        }
+    }
+
+    private static class TarjetasImportCounters {
+        int centrosCreados;
+        int centrosExistentes;
+        int trabajadoresCreados;
+        int trabajadoresExistentes;
+        int tarjetasCreadas;
+        int tarjetasExistentes;
     }
 
     // ---------- helpers ----------
