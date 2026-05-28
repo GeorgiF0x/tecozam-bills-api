@@ -85,6 +85,7 @@ public class AuthOficinaService {
                 .password(passwordEncoder.encode(request.password()))
                 .email(request.email())
                 .nombreCompleto(request.nombre())
+                .dni(request.dni())
                 .rol(Rol.GESTOR)
                 .activo(true)
                 .estadoRegistro(EstadoRegistro.PENDIENTE)

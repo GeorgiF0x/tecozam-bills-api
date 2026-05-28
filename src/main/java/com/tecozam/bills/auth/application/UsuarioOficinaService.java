@@ -50,6 +50,9 @@ public class UsuarioOficinaService {
                     .email(usuario.getEmail())
                     .activo(true)
                     .build();
+            if (usuario.getDni() != null && !usuario.getDni().isBlank()) {
+                trabajador.setDniNie(usuario.getDni());
+            }
             trabajador = trabajadorRepository.save(trabajador);
             usuario.setTrabajador(trabajador);
             log.info("Trabajador maestro creado al activar usuario oficina {}: id={}",

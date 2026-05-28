@@ -15,7 +15,10 @@ public record RegistroOficinaRequest(
 
         String email,
 
-        /** Campo informativo — no se almacena en la entidad UsuarioOficina directamente. */
-        String nombre
+        /** Nombre completo (nombre + apellidos). Se separa al crear el Trabajador en la aprobación. */
+        String nombre,
+
+        /** DNI / NIE / documento extranjero. Opcional. */
+        String dni
 ) {
 }

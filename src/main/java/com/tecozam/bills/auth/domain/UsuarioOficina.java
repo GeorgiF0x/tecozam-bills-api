@@ -48,6 +48,10 @@ public class UsuarioOficina {
     @Column(name = "nombre_completo", length = 200)
     private String nombreCompleto;
 
+    /** DNI / NIE / documento provisional, hasta crear el Trabajador. */
+    @Column(name = "dni", length = 20)
+    private String dni;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "trabajador_id")
     private Trabajador trabajador;
