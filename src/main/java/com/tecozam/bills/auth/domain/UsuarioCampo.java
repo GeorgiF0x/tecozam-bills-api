@@ -51,6 +51,10 @@ public class UsuarioCampo {
     @Column(length = 100)
     private String apellidos;
 
+    /** DNI provisional hasta que se cree el Trabajador en la aprobación. */
+    @Column(name = "dni", length = 20)
+    private String dni;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "trabajador_id")
     private Trabajador trabajador;

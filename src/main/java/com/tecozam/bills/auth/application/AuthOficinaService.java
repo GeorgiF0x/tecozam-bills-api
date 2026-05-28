@@ -84,6 +84,7 @@ public class AuthOficinaService {
                 .username(request.username())
                 .password(passwordEncoder.encode(request.password()))
                 .email(request.email())
+                .nombreCompleto(request.nombre())
                 .rol(Rol.GESTOR)
                 .activo(true)
                 .estadoRegistro(EstadoRegistro.PENDIENTE)

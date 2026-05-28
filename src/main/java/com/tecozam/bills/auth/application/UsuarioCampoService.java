@@ -5,6 +5,8 @@ import com.tecozam.bills.auth.dto.UsuarioCampoDTO;
 import com.tecozam.bills.auth.infrastructure.persistence.UsuarioCampoRepository;
 import com.tecozam.bills.shared.domain.enums.EstadoRegistro;
 import com.tecozam.bills.shared.infrastructure.exception.ResourceNotFoundException;
+import com.tecozam.bills.trabajador.domain.Trabajador;
+import com.tecozam.bills.trabajador.infrastructure.persistence.TrabajadorRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -19,6 +21,7 @@ import java.util.List;
 public class UsuarioCampoService {
 
     private final UsuarioCampoRepository usuarioCampoRepository;
+    private final TrabajadorRepository trabajadorRepository;
 
     @Transactional(readOnly = true)
     public List<UsuarioCampoDTO> findAll() {
@@ -36,6 +39,24 @@ public class UsuarioCampoService {
 
     public UsuarioCampoDTO activar(Long id) {
         UsuarioCampo usuario = findOrThrow(id);
+
+        // Si todavía no tiene Trabajador asociado, lo creamos ahora con los
+        // datos provisionales del propio UsuarioCampo (introducidos en signup).
+        if (usuario.getTrabajador() == null) {
+            Trabajador trabajador = Trabajador.builder()
+                    .nombre(usuario.getNombre())
+                    .apellidos(usuario.getApellidos())
+                    .activo(true)
+                    .build();
+            if (usuario.getDni() != null && !usuario.getDni().isBlank()) {
+                trabajador.setDniNie(usuario.getDni());
+            }
+            trabajador = trabajadorRepository.save(trabajador);
+            usuario.setTrabajador(trabajador);
+            log.info("Trabajador maestro creado al activar usuario campo {}: id={}",
+                    usuario.getUsername(), trabajador.getId());
+        }
+
         usuario.setEstadoRegistro(EstadoRegistro.ACTIVO);
         usuario.setActivo(true);
         usuarioCampoRepository.save(usuario);

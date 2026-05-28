@@ -84,28 +84,16 @@ public class AuthCampoService {
             throw new DuplicateResourceException("UsuarioCampo", "username", request.username());
         }
 
-        // Crear el Trabajador asociado
-        Trabajador trabajador = Trabajador.builder()
-                .nombre(request.nombre())
-                .apellidos(request.apellidos())
-                .activo(true)
-                .build();
-
-        if (request.dni() != null && !request.dni().isBlank()) {
-            trabajador.setDniNie(request.dni());
-        }
-
-        trabajador = trabajadorRepository.save(trabajador);
-        log.info("Trabajador creado en registro campo: {} {} (id={})",
-                request.nombre(), request.apellidos(), trabajador.getId());
-
+        // El Trabajador maestro NO se crea aquí — se crea al aprobar la cuenta
+        // (UsuarioCampoService.activar). Hasta entonces, los datos personales
+        // viven en columnas provisionales del propio UsuarioCampo.
         UsuarioCampo nuevo = UsuarioCampo.builder()
                 .username(request.username())
                 .password(passwordEncoder.encode(request.password()))
                 .telefono(request.telefono())
                 .nombre(request.nombre())
                 .apellidos(request.apellidos())
-                .trabajador(trabajador)
+                .dni(request.dni())
                 .activo(true)
                 .estadoRegistro(EstadoRegistro.PENDIENTE)
                 .build();
