@@ -4,6 +4,8 @@ import com.tecozam.bills.auth.domain.UsuarioOficina;
 import com.tecozam.bills.auth.dto.UsuarioOficinaDTO;
 import com.tecozam.bills.auth.infrastructure.persistence.UsuarioOficinaRepository;
 import com.tecozam.bills.shared.domain.enums.EstadoRegistro;
+import com.tecozam.bills.shared.domain.enums.Rol;
+import com.tecozam.bills.shared.infrastructure.exception.BusinessException;
 import com.tecozam.bills.shared.infrastructure.exception.ResourceNotFoundException;
 import com.tecozam.bills.trabajador.domain.Trabajador;
 import com.tecozam.bills.trabajador.infrastructure.persistence.TrabajadorRepository;
@@ -89,6 +91,42 @@ public class UsuarioOficinaService {
         usuario.setActivo(false);
         usuarioOficinaRepository.save(usuario);
         log.info("Usuario oficina rechazado: {} (id={})", usuario.getUsername(), id);
+        return toDTO(usuario);
+    }
+
+    /**
+     * Cambia el rol de un usuario de oficina. Reglas:
+     *  - No se puede cambiar el rol del propio usuario que ejecuta la operación
+     *    (evita lockout accidental si se autobaja de ADMIN).
+     *  - No se puede degradar al último ADMIN activo del sistema.
+     *  - Solo aplica a usuarios ACTIVOS (no a pendientes/rechazados).
+     */
+    public UsuarioOficinaDTO cambiarRol(Long id, Rol nuevoRol, String usernameSolicitante) {
+        UsuarioOficina usuario = findOrThrow(id);
+
+        if (usuario.getUsername().equalsIgnoreCase(usernameSolicitante)) {
+            throw new BusinessException("No puedes cambiar tu propio rol");
+        }
+        if (usuario.getEstadoRegistro() != EstadoRegistro.ACTIVO || !usuario.isActivo()) {
+            throw new BusinessException(
+                    "Solo se puede cambiar el rol de usuarios activos");
+        }
+        if (usuario.getRol() == Rol.ADMIN && nuevoRol != Rol.ADMIN) {
+            long adminsActivos = usuarioOficinaRepository.countByRolAndActivoTrue(Rol.ADMIN);
+            if (adminsActivos <= 1) {
+                throw new BusinessException(
+                        "No se puede degradar al último administrador activo del sistema");
+            }
+        }
+        if (usuario.getRol() == nuevoRol) {
+            return toDTO(usuario);
+        }
+
+        Rol rolAnterior = usuario.getRol();
+        usuario.setRol(nuevoRol);
+        usuarioOficinaRepository.save(usuario);
+        log.info("Cambio de rol: usuario={} ({} → {}) por {}",
+                usuario.getUsername(), rolAnterior, nuevoRol, usernameSolicitante);
         return toDTO(usuario);
     }
 

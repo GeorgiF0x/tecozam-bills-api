@@ -1,15 +1,21 @@
 package com.tecozam.bills.auth.infrastructure.web;
 
 import com.tecozam.bills.auth.application.UsuarioOficinaService;
+import com.tecozam.bills.auth.dto.CambiarRolRequest;
 import com.tecozam.bills.auth.dto.UsuarioOficinaDTO;
+import com.tecozam.bills.shared.domain.enums.Rol;
+import com.tecozam.bills.shared.infrastructure.exception.BusinessException;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -52,5 +58,22 @@ public class UsuarioOficinaController {
     @Operation(summary = "Desactivar usuario de oficina")
     public ResponseEntity<UsuarioOficinaDTO> desactivar(@PathVariable Long id) {
         return ResponseEntity.ok(usuarioOficinaService.desactivar(id));
+    }
+
+    @PatchMapping("/{id}/rol")
+    @Operation(summary = "Cambiar rol de un usuario de oficina (ADMIN, GESTOR, CONSULTA)")
+    public ResponseEntity<UsuarioOficinaDTO> cambiarRol(
+            @PathVariable Long id,
+            @Valid @RequestBody CambiarRolRequest request,
+            Authentication authentication) {
+        Rol nuevoRol;
+        try {
+            nuevoRol = Rol.valueOf(request.rol().toUpperCase());
+        } catch (IllegalArgumentException ex) {
+            throw new BusinessException("Rol no válido: " + request.rol()
+                    + ". Valores admitidos: ADMIN, GESTOR, CONSULTA.");
+        }
+        return ResponseEntity.ok(usuarioOficinaService.cambiarRol(
+                id, nuevoRol, authentication.getName()));
     }
 }
