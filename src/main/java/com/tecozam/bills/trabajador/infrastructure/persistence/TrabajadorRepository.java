@@ -15,4 +15,9 @@ public interface TrabajadorRepository extends JpaRepository<Trabajador, Long> {
     Optional<Trabajador> findByEmail(String email);
 
     boolean existsByEmail(String email);
+
+    /** Buscar por nombre + apellidos (case-insensitive). Útil para detectar
+     *  duplicados en imports cuando el trabajador no trae email. */
+    Optional<Trabajador> findFirstByNombreIgnoreCaseAndApellidosIgnoreCase(
+            String nombre, String apellidos);
 }

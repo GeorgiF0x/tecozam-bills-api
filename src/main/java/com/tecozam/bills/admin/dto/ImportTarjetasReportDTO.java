@@ -9,6 +9,9 @@ public record ImportTarjetasReportDTO(
         int trabajadoresExistentes,
         int tarjetasCreadas,
         int tarjetasExistentes,
+        int viatsCreados,
+        int viatsExistentes,
+        int filasIgnoradas,
         List<String> errores,
         long duracionMs
 ) {
