@@ -2,15 +2,12 @@ package com.tecozam.bills.auth.infrastructure.web;
 
 import com.tecozam.bills.auth.application.AuthCampoService;
 import com.tecozam.bills.auth.dto.LoginRequest;
-import com.tecozam.bills.auth.dto.RegistroCampoRequest;
-import com.tecozam.bills.auth.dto.RegistroResponse;
 import com.tecozam.bills.auth.dto.TokenResponse;
 import com.tecozam.bills.auth.dto.UsuarioCampoDTO;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -33,13 +30,6 @@ public class AuthCampoController {
     @Operation(summary = "Login campo", description = "Autentica un usuario de campo y retorna tokens JWT")
     public ResponseEntity<TokenResponse> login(@Valid @RequestBody LoginRequest request) {
         return ResponseEntity.ok(authCampoService.login(request));
-    }
-
-    @PostMapping("/registro")
-    @Operation(summary = "Registro campo", description = "Registra un nuevo usuario de campo (queda PENDIENTE de activación)")
-    public ResponseEntity<RegistroResponse> registro(@Valid @RequestBody RegistroCampoRequest request) {
-        RegistroResponse response = authCampoService.registro(request);
-        return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
 
     @PostMapping("/refresh")

@@ -2,19 +2,14 @@ package com.tecozam.bills.auth.application;
 
 import com.tecozam.bills.auth.domain.UsuarioCampo;
 import com.tecozam.bills.auth.dto.LoginRequest;
-import com.tecozam.bills.auth.dto.RegistroCampoRequest;
-import com.tecozam.bills.auth.dto.RegistroResponse;
 import com.tecozam.bills.auth.dto.TokenResponse;
 import com.tecozam.bills.auth.dto.UsuarioCampoDTO;
 import com.tecozam.bills.auth.infrastructure.persistence.UsuarioCampoRepository;
 import com.tecozam.bills.shared.domain.enums.EstadoRegistro;
 import com.tecozam.bills.shared.infrastructure.config.JwtConfig;
 import com.tecozam.bills.shared.infrastructure.exception.BusinessException;
-import com.tecozam.bills.shared.infrastructure.exception.DuplicateResourceException;
 import com.tecozam.bills.shared.infrastructure.exception.ResourceNotFoundException;
 import com.tecozam.bills.shared.infrastructure.security.JwtTokenProvider;
-import com.tecozam.bills.trabajador.domain.Trabajador;
-import com.tecozam.bills.trabajador.infrastructure.persistence.TrabajadorRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
@@ -41,7 +36,6 @@ public class AuthCampoService {
     private static final String CAMPO_AUTHORITY = "ROLE_CAMPO";
 
     private final UsuarioCampoRepository usuarioCampoRepository;
-    private final TrabajadorRepository trabajadorRepository;
     private final JwtTokenProvider jwtTokenProvider;
     private final PasswordEncoder passwordEncoder;
     private final JwtConfig jwtConfig;
@@ -77,31 +71,6 @@ public class AuthCampoService {
                 CAMPO_AUTHORITY,
                 usuario.getUsername(),
                 jwtConfig.getExpiration());
-    }
-
-    public RegistroResponse registro(RegistroCampoRequest request) {
-        if (usuarioCampoRepository.existsByUsername(request.username())) {
-            throw new DuplicateResourceException("UsuarioCampo", "username", request.username());
-        }
-
-        // El Trabajador maestro NO se crea aquí — se crea al aprobar la cuenta
-        // (UsuarioCampoService.activar). Hasta entonces, los datos personales
-        // viven en columnas provisionales del propio UsuarioCampo.
-        UsuarioCampo nuevo = UsuarioCampo.builder()
-                .username(request.username())
-                .password(passwordEncoder.encode(request.password()))
-                .telefono(request.telefono())
-                .nombre(request.nombre())
-                .apellidos(request.apellidos())
-                .dni(request.dni())
-                .activo(true)
-                .estadoRegistro(EstadoRegistro.PENDIENTE)
-                .build();
-
-        usuarioCampoRepository.save(nuevo);
-        log.info("Registro de usuario campo: {} — estado: PENDIENTE", request.username());
-
-        return new RegistroResponse("PENDIENTE", "Tu cuenta está pendiente de activación");
     }
 
     public TokenResponse refresh(String refreshToken) {

@@ -1,16 +1,19 @@
 package com.tecozam.bills.auth.application;
 
 import com.tecozam.bills.auth.domain.UsuarioOficina;
+import com.tecozam.bills.auth.dto.CrearUsuarioOficinaRequest;
 import com.tecozam.bills.auth.dto.UsuarioOficinaDTO;
 import com.tecozam.bills.auth.infrastructure.persistence.UsuarioOficinaRepository;
 import com.tecozam.bills.shared.domain.enums.EstadoRegistro;
 import com.tecozam.bills.shared.domain.enums.Rol;
 import com.tecozam.bills.shared.infrastructure.exception.BusinessException;
+import com.tecozam.bills.shared.infrastructure.exception.DuplicateResourceException;
 import com.tecozam.bills.shared.infrastructure.exception.ResourceNotFoundException;
 import com.tecozam.bills.trabajador.domain.Trabajador;
 import com.tecozam.bills.trabajador.infrastructure.persistence.TrabajadorRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -24,6 +27,7 @@ public class UsuarioOficinaService {
 
     private final UsuarioOficinaRepository usuarioOficinaRepository;
     private final TrabajadorRepository trabajadorRepository;
+    private final PasswordEncoder passwordEncoder;
 
     @Transactional(readOnly = true)
     public List<UsuarioOficinaDTO> findAll() {
@@ -37,6 +41,49 @@ public class UsuarioOficinaService {
         return usuarioOficinaRepository.findByEstadoRegistro(EstadoRegistro.PENDIENTE).stream()
                 .map(this::toDTO)
                 .toList();
+    }
+
+    public UsuarioOficinaDTO crear(CrearUsuarioOficinaRequest req) {
+        if (usuarioOficinaRepository.existsByUsername(req.username())) {
+            throw new DuplicateResourceException("UsuarioOficina", "username", req.username());
+        }
+
+        Rol rolEnum;
+        try {
+            rolEnum = Rol.valueOf(req.rol().toUpperCase());
+        } catch (IllegalArgumentException ex) {
+            throw new BusinessException("Rol no válido: " + req.rol()
+                    + ". Valores admitidos: ADMIN, GESTOR, CONSULTA.");
+        }
+
+        String[] partes = splitNombre(req.nombre());
+        Trabajador trabajador = Trabajador.builder()
+                .nombre(partes[0])
+                .apellidos(partes[1])
+                .email(req.email() != null && !req.email().isBlank() ? req.email() : null)
+                .activo(true)
+                .build();
+        if (req.dni() != null && !req.dni().isBlank()) {
+            trabajador.setDniNie(req.dni());
+        }
+        trabajador = trabajadorRepository.save(trabajador);
+
+        UsuarioOficina nuevo = UsuarioOficina.builder()
+                .username(req.username())
+                .password(passwordEncoder.encode(req.password()))
+                .email(req.email() != null && !req.email().isBlank() ? req.email() : null)
+                .nombreCompleto(req.nombre())
+                .dni(req.dni())
+                .rol(rolEnum)
+                .activo(true)
+                .estadoRegistro(EstadoRegistro.ACTIVO)
+                .trabajador(trabajador)
+                .build();
+
+        usuarioOficinaRepository.save(nuevo);
+        log.info("Usuario oficina creado por admin: {} (rol: {}) — estado: ACTIVO",
+                req.username(), rolEnum);
+        return toDTO(nuevo);
     }
 
     public UsuarioOficinaDTO activar(Long id) {

@@ -2,16 +2,12 @@ package com.tecozam.bills.auth.application;
 
 import com.tecozam.bills.auth.domain.UsuarioOficina;
 import com.tecozam.bills.auth.dto.LoginRequest;
-import com.tecozam.bills.auth.dto.RegistroOficinaRequest;
-import com.tecozam.bills.auth.dto.RegistroResponse;
 import com.tecozam.bills.auth.dto.TokenResponse;
 import com.tecozam.bills.auth.dto.UsuarioOficinaDTO;
 import com.tecozam.bills.auth.infrastructure.persistence.UsuarioOficinaRepository;
 import com.tecozam.bills.shared.domain.enums.EstadoRegistro;
-import com.tecozam.bills.shared.domain.enums.Rol;
 import com.tecozam.bills.shared.infrastructure.config.JwtConfig;
 import com.tecozam.bills.shared.infrastructure.exception.BusinessException;
-import com.tecozam.bills.shared.infrastructure.exception.DuplicateResourceException;
 import com.tecozam.bills.shared.infrastructure.exception.ResourceNotFoundException;
 import com.tecozam.bills.shared.infrastructure.security.JwtTokenProvider;
 import lombok.RequiredArgsConstructor;
@@ -73,28 +69,6 @@ public class AuthOficinaService {
                 usuario.getRol().name(),
                 usuario.getUsername(),
                 jwtConfig.getExpiration());
-    }
-
-    public RegistroResponse registro(RegistroOficinaRequest request) {
-        if (usuarioOficinaRepository.existsByUsername(request.username())) {
-            throw new DuplicateResourceException("UsuarioOficina", "username", request.username());
-        }
-
-        UsuarioOficina nuevo = UsuarioOficina.builder()
-                .username(request.username())
-                .password(passwordEncoder.encode(request.password()))
-                .email(request.email())
-                .nombreCompleto(request.nombre())
-                .dni(request.dni())
-                .rol(Rol.GESTOR)
-                .activo(true)
-                .estadoRegistro(EstadoRegistro.PENDIENTE)
-                .build();
-
-        usuarioOficinaRepository.save(nuevo);
-        log.info("Registro de usuario oficina: {} — estado: PENDIENTE", request.username());
-
-        return new RegistroResponse("PENDIENTE", "Tu cuenta está pendiente de activación");
     }
 
     public TokenResponse refresh(String refreshToken) {

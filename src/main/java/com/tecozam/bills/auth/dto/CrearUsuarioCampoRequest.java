@@ -3,8 +3,7 @@ package com.tecozam.bills.auth.dto;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 
-public record RegistroOficinaRequest(
-
+public record CrearUsuarioCampoRequest(
         @NotBlank(message = "El nombre de usuario es obligatorio")
         @Size(min = 3, max = 80, message = "El username debe tener entre 3 y 80 caracteres")
         String username,
@@ -13,12 +12,13 @@ public record RegistroOficinaRequest(
         @Size(min = 6, message = "La contraseña debe tener al menos 6 caracteres")
         String password,
 
-        String email,
-
-        /** Nombre completo (nombre + apellidos). Se separa al crear el Trabajador en la aprobación. */
+        @NotBlank(message = "El nombre es obligatorio")
         String nombre,
 
-        /** DNI / NIE / documento extranjero. Opcional. */
-        String dni
+        String apellidos,
+
+        String dni,
+
+        String telefono
 ) {
 }

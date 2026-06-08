@@ -2,6 +2,7 @@ package com.tecozam.bills.auth.infrastructure.web;
 
 import com.tecozam.bills.auth.application.UsuarioOficinaService;
 import com.tecozam.bills.auth.dto.CambiarRolRequest;
+import com.tecozam.bills.auth.dto.CrearUsuarioOficinaRequest;
 import com.tecozam.bills.auth.dto.UsuarioOficinaDTO;
 import com.tecozam.bills.shared.domain.enums.Rol;
 import com.tecozam.bills.shared.infrastructure.exception.BusinessException;
@@ -9,12 +10,14 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -29,6 +32,15 @@ import java.util.List;
 public class UsuarioOficinaController {
 
     private final UsuarioOficinaService usuarioOficinaService;
+
+    @PostMapping
+    @Operation(summary = "Crear usuario de oficina (admin)",
+            description = "Crea un usuario de oficina directamente en estado ACTIVO. Solo ADMIN.")
+    public ResponseEntity<UsuarioOficinaDTO> crear(
+            @Valid @RequestBody CrearUsuarioOficinaRequest request) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(usuarioOficinaService.crear(request));
+    }
 
     @GetMapping
     @Operation(summary = "Listar usuarios de oficina")

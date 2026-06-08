@@ -1,14 +1,17 @@
 package com.tecozam.bills.auth.application;
 
 import com.tecozam.bills.auth.domain.UsuarioCampo;
+import com.tecozam.bills.auth.dto.CrearUsuarioCampoRequest;
 import com.tecozam.bills.auth.dto.UsuarioCampoDTO;
 import com.tecozam.bills.auth.infrastructure.persistence.UsuarioCampoRepository;
 import com.tecozam.bills.shared.domain.enums.EstadoRegistro;
+import com.tecozam.bills.shared.infrastructure.exception.DuplicateResourceException;
 import com.tecozam.bills.shared.infrastructure.exception.ResourceNotFoundException;
 import com.tecozam.bills.trabajador.domain.Trabajador;
 import com.tecozam.bills.trabajador.infrastructure.persistence.TrabajadorRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -22,6 +25,7 @@ public class UsuarioCampoService {
 
     private final UsuarioCampoRepository usuarioCampoRepository;
     private final TrabajadorRepository trabajadorRepository;
+    private final PasswordEncoder passwordEncoder;
 
     @Transactional(readOnly = true)
     public List<UsuarioCampoDTO> findAll() {
@@ -35,6 +39,38 @@ public class UsuarioCampoService {
         return usuarioCampoRepository.findByEstadoRegistro(EstadoRegistro.PENDIENTE).stream()
                 .map(this::toDTO)
                 .toList();
+    }
+
+    public UsuarioCampoDTO crear(CrearUsuarioCampoRequest req) {
+        if (usuarioCampoRepository.existsByUsername(req.username())) {
+            throw new DuplicateResourceException("UsuarioCampo", "username", req.username());
+        }
+
+        Trabajador trabajador = Trabajador.builder()
+                .nombre(req.nombre())
+                .apellidos(req.apellidos() != null ? req.apellidos() : "")
+                .activo(true)
+                .build();
+        if (req.dni() != null && !req.dni().isBlank()) {
+            trabajador.setDniNie(req.dni());
+        }
+        trabajador = trabajadorRepository.save(trabajador);
+
+        UsuarioCampo nuevo = UsuarioCampo.builder()
+                .username(req.username())
+                .password(passwordEncoder.encode(req.password()))
+                .telefono(req.telefono())
+                .nombre(req.nombre())
+                .apellidos(req.apellidos())
+                .dni(req.dni())
+                .activo(true)
+                .estadoRegistro(EstadoRegistro.ACTIVO)
+                .trabajador(trabajador)
+                .build();
+
+        usuarioCampoRepository.save(nuevo);
+        log.info("Usuario campo creado por admin: {} — estado: ACTIVO", req.username());
+        return toDTO(nuevo);
     }
 
     public UsuarioCampoDTO activar(Long id) {
