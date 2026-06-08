@@ -140,6 +140,7 @@ public class AuthCampoService {
                 u.getTelefono(),
                 u.getNombre(),
                 u.getApellidos(),
+                u.getDni(),
                 u.getTrabajador() != null ? u.getTrabajador().getId() : null,
                 u.isActivo(),
                 u.getEstadoRegistro().name(),

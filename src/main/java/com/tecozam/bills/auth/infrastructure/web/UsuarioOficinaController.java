@@ -3,6 +3,8 @@ package com.tecozam.bills.auth.infrastructure.web;
 import com.tecozam.bills.auth.application.UsuarioOficinaService;
 import com.tecozam.bills.auth.dto.CambiarRolRequest;
 import com.tecozam.bills.auth.dto.CrearUsuarioOficinaRequest;
+import com.tecozam.bills.auth.dto.EditarUsuarioOficinaRequest;
+import com.tecozam.bills.auth.dto.ResetPasswordRequest;
 import com.tecozam.bills.auth.dto.UsuarioOficinaDTO;
 import com.tecozam.bills.shared.domain.enums.Rol;
 import com.tecozam.bills.shared.infrastructure.exception.BusinessException;
@@ -52,6 +54,30 @@ public class UsuarioOficinaController {
     @Operation(summary = "Listar usuarios de oficina pendientes de activación")
     public ResponseEntity<List<UsuarioOficinaDTO>> findPendientes() {
         return ResponseEntity.ok(usuarioOficinaService.findPendientes());
+    }
+
+    @GetMapping("/{id}")
+    @Operation(summary = "Obtener un usuario de oficina por id")
+    public ResponseEntity<UsuarioOficinaDTO> findById(@PathVariable Long id) {
+        return ResponseEntity.ok(usuarioOficinaService.findById(id));
+    }
+
+    @PatchMapping("/{id}")
+    @Operation(summary = "Editar usuario de oficina",
+            description = "Actualiza email, nombre y DNI del usuario. Solo ADMIN.")
+    public ResponseEntity<UsuarioOficinaDTO> editar(
+            @PathVariable Long id,
+            @Valid @RequestBody EditarUsuarioOficinaRequest request) {
+        return ResponseEntity.ok(usuarioOficinaService.editar(id, request));
+    }
+
+    @PatchMapping("/{id}/password")
+    @Operation(summary = "Resetear contraseña de usuario de oficina (admin)")
+    public ResponseEntity<UsuarioOficinaDTO> resetearPassword(
+            @PathVariable Long id,
+            @Valid @RequestBody ResetPasswordRequest request) {
+        return ResponseEntity.ok(
+                usuarioOficinaService.resetearPassword(id, request.nuevaPassword()));
     }
 
     @PatchMapping("/{id}/activar")

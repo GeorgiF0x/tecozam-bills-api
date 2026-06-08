@@ -2,6 +2,7 @@ package com.tecozam.bills.auth.application;
 
 import com.tecozam.bills.auth.domain.UsuarioOficina;
 import com.tecozam.bills.auth.dto.CrearUsuarioOficinaRequest;
+import com.tecozam.bills.auth.dto.EditarUsuarioOficinaRequest;
 import com.tecozam.bills.auth.dto.UsuarioOficinaDTO;
 import com.tecozam.bills.auth.infrastructure.persistence.UsuarioOficinaRepository;
 import com.tecozam.bills.shared.domain.enums.EstadoRegistro;
@@ -34,6 +35,11 @@ public class UsuarioOficinaService {
         return usuarioOficinaRepository.findAll().stream()
                 .map(this::toDTO)
                 .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public UsuarioOficinaDTO findById(Long id) {
+        return toDTO(findOrThrow(id));
     }
 
     @Transactional(readOnly = true)
@@ -185,6 +191,53 @@ public class UsuarioOficinaService {
         return toDTO(usuario);
     }
 
+    public UsuarioOficinaDTO editar(Long id, EditarUsuarioOficinaRequest req) {
+        UsuarioOficina usuario = findOrThrow(id);
+        Trabajador trabajador = usuario.getTrabajador();
+
+        if (req.email() != null && !req.email().isBlank()) {
+            String email = req.email().trim();
+            usuario.setEmail(email);
+            if (trabajador != null) {
+                trabajador.setEmail(email);
+            }
+        }
+
+        if (req.nombre() != null && !req.nombre().isBlank()) {
+            String nombre = req.nombre().trim();
+            usuario.setNombreCompleto(nombre);
+            if (trabajador != null) {
+                String[] partes = splitNombre(nombre);
+                trabajador.setNombre(partes[0]);
+                trabajador.setApellidos(partes[1]);
+            }
+        }
+
+        if (req.dni() != null && !req.dni().isBlank()) {
+            String dni = req.dni().trim();
+            usuario.setDni(dni);
+            if (trabajador != null) {
+                trabajador.setDniNie(dni);
+            }
+        }
+
+        if (trabajador != null) {
+            trabajadorRepository.save(trabajador);
+        }
+        usuarioOficinaRepository.save(usuario);
+        log.info("Usuario oficina {} editado por admin", usuario.getUsername());
+        return toDTO(usuario);
+    }
+
+    public UsuarioOficinaDTO resetearPassword(Long id, String nuevaPassword) {
+        UsuarioOficina usuario = findOrThrow(id);
+        usuario.setPassword(passwordEncoder.encode(nuevaPassword));
+        usuario.setRefreshToken(null);
+        usuarioOficinaRepository.save(usuario);
+        log.info("Password reset para usuario oficina {}", usuario.getUsername());
+        return toDTO(usuario);
+    }
+
     private UsuarioOficina findOrThrow(Long id) {
         return usuarioOficinaRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("UsuarioOficina", id));
@@ -195,6 +248,8 @@ public class UsuarioOficinaService {
                 u.getId(),
                 u.getUsername(),
                 u.getEmail(),
+                u.getNombreCompleto(),
+                u.getDni(),
                 u.getRol().name(),
                 u.isActivo(),
                 u.getEstadoRegistro().name(),

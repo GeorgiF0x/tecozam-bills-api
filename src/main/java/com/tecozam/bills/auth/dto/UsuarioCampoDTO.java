@@ -8,6 +8,7 @@ public record UsuarioCampoDTO(
         String telefono,
         String nombre,
         String apellidos,
+        String dni,
         Long trabajadorId,
         boolean activo,
         String estadoRegistro,

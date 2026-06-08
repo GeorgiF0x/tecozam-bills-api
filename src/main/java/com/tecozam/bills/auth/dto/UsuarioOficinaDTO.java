@@ -6,6 +6,8 @@ public record UsuarioOficinaDTO(
         Long id,
         String username,
         String email,
+        String nombreCompleto,
+        String dni,
         String rol,
         boolean activo,
         String estadoRegistro,

@@ -2,6 +2,7 @@ package com.tecozam.bills.auth.application;
 
 import com.tecozam.bills.auth.domain.UsuarioCampo;
 import com.tecozam.bills.auth.dto.CrearUsuarioCampoRequest;
+import com.tecozam.bills.auth.dto.EditarUsuarioCampoRequest;
 import com.tecozam.bills.auth.dto.UsuarioCampoDTO;
 import com.tecozam.bills.auth.infrastructure.persistence.UsuarioCampoRepository;
 import com.tecozam.bills.shared.domain.enums.EstadoRegistro;
@@ -32,6 +33,11 @@ public class UsuarioCampoService {
         return usuarioCampoRepository.findAll().stream()
                 .map(this::toDTO)
                 .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public UsuarioCampoDTO findById(Long id) {
+        return toDTO(findOrThrow(id));
     }
 
     @Transactional(readOnly = true)
@@ -117,6 +123,55 @@ public class UsuarioCampoService {
         return toDTO(usuario);
     }
 
+    public UsuarioCampoDTO editar(Long id, EditarUsuarioCampoRequest req) {
+        UsuarioCampo usuario = findOrThrow(id);
+        Trabajador trabajador = usuario.getTrabajador();
+
+        if (req.nombre() != null && !req.nombre().isBlank()) {
+            String nombre = req.nombre().trim();
+            usuario.setNombre(nombre);
+            if (trabajador != null) {
+                trabajador.setNombre(nombre);
+            }
+        }
+
+        if (req.apellidos() != null && !req.apellidos().isBlank()) {
+            String apellidos = req.apellidos().trim();
+            usuario.setApellidos(apellidos);
+            if (trabajador != null) {
+                trabajador.setApellidos(apellidos);
+            }
+        }
+
+        if (req.dni() != null && !req.dni().isBlank()) {
+            String dni = req.dni().trim();
+            usuario.setDni(dni);
+            if (trabajador != null) {
+                trabajador.setDniNie(dni);
+            }
+        }
+
+        if (req.telefono() != null && !req.telefono().isBlank()) {
+            usuario.setTelefono(req.telefono().trim());
+        }
+
+        if (trabajador != null) {
+            trabajadorRepository.save(trabajador);
+        }
+        usuarioCampoRepository.save(usuario);
+        log.info("Usuario campo {} editado por admin", usuario.getUsername());
+        return toDTO(usuario);
+    }
+
+    public UsuarioCampoDTO resetearPassword(Long id, String nuevaPassword) {
+        UsuarioCampo usuario = findOrThrow(id);
+        usuario.setPassword(passwordEncoder.encode(nuevaPassword));
+        usuario.setRefreshToken(null);
+        usuarioCampoRepository.save(usuario);
+        log.info("Password reset para usuario campo {}", usuario.getUsername());
+        return toDTO(usuario);
+    }
+
     private UsuarioCampo findOrThrow(Long id) {
         return usuarioCampoRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("UsuarioCampo", id));
@@ -129,6 +184,7 @@ public class UsuarioCampoService {
                 u.getTelefono(),
                 u.getNombre(),
                 u.getApellidos(),
+                u.getDni(),
                 u.getTrabajador() != null ? u.getTrabajador().getId() : null,
                 u.isActivo(),
                 u.getEstadoRegistro().name(),

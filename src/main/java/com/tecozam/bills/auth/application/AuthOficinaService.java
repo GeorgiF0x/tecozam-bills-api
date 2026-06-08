@@ -136,6 +136,8 @@ public class AuthOficinaService {
                 u.getId(),
                 u.getUsername(),
                 u.getEmail(),
+                u.getNombreCompleto(),
+                u.getDni(),
                 u.getRol().name(),
                 u.isActivo(),
                 u.getEstadoRegistro().name(),

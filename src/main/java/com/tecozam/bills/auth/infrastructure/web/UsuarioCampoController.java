@@ -2,6 +2,8 @@ package com.tecozam.bills.auth.infrastructure.web;
 
 import com.tecozam.bills.auth.application.UsuarioCampoService;
 import com.tecozam.bills.auth.dto.CrearUsuarioCampoRequest;
+import com.tecozam.bills.auth.dto.EditarUsuarioCampoRequest;
+import com.tecozam.bills.auth.dto.ResetPasswordRequest;
 import com.tecozam.bills.auth.dto.UsuarioCampoDTO;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -48,6 +50,30 @@ public class UsuarioCampoController {
     @Operation(summary = "Listar usuarios de campo pendientes de activación")
     public ResponseEntity<List<UsuarioCampoDTO>> findPendientes() {
         return ResponseEntity.ok(usuarioCampoService.findPendientes());
+    }
+
+    @GetMapping("/{id}")
+    @Operation(summary = "Obtener un usuario de campo por id")
+    public ResponseEntity<UsuarioCampoDTO> findById(@PathVariable Long id) {
+        return ResponseEntity.ok(usuarioCampoService.findById(id));
+    }
+
+    @PatchMapping("/{id}")
+    @Operation(summary = "Editar usuario de campo",
+            description = "Actualiza nombre, apellidos, DNI y teléfono. Solo ADMIN.")
+    public ResponseEntity<UsuarioCampoDTO> editar(
+            @PathVariable Long id,
+            @Valid @RequestBody EditarUsuarioCampoRequest request) {
+        return ResponseEntity.ok(usuarioCampoService.editar(id, request));
+    }
+
+    @PatchMapping("/{id}/password")
+    @Operation(summary = "Resetear contraseña de usuario de campo (admin)")
+    public ResponseEntity<UsuarioCampoDTO> resetearPassword(
+            @PathVariable Long id,
+            @Valid @RequestBody ResetPasswordRequest request) {
+        return ResponseEntity.ok(
+                usuarioCampoService.resetearPassword(id, request.nuevaPassword()));
     }
 
     @PatchMapping("/{id}/activar")
