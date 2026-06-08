@@ -113,6 +113,7 @@ public class TrabajadorService {
                 trabajador.getNombre(),
                 trabajador.getApellidos(),
                 trabajador.getEmail(),
+                trabajador.getDniNie(),
                 trabajador.isActivo(),
                 trabajador.getCreadoEn()
         );

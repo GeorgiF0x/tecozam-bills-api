@@ -7,6 +7,7 @@ public record TrabajadorDTO(
         String nombre,
         String apellidos,
         String email,
+        String dniNie,
         boolean activo,
         LocalDateTime creadoEn
 ) {
