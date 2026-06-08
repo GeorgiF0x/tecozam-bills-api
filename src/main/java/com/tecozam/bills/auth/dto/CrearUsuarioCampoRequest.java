@@ -1,6 +1,7 @@
 package com.tecozam.bills.auth.dto;
 
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
 public record CrearUsuarioCampoRequest(
@@ -9,7 +10,10 @@ public record CrearUsuarioCampoRequest(
         String username,
 
         @NotBlank(message = "La contraseña es obligatoria")
-        @Size(min = 6, message = "La contraseña debe tener al menos 6 caracteres")
+        @Pattern(
+                regexp = "^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d).{8,}$",
+                message = "Mínimo 8 caracteres, con al menos una mayúscula, una minúscula y un número."
+        )
         String password,
 
         @NotBlank(message = "El nombre es obligatorio")
