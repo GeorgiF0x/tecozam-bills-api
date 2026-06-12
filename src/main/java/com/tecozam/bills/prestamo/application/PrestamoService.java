@@ -366,9 +366,19 @@ public class PrestamoService {
     }
 
     private PrestamoDTO toDTO(Prestamo p) {
+        // NEW-07: mostrar últimos 4 dígitos del número de tarjeta / VIAT en lugar
+        // del número largo. Si la tarjeta tiene alias se prioriza el alias.
         String recursoDescripcion = switch (p.getTipoRecurso().toUpperCase()) {
-            case "TARJETA" -> p.getTarjeta() != null ? "Tarjeta " + p.getTarjeta().getNumeroTarjeta() : "Tarjeta";
-            case "VIAT" -> p.getViat() != null ? "Viat " + p.getViat().getCodigo() : "Viat";
+            case "TARJETA" -> p.getTarjeta() != null
+                    ? formatearRecursoIdentificador("Tarjeta",
+                            p.getTarjeta().getNumeroTarjeta(),
+                            p.getTarjeta().getAlias())
+                    : "Tarjeta";
+            case "VIAT" -> p.getViat() != null
+                    ? formatearRecursoIdentificador("Viat",
+                            p.getViat().getCodigo(),
+                            p.getViat().getNumeroSerie())
+                    : "Viat";
             case "VEHICULO" -> p.getVehiculo() != null ? "Veh. " + p.getVehiculo().getMatricula() : "Vehículo";
             default -> p.getTipoRecurso();
         };
@@ -393,5 +403,25 @@ public class PrestamoService {
                 p.isCreadoPorCampo(),
                 p.getCreadoEn()
         );
+    }
+
+    /**
+     * NEW-07: formatea el "nombre" del recurso para mostrar al usuario.
+     * Si tiene alias significativo se usa "Tarjeta ALIAS (··últimos4)".
+     * Si no, se usa "Tarjeta ··últimos4". Para recursos sin número largo
+     * (menos de 5 caracteres) se muestra el valor completo.
+     */
+    private static String formatearRecursoIdentificador(String etiqueta, String numero, String alias) {
+        if (numero == null || numero.isBlank()) {
+            return alias != null && !alias.isBlank() ? etiqueta + " " + alias : etiqueta;
+        }
+        String numLimpio = numero.trim();
+        String corto = numLimpio.length() > 4
+                ? "··" + numLimpio.substring(numLimpio.length() - 4)
+                : numLimpio;
+        if (alias != null && !alias.isBlank() && !alias.equalsIgnoreCase(numLimpio)) {
+            return etiqueta + " " + alias + " (" + corto + ")";
+        }
+        return etiqueta + " " + corto;
     }
 }

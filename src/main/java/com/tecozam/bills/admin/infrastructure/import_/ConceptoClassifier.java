@@ -16,24 +16,40 @@ import java.util.Set;
  */
 public final class ConceptoClassifier {
 
+    /**
+     * Sub-strings que, si aparecen en el concepto normalizado, indican que la
+     * fila es un dispositivo VIAT/telepeaje (no una tarjeta de combustible).
+     */
     private static final Set<String> KEYWORDS_VIAT = Set.of(
-            "PEAJE", "AUTOPISTA", "TUNEL", "PORTAGEM"
+            "PEAJE", "AUTOPISTA", "AUTOP.", "TUNEL", "PORTAGEM",
+            "USO RED",                       // "USO RED PORTUGAL/ESPAÑA"
+            "OBE", "VIA-T", "VIA T", "VIAT", // dispositivos de telepeaje
+            "TELEPEAJE"
     );
 
     /**
-     * Set parcial de conceptos típicos de combustible/staff que el cliente
-     * confirmó como TARJETA. Sirve únicamente para distinguir "TARJETA conocido"
-     * de "TARJETA por default + warning". No es exhaustivo: si en el Excel
-     * aparece un concepto que no está aquí ni en {@code KEYWORDS_VIAT}, la
-     * fila se procesa como TARJETA y se reporta en {@code filasIgnoradas}.
+     * Sub-strings que, si aparecen en el concepto, lo marcan como TARJETA de
+     * combustible/servicio (no telepeaje). Lista ampliada para cubrir los
+     * conceptos reales que aparecen en los Excel de Repsol y Cepsa/Moeve.
+     *
+     * <p>Se usa para distinguir "TARJETA reconocido" de "TARJETA por default";
+     * los segundos se reportan en {@code filasIgnoradas} para que el admin
+     * pueda revisar el Excel y limpiar la fuente.
      */
-    private static final Set<String> CONCEPTOS_TARJETA_CONOCIDOS = Set.of(
-            "GASOLEO", "DIESEL STAR", "DIESEL OPTIMA", "DIESEL E+",
-            "ECOBLUE", "ECOBLUE 10 LT", "SIN PLOMO", "OPTIMA 95",
-            "GNA SEM PB 95", "GNA SEM PB 98",
-            "ADBLUE", "ACEITES LUBES",
-            "STAFF", "TIENDA", "ALMACEN",
-            "OTRAS COMPRAS", "OTRAS COMPRAS REDUCIDO"
+    private static final Set<String> KEYWORDS_TARJETA = Set.of(
+            // combustibles
+            "DIESEL", "GASOLEO", "DSL", "DIE E", "DIESELNEXR", "DIESEL NEXR",
+            "GASOLINA", "GASOL", "SIN PLOMO", "OPTIMA", "EFITEC", "EFI",
+            "GNA SEM PB", "GSL",
+            "ECOBLUE", "ADBLUE", "ADB", "BLUE+GRANE", "BLUE GRANE",
+            // lubricantes y aceites
+            "LUBRIC", "LUBRIF", "ACEITE", "LUBES",
+            // servicios estación
+            "LAVADO", "ENGRASE", "TIENDA", "ALMACEN", "PARKING",
+            // staff / compras generales
+            "STAFF", "OTRAS COMPRAS", "OUTRAS COMPRAS",
+            "OTROS PROD", "OTR BOMGAS",
+            "SUBVENC", "SUBVENCION"
     );
 
     private ConceptoClassifier() {
@@ -64,16 +80,21 @@ public final class ConceptoClassifier {
     }
 
     /**
-     * Indica si el concepto está explícitamente en el set de conceptos
-     * conocidos (peajes o combustibles). Útil para distinguir un TARJETA por
-     * default de un TARJETA reconocido — los primeros se cuentan en
-     * {@code filasIgnoradas} del DTO de reporte.
+     * Indica si el concepto está explícitamente reconocido en una de las dos
+     * listas (peajes o combustibles/servicios). Útil para distinguir un
+     * TARJETA por default de un TARJETA reconocido — los primeros se cuentan
+     * en {@code filasIgnoradas} del DTO de reporte.
+     *
+     * <p>Conceptos vacíos se consideran "no conocidos" pero el importer no
+     * los reporta como ruido — son filas sin concepto en el Excel original.
      */
     public static boolean esConceptoConocido(String concepto) {
         if (concepto == null || concepto.isBlank()) return false;
         String normalizado = normalizar(concepto);
-        if (CONCEPTOS_TARJETA_CONOCIDOS.contains(normalizado)) return true;
         for (String keyword : KEYWORDS_VIAT) {
+            if (normalizado.contains(keyword)) return true;
+        }
+        for (String keyword : KEYWORDS_TARJETA) {
             if (normalizado.contains(keyword)) return true;
         }
         return false;
