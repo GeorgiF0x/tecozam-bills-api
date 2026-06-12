@@ -14,6 +14,7 @@ import com.tecozam.bills.shared.infrastructure.exception.DuplicateResourceExcept
 import com.tecozam.bills.shared.infrastructure.exception.ResourceNotFoundException;
 import com.tecozam.bills.shared.infrastructure.storage.FileStorageService;
 import com.tecozam.bills.tarjeta.domain.Tarjeta;
+import com.tecozam.bills.tarjeta.domain.TarjetaNumeroNormalizer;
 import com.tecozam.bills.tarjeta.infrastructure.persistence.TarjetaRepository;
 import com.tecozam.bills.ticket.application.TicketService;
 import lombok.RequiredArgsConstructor;
@@ -96,10 +97,15 @@ public class FacturaService {
         }
 
         // 6. Vincular tarjetas del maestro a los TarjetaResumen
+        // Aplicamos TarjetaNumeroNormalizer para que el numero canonico sea el mismo
+        // entre import de Excel y factura PDF (resuelve BILLS-11: duplicados por
+        // normalizacion divergente).
         for (TarjetaResumen tr : factura.getTarjetaResumenes()) {
             if (tr.getNumTarjeta() != null) {
-                Tarjeta tarjeta = tarjetaRepository.findByNumeroTarjeta(tr.getNumTarjeta())
-                        .orElseGet(() -> crearTarjetaEnMaestro(tr.getNumTarjeta(), tr.getAlias(), proveedor));
+                String canonico = TarjetaNumeroNormalizer.canonical(tr.getNumTarjeta(), proveedor.getCodigo());
+                tr.setNumTarjeta(canonico);
+                Tarjeta tarjeta = tarjetaRepository.findByNumeroTarjeta(canonico)
+                        .orElseGet(() -> crearTarjetaEnMaestro(canonico, tr.getAlias(), proveedor));
                 tr.setTarjeta(tarjeta);
             }
         }
