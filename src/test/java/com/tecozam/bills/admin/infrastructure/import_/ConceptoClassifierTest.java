@@ -77,10 +77,11 @@ class ConceptoClassifierTest {
 
     @ParameterizedTest
     @ValueSource(strings = {
-            // combustibles variantes
+            // combustibles variantes (incluyendo formato con puntos del Excel real)
             "DIESEL E+1", "DIESEL E+5", "DIESEL E+10", "DIE E+",
             "DIESELNEXR", "EFITEC 95", "EFI 95", "EFI 98", "OPTIMA 98",
-            "GNA SEM PB 95", "GSL 95", "DSL",
+            "GNA SEM PB 95", "GNA. SEM PB 95",
+            "GSL 95", "DSL",
             // ECOBLUE/ADBLUE variantes
             "ECOBLUE 5 LT", "ECOBLUE GRANEL", "ECOBLUE GARRAFA",
             "ADBLUE EMB", "ADBLUEREPS", "ADB+GRN", "ADBLUE GRL",

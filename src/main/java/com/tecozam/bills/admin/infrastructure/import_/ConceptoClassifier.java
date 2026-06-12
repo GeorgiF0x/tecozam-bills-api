@@ -21,9 +21,9 @@ public final class ConceptoClassifier {
      * fila es un dispositivo VIAT/telepeaje (no una tarjeta de combustible).
      */
     private static final Set<String> KEYWORDS_VIAT = Set.of(
-            "PEAJE", "AUTOPISTA", "AUTOP.", "TUNEL", "PORTAGEM",
-            "USO RED",                       // "USO RED PORTUGAL/ESPAÑA"
-            "OBE", "VIA-T", "VIA T", "VIAT", // dispositivos de telepeaje
+            "PEAJE", "AUTOPISTA", "AUTOP", "TUNEL", "PORTAGEM",
+            "USO RED",                  // "USO RED PORTUGAL/ESPAÑA"
+            "OBE", "VIA T", "VIAT",     // dispositivos de telepeaje (OBE / VIA-T)
             "TELEPEAJE"
     );
 
@@ -103,6 +103,10 @@ public final class ConceptoClassifier {
     private static String normalizar(String texto) {
         String sinTildes = Normalizer.normalize(texto, Normalizer.Form.NFD)
                 .replaceAll("\\p{InCombiningDiacriticalMarks}+", "");
-        return sinTildes.trim().toUpperCase().replaceAll("\\s+", " ");
+        // NEW-12: quitar puntuación común (.,/:;-) para que conceptos como
+        // "GNA. SEM PB 95", "GEST. SERV. AUTOP. ESPAÑA" o "LAVADO/ENGRASE"
+        // matcheen con keywords escritas sin puntuación.
+        String sinPuntuacion = sinTildes.replaceAll("[.,/:;_-]", " ");
+        return sinPuntuacion.trim().toUpperCase().replaceAll("\\s+", " ");
     }
 }

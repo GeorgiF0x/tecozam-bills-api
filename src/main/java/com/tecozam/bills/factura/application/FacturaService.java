@@ -16,7 +16,9 @@ import com.tecozam.bills.shared.infrastructure.exception.ResourceNotFoundExcepti
 import com.tecozam.bills.shared.infrastructure.storage.FileStorageService;
 import com.tecozam.bills.tarjeta.domain.Tarjeta;
 import com.tecozam.bills.tarjeta.domain.TarjetaNumeroNormalizer;
+import com.tecozam.bills.tarjeta.infrastructure.persistence.TarjetaAsignacionRepository;
 import com.tecozam.bills.tarjeta.infrastructure.persistence.TarjetaRepository;
+import com.tecozam.bills.trabajador.domain.Trabajador;
 import com.tecozam.bills.ticket.application.TicketService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -35,6 +37,7 @@ public class FacturaService {
     private final FacturaRepository facturaRepository;
     private final ProveedorRepository proveedorRepository;
     private final TarjetaRepository tarjetaRepository;
+    private final TarjetaAsignacionRepository tarjetaAsignacionRepository;
     private final FacturaParserFactory parserFactory;
     private final FileStorageService fileStorageService;
     private final TicketService ticketService;
@@ -122,6 +125,24 @@ public class FacturaService {
                 Tarjeta tarjeta = tarjetaRepository.findByNumeroTarjeta(canonico)
                         .orElseGet(() -> crearTarjetaEnMaestro(canonico, tr.getAlias(), proveedor));
                 tr.setTarjeta(tarjeta);
+
+                // NEW-12: si la tarjeta tiene una asignación activa en el maestro,
+                // copiamos el nombre del trabajador como conductor del resumen para
+                // que se vea en el detalle de la factura sin tener que consultar el
+                // maestro aparte.
+                if (tr.getConductor() == null || tr.getConductor().isBlank()) {
+                    tarjetaAsignacionRepository
+                            .findByTarjetaIdAndFechaHastaIsNull(tarjeta.getId())
+                            .ifPresent(asig -> {
+                                Trabajador t = asig.getTrabajador();
+                                if (t != null) {
+                                    String nombreCompleto = (t.getNombre() == null ? "" : t.getNombre())
+                                            + " "
+                                            + (t.getApellidos() == null ? "" : t.getApellidos());
+                                    tr.setConductor(nombreCompleto.trim());
+                                }
+                            });
+                }
             }
         }
 
