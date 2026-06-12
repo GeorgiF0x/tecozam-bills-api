@@ -10,6 +10,7 @@ import com.tecozam.bills.centrocoste.domain.CentroCoste;
 import com.tecozam.bills.centrocoste.infrastructure.persistence.CentroCosteRepository;
 import com.tecozam.bills.proveedor.domain.Proveedor;
 import com.tecozam.bills.proveedor.infrastructure.persistence.ProveedorRepository;
+import com.tecozam.bills.shared.util.NombreApellidosSplitter;
 import com.tecozam.bills.shared.domain.enums.EstadoRecurso;
 import com.tecozam.bills.shared.infrastructure.exception.BusinessException;
 import com.tecozam.bills.tarjeta.domain.Tarjeta;
@@ -156,7 +157,7 @@ public class ListadoTarjetasImportService {
             ctx.trabajadoresExistentes++;
             return cached;
         }
-        String[] split = splitNombreApellidos(key);
+        String[] split = NombreApellidosSplitter.split(key);
         Optional<Trabajador> existente = trabajadorRepo
                 .findFirstByNombreIgnoreCaseAndApellidosIgnoreCase(split[0], split[1]);
         if (existente.isPresent()) {
@@ -227,13 +228,6 @@ public class ListadoTarjetasImportService {
         Viat saved = viatRepo.save(nuevo);
         ctx.viatsCache.put(codigo, saved);
         ctx.viatsCreados++;
-    }
-
-    private String[] splitNombreApellidos(String nombreCompleto) {
-        String trim = nombreCompleto.trim().replaceAll("\\s+", " ");
-        int idx = trim.indexOf(' ');
-        if (idx < 0) return new String[]{trim, ""};
-        return new String[]{trim.substring(0, idx), trim.substring(idx + 1)};
     }
 
     private ImportTarjetasReportDTO toDTO(ImportContext ctx, long duracion) {

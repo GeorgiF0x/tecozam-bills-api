@@ -14,6 +14,7 @@ import com.tecozam.bills.proveedor.domain.Proveedor;
 import com.tecozam.bills.proveedor.infrastructure.persistence.ProveedorRepository;
 import com.tecozam.bills.shared.domain.enums.EstadoRecurso;
 import com.tecozam.bills.shared.infrastructure.exception.BusinessException;
+import com.tecozam.bills.shared.util.NombreApellidosSplitter;
 import com.tecozam.bills.tarjeta.domain.Tarjeta;
 import com.tecozam.bills.tarjeta.infrastructure.persistence.TarjetaRepository;
 import com.tecozam.bills.trabajador.domain.Trabajador;
@@ -104,33 +105,6 @@ public class RepsolImportService {
     private static final int COL_OP_IMP_TOTAL = 28;
     private static final int COL_OP_SIN_IVA = 29;
     private static final int COL_OP_PRECIO_LITRO = 30;
-
-    /**
-     * Nombres compuestos castellanos habituales (en mayúsculas y sin tildes).
-     * Si las dos primeras palabras del NOMBRE coinciden con uno de estos,
-     * se tratan como nombre compuesto (p. ej. "JOSE LUIS SUAREZ COLLADO"
-     * → nombre="JOSE LUIS", apellidos="SUAREZ COLLADO").
-     */
-    private static final Set<String> NOMBRES_COMPUESTOS = Set.of(
-            "JOSE LUIS", "JOSE ANTONIO", "JOSE MIGUEL", "JOSE MANUEL", "JOSE MARIA",
-            "JOSE ANGEL", "JOSE RAMON", "JOSE CARLOS", "JOSE FRANCISCO", "JOSE IGNACIO",
-            "JOSE JAVIER", "JOSE ALBERTO", "JOSE DANIEL", "JOSE ENRIQUE", "JOSE ANDRES",
-            "JUAN CARLOS", "JUAN MANUEL", "JUAN PEDRO", "JUAN ANTONIO", "JUAN JOSE",
-            "JUAN PABLO", "JUAN LUIS", "JUAN FRANCISCO", "JUAN JESUS", "JUAN MIGUEL",
-            "MARIA CARMEN", "MARIA JOSE", "MARIA TERESA", "MARIA DOLORES", "MARIA ISABEL",
-            "MARIA ANGELES", "MARIA LUISA", "MARIA PILAR", "MARIA JESUS", "MARIA AMPARO",
-            "MARIA ROSA", "MARIA ELENA", "MARIA CRISTINA", "MARIA MERCEDES", "MARIA VICTORIA",
-            "MARIA NIEVES", "MARIA SOLEDAD", "MARIA CONCEPCION", "MARIA EUGENIA", "MARIA SOL",
-            "ANA MARIA", "ANA BELEN", "ANA ISABEL", "ANA SOFIA",
-            "MIGUEL ANGEL",
-            "LUIS MIGUEL", "LUIS ALBERTO", "LUIS FERNANDO", "LUIS ANTONIO",
-            "FRANCISCO JAVIER", "FRANCISCO JOSE", "FRANCISCO MANUEL",
-            "CARLOS JOSE", "CARLOS ANTONIO",
-            "ANTONIO JOSE", "ANTONIO LUIS", "ANTONIO MANUEL", "ANTONIO MIGUEL",
-            "PEDRO JESUS", "PEDRO LUIS",
-            "MANUEL JESUS", "MANUEL JOSE", "MANUEL ANTONIO",
-            "ANGEL LUIS", "ANGEL MARIA"
-    );
 
     private final CentroCosteRepository centroCosteRepository;
     private final TrabajadorRepository trabajadorRepository;
@@ -542,7 +516,7 @@ public class RepsolImportService {
             Map<String, Trabajador> trabajadoresCache,
             TarjetasImportCounters counters
     ) {
-        String[] partes = splitNombre(nombreCompleto);
+        String[] partes = NombreApellidosSplitter.split(nombreCompleto);
         String nombre = partes[0];
         String apellidos = partes[1];
         String cacheKey = (nombre + "|" + apellidos).toUpperCase(Locale.ROOT);
@@ -737,41 +711,4 @@ public class RepsolImportService {
         return nombre.trim() + " (" + poblacion.trim() + ")";
     }
 
-    /**
-     * Divide un "NOMBRE APELLIDO1 APELLIDO2..." en [nombre, apellidos].
-     *
-     * BUG 3: Si las dos primeras palabras forman un nombre compuesto castellano
-     * conocido (p. ej. "JOSE LUIS", "MARIA CARMEN", "MIGUEL ANGEL"),
-     * se mantienen juntas como nombre. La comparación es insensible a tildes
-     * y mayúsculas.
-     */
-    static String[] splitNombre(String nombreCompleto) {
-        String trim = nombreCompleto.trim().replaceAll("\\s+", " ");
-        if (trim.isEmpty()) return new String[]{"", ""};
-
-        String[] palabras = trim.split(" ");
-        if (palabras.length == 1) {
-            return new String[]{palabras[0], ""};
-        }
-
-        // Probar nombre compuesto (dos primeras palabras)
-        if (palabras.length >= 3) {
-            String candidato = (palabras[0] + " " + palabras[1]);
-            String normalizado = Normalizer.normalize(candidato, Normalizer.Form.NFD)
-                    .replaceAll("\\p{InCombiningDiacriticalMarks}+", "")
-                    .toUpperCase(Locale.ROOT);
-            if (NOMBRES_COMPUESTOS.contains(normalizado)) {
-                StringBuilder apellidos = new StringBuilder();
-                for (int i = 2; i < palabras.length; i++) {
-                    if (i > 2) apellidos.append(" ");
-                    apellidos.append(palabras[i]);
-                }
-                return new String[]{candidato, apellidos.toString()};
-            }
-        }
-
-        // Default: primera palabra = nombre, resto = apellidos
-        int idx = trim.indexOf(' ');
-        return new String[]{trim.substring(0, idx), trim.substring(idx + 1)};
-    }
 }

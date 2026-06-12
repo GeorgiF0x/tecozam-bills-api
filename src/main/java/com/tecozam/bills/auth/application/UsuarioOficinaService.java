@@ -7,6 +7,7 @@ import com.tecozam.bills.auth.dto.UsuarioOficinaDTO;
 import com.tecozam.bills.auth.infrastructure.persistence.UsuarioOficinaRepository;
 import com.tecozam.bills.shared.domain.enums.EstadoRegistro;
 import com.tecozam.bills.shared.domain.enums.Rol;
+import com.tecozam.bills.shared.util.NombreApellidosSplitter;
 import com.tecozam.bills.shared.infrastructure.exception.BusinessException;
 import com.tecozam.bills.shared.infrastructure.exception.DuplicateResourceException;
 import com.tecozam.bills.shared.infrastructure.exception.ResourceNotFoundException;
@@ -62,7 +63,7 @@ public class UsuarioOficinaService {
                     + ". Valores admitidos: ADMIN, GESTOR, CONSULTA.");
         }
 
-        String[] partes = splitNombre(req.nombre());
+        String[] partes = NombreApellidosSplitter.split(req.nombre());
         Trabajador trabajador = Trabajador.builder()
                 .nombre(partes[0])
                 .apellidos(partes[1])
@@ -98,7 +99,7 @@ public class UsuarioOficinaService {
         // Si todavía no tiene Trabajador asociado, lo creamos ahora a partir
         // del nombre completo provisional guardado durante el signup.
         if (usuario.getTrabajador() == null) {
-            String[] partes = splitNombre(usuario.getNombreCompleto());
+            String[] partes = NombreApellidosSplitter.split(usuario.getNombreCompleto());
             Trabajador trabajador = Trabajador.builder()
                     .nombre(partes[0])
                     .apellidos(partes[1])
@@ -119,23 +120,6 @@ public class UsuarioOficinaService {
         usuarioOficinaRepository.save(usuario);
         log.info("Usuario oficina activado: {} (id={})", usuario.getUsername(), id);
         return toDTO(usuario);
-    }
-
-    /**
-     * Separa un nombre completo en nombre y apellidos.
-     * La primera palabra se considera el nombre; el resto, los apellidos.
-     * Si la entrada es vacía o nula, devuelve ["", ""].
-     */
-    private static String[] splitNombre(String nombreCompleto) {
-        if (nombreCompleto == null || nombreCompleto.isBlank()) {
-            return new String[]{"", ""};
-        }
-        String trim = nombreCompleto.trim().replaceAll("\\s+", " ");
-        int idx = trim.indexOf(' ');
-        if (idx < 0) {
-            return new String[]{trim, ""};
-        }
-        return new String[]{trim.substring(0, idx), trim.substring(idx + 1)};
     }
 
     public UsuarioOficinaDTO rechazar(Long id) {
@@ -207,7 +191,7 @@ public class UsuarioOficinaService {
             String nombre = req.nombre().trim();
             usuario.setNombreCompleto(nombre);
             if (trabajador != null) {
-                String[] partes = splitNombre(nombre);
+                String[] partes = NombreApellidosSplitter.split(nombre);
                 trabajador.setNombre(partes[0]);
                 trabajador.setApellidos(partes[1]);
             }
