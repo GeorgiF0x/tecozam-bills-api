@@ -255,14 +255,9 @@ public class MoeveFacturaParser implements FacturaParser {
 
     private void parseExtracto(List<String> lines, List<TarjetaResumen> tarjetaResumenes) {
         TarjetaResumen currentTarjeta = null;
-        String currentConductor = null;
         LocalDate currentFechaOp = null;
         String currentHora = null;
         String currentEstablecimiento = null;
-
-        // Estado de la máquina de estados del extracto
-        enum EstadoExtracto { BUSCA_TARJETA, BUSCA_CONDUCTOR, BUSCA_FECHA_HORA_ESTAB, BUSCA_OPERACION }
-        EstadoExtracto estado = EstadoExtracto.BUSCA_TARJETA;
 
         for (int i = 0; i < lines.size(); i++) {
             String line = lines.get(i);
@@ -272,7 +267,9 @@ public class MoeveFacturaParser implements FacturaParser {
                 continue;
             }
 
-            // Bloque de nueva tarjeta
+            // Bloque de nueva tarjeta. NEW-11: en MOEVE el conductor NO viene en
+            // el extracto (todas las líneas no numéricas son nombres de estación
+            // de servicio). El conductor se infiere del maestro de tarjetas.
             Matcher tarjetaM = P_TARJETA_BLOCK.matcher(line);
             if (tarjetaM.find()) {
                 String identificador = tarjetaM.group(1); // ej: 11973654S o matrícula
@@ -285,22 +282,22 @@ public class MoeveFacturaParser implements FacturaParser {
                         .operaciones(new ArrayList<>())
                         .build();
                 tarjetaResumenes.add(currentTarjeta);
-                currentConductor = null;
-                estado = EstadoExtracto.BUSCA_CONDUCTOR;
+                // Reset del estado por-tarjeta para no arrastrar establecimiento
+                // de la tarjeta anterior.
+                currentFechaOp = null;
+                currentHora = null;
+                currentEstablecimiento = null;
                 continue;
             }
 
             if (currentTarjeta == null) continue;
 
-            // Buscar conductor (línea siguiente al bloque de tarjeta)
-            if (estado == EstadoExtracto.BUSCA_CONDUCTOR) {
-                // El conductor es texto, no empieza con número ni es fecha
-                if (!line.matches("\\d.*") && !P_FECHA_OP.matcher(line).matches()) {
-                    currentConductor = line;
-                    currentTarjeta.setConductor(currentConductor);
-                    estado = EstadoExtracto.BUSCA_FECHA_HORA_ESTAB;
-                    continue;
-                }
+            // Líneas de cierre de bloque que NO son operación
+            if (line.startsWith("TOTAL MATRICULA")
+                    || line.contains("REGISTRATE EN WWW")
+                    || line.contains("GESTIONA ON LINE")
+                    || line.contains("PAG.:")) {
+                continue;
             }
 
             // Detectar línea de operación (empieza con número largo seguido de concepto)
@@ -308,14 +305,14 @@ public class MoeveFacturaParser implements FacturaParser {
             if (opM.find()) {
                 try {
                     Operacion op = parseLineaOperacionMoeve(line, currentFechaOp, currentHora,
-                            currentEstablecimiento, currentConductor);
+                            currentEstablecimiento, null);
                     op.setTarjetaResumen(currentTarjeta);
                     currentTarjeta.getOperaciones().add(op);
                 } catch (Exception e) {
                     log.warn("[Moeve] Error parseando operación '{}': {}", line, e.getMessage());
                 }
-                // Después de una operación, buscar próxima fecha/estab
-                estado = EstadoExtracto.BUSCA_FECHA_HORA_ESTAB;
+                // Reset para la próxima operación: el establecimiento debe ser la
+                // siguiente línea no-numérica encontrada, no la anterior.
                 currentFechaOp = null;
                 currentHora = null;
                 currentEstablecimiento = null;
@@ -328,9 +325,10 @@ public class MoeveFacturaParser implements FacturaParser {
                 try {
                     currentFechaOp = LocalDate.parse(fechaM.group(1), FMT_YYYY_MM_DD);
                 } catch (Exception ignored) { /* continúa */ }
-                // La línea puede contener también el establecimiento antes de la fecha
+                // En algunas líneas la fecha viene precedida del establecimiento:
+                // "VALLECAS-VILLAVERDE 365 MADRID  2025-12-05  07:45"
                 String beforeDate = line.substring(0, fechaM.start()).strip();
-                if (!beforeDate.isBlank() && !beforeDate.equals(currentConductor)) {
+                if (!beforeDate.isBlank()) {
                     currentEstablecimiento = beforeDate;
                 }
                 continue;
@@ -343,26 +341,23 @@ public class MoeveFacturaParser implements FacturaParser {
                 continue;
             }
 
-            // Líneas de establecimiento (entre conductor y operación, que no son fecha/hora)
-            // Filtramos líneas basura del PDF (publicidad, totales, cabeceras de página)
-            if (estado == EstadoExtracto.BUSCA_FECHA_HORA_ESTAB
-                    && !line.matches("\\d.*")
-                    && currentFechaOp == null
-                    && !line.contains("REGISTRATE EN WWW")
-                    && !line.contains("GESTIONA ON LINE")
-                    && !line.startsWith("TOTAL MATRICULA")
-                    && !line.contains("PAG.:")) {
-                // Puede ser el establecimiento (max 100 chars)
+            // Cualquier otra línea de texto (no numérica, no fecha, no hora) es
+            // el nombre de la estación de servicio de la próxima operación.
+            if (!line.matches("\\d.*")) {
                 if (currentEstablecimiento == null) {
-                    currentEstablecimiento = line.length() > 100 ? line.substring(0, 100) : line;
+                    currentEstablecimiento = trimEstablecimiento(line);
                 } else if (currentEstablecimiento.length() < 100) {
-                    currentEstablecimiento += " " + line;
-                    if (currentEstablecimiento.length() > 100) {
-                        currentEstablecimiento = currentEstablecimiento.substring(0, 100);
-                    }
+                    String joined = currentEstablecimiento + " " + line;
+                    currentEstablecimiento = trimEstablecimiento(joined);
                 }
             }
         }
+    }
+
+    private static String trimEstablecimiento(String value) {
+        if (value == null) return null;
+        String trimmed = value.trim();
+        return trimmed.length() > 100 ? trimmed.substring(0, 100) : trimmed;
     }
 
     /**
