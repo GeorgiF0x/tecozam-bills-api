@@ -32,4 +32,24 @@ public class FileStorageService {
         log.info("Factura guardada: {}", target);
         return target.toString();
     }
+
+    /**
+     * Borra el PDF de una factura del disco (NEW-09). Es best-effort: si el path
+     * no existe o no se puede borrar, se loggea como warn pero NO se lanza
+     * excepción — la fuente de verdad es la BD.
+     */
+    public void borrarFactura(String ruta) {
+        if (ruta == null || ruta.isBlank()) return;
+        try {
+            Path path = Paths.get(ruta);
+            boolean borrado = Files.deleteIfExists(path);
+            if (borrado) {
+                log.info("PDF de factura borrado: {}", path);
+            } else {
+                log.warn("PDF de factura no encontrado: {}", path);
+            }
+        } catch (IOException e) {
+            log.warn("Error al borrar PDF '{}': {}", ruta, e.getMessage());
+        }
+    }
 }

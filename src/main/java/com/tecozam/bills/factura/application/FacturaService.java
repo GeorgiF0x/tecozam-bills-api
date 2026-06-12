@@ -180,6 +180,36 @@ public class FacturaService {
         return toDTO(factura);
     }
 
+    /**
+     * Elimina una factura junto con sus tarjetaResumenes, operaciones y conceptos
+     * (cascade JPA). Los tickets que estaban cotejados contra operaciones de esta
+     * factura se desvinculan y vuelven al estado PENDIENTE para que puedan
+     * recotejarse contra una factura futura. El PDF físico también se borra
+     * best-effort (si falla, la transacción no se revierte).
+     */
+    public void eliminar(Long id) {
+        Factura factura = facturaRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Factura", id));
+
+        int ticketsDesvinculados = ticketService.desvincularPorFactura(id);
+        if (ticketsDesvinculados > 0) {
+            log.info("[FacturaService] {} tickets desvinculados de factura {}",
+                    ticketsDesvinculados, id);
+        }
+
+        String rutaPdf = factura.getRutaPdf();
+        facturaRepository.delete(factura);
+
+        if (rutaPdf != null && !rutaPdf.isBlank()) {
+            try {
+                fileStorageService.borrarFactura(rutaPdf);
+            } catch (Exception e) {
+                log.warn("[FacturaService] No se pudo borrar el PDF '{}': {}", rutaPdf, e.getMessage());
+            }
+        }
+        log.info("[FacturaService] Factura {} eliminada (id={})", factura.getNumFactura(), id);
+    }
+
     // ─────────────────────────────────────────────────────────────────────────
     // HELPERS
     // ─────────────────────────────────────────────────────────────────────────

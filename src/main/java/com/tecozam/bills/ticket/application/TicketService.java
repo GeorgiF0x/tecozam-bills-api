@@ -127,6 +127,24 @@ public class TicketService {
         return toDTO(ticket);
     }
 
+    /**
+     * NEW-09: desvincula los tickets que estaban cotejados contra una factura
+     * que se va a eliminar. Los tickets quedan en estado PENDIENTE y sin
+     * operacion_cotejada para que vuelvan al cotejo automático con futuras
+     * facturas.
+     *
+     * @return número de tickets afectados
+     */
+    public int desvincularPorFactura(Long facturaId) {
+        List<Ticket> afectados = ticketRepository.findByOperacionCotejadaFacturaId(facturaId);
+        for (Ticket t : afectados) {
+            t.setOperacionCotejada(null);
+            t.setEstadoCotejo("PENDIENTE");
+        }
+        ticketRepository.saveAll(afectados);
+        return afectados.size();
+    }
+
     public CotejoResultDTO cotejarPendientes() {
         List<Ticket> pendientes = ticketRepository.findByEstadoCotejo("PENDIENTE");
 

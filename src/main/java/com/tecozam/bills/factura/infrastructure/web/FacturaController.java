@@ -56,4 +56,16 @@ public class FacturaController {
     public FacturaDTO findById(@PathVariable Long id) {
         return facturaService.findById(id);
     }
+
+    /**
+     * NEW-09: borra una factura junto con sus operaciones, tarjetaResumenes y
+     * conceptos. Los tickets cotejados contra esta factura se desvinculan a
+     * estado PENDIENTE. El PDF físico también se borra (best-effort).
+     */
+    @DeleteMapping("/{id}")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<Void> eliminar(@PathVariable Long id) {
+        facturaService.eliminar(id);
+        return ResponseEntity.noContent().build();
+    }
 }

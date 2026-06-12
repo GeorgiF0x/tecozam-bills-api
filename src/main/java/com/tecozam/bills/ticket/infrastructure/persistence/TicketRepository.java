@@ -16,4 +16,7 @@ public interface TicketRepository extends JpaRepository<Ticket, Long> {
     List<Ticket> findByTrabajadorId(Long trabajadorId);
 
     long countByEstadoCotejoIn(List<String> estados);
+
+    /** Tickets cuya operación cotejada pertenece a una factura concreta (NEW-09). */
+    List<Ticket> findByOperacionCotejadaFacturaId(Long facturaId);
 }
