@@ -3,6 +3,7 @@ package com.tecozam.bills.admin.infrastructure.import_;
 import org.apache.poi.ss.usermodel.DataFormatter;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
+import org.springframework.stereotype.Component;
 
 import java.text.Normalizer;
 import java.util.HashMap;
@@ -19,7 +20,8 @@ import java.util.Optional;
  * <p>Función pura: cada fila → {@link FilaImportada}. La materialización en
  * BD se hace en capa superior con repos inyectados.
  */
-public final class RepsolXlsxRowParser {
+@Component
+public final class RepsolXlsxRowParser implements ListadoTarjetasRowParser {
 
     static final String KEY_NUMERO = "NUMERO_TARJETA";
     static final String KEY_MATRICULA = "MATRICULA";
@@ -29,6 +31,7 @@ public final class RepsolXlsxRowParser {
 
     private static final DataFormatter FORMATTER = new DataFormatter(new Locale("es", "ES"));
 
+    @Override
     public Map<String, Integer> leerCabeceras(Sheet hoja) {
         Row header = hoja.getRow(0);
         if (header == null) return Map.of();
@@ -43,6 +46,7 @@ public final class RepsolXlsxRowParser {
         return indices;
     }
 
+    @Override
     public Optional<FilaImportada> parse(Row row, Map<String, Integer> headers) {
         if (row == null) return Optional.empty();
         String numero = leerCelda(row, headers, KEY_NUMERO);
@@ -72,7 +76,7 @@ public final class RepsolXlsxRowParser {
                 .replaceAll("\\p{InCombiningDiacriticalMarks}+", "");
         String compact = sinTildes.toUpperCase(Locale.ROOT).replaceAll("\\s+", " ").trim();
         return switch (compact) {
-            case "NUMERO TARJETA", "NUMERO DE TARJETA", "Nº TARJETA" -> KEY_NUMERO;
+            case "NUMERO TARJETA", "NUMERO DE TARJETA" -> KEY_NUMERO;
             case "MATRICULA" -> KEY_MATRICULA;
             case "NOMBRE" -> KEY_NOMBRE;
             case "CENTRO COSTE", "CENTRO DE COSTE" -> KEY_CENTRO;

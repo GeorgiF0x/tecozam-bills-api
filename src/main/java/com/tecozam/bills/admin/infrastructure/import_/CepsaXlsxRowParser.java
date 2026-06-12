@@ -3,6 +3,7 @@ package com.tecozam.bills.admin.infrastructure.import_;
 import org.apache.poi.ss.usermodel.DataFormatter;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
+import org.springframework.stereotype.Component;
 
 import java.text.Normalizer;
 import java.util.HashMap;
@@ -13,16 +14,19 @@ import java.util.Optional;
 /**
  * Lee las cabeceras y filas del Excel de listado de tarjetas Cepsa/Moeve.
  *
- * <p>Función pura sin dependencias Spring ni BD: cada fila se traduce a un
+ * <p>Función pura sin dependencias Spring de datos: cada fila se traduce a un
  * {@link FilaImportada}. La persistencia (crear/buscar Trabajador, Tarjeta,
  * Viat) la hace el importer en capa superior con repos inyectados — eso
  * permite que este parser se teste sin mocks.
+ *
+ * <p>Anotado como {@link Component} para que el factory lo inyecte vía Spring.
  *
  * <p>Cabeceras esperadas (en cualquier orden y con tildes/espacios variables):
  * {@code NUMERO DE TARJETA | MATRICULA | NOMBRE | MATRICULA2 | CENTRO COSTE |
  * Columna1 | CONCEPTOS}. Columnas no mapeadas se ignoran en silencio.
  */
-public final class CepsaXlsxRowParser {
+@Component
+public final class CepsaXlsxRowParser implements ListadoTarjetasRowParser {
 
     static final String KEY_NUMERO = "NUMERO_TARJETA";
     static final String KEY_MATRICULA = "MATRICULA";
@@ -32,6 +36,7 @@ public final class CepsaXlsxRowParser {
 
     private static final DataFormatter FORMATTER = new DataFormatter(new Locale("es", "ES"));
 
+    @Override
     public Map<String, Integer> leerCabeceras(Sheet hoja) {
         Row header = hoja.getRow(0);
         if (header == null) return Map.of();
@@ -46,6 +51,7 @@ public final class CepsaXlsxRowParser {
         return indices;
     }
 
+    @Override
     public Optional<FilaImportada> parse(Row row, Map<String, Integer> headers) {
         if (row == null) return Optional.empty();
         String numero = leerCelda(row, headers, KEY_NUMERO);
@@ -72,16 +78,13 @@ public final class CepsaXlsxRowParser {
         return val == null ? "" : val.trim();
     }
 
-    /**
-     * Normaliza la cabecera (sin tildes, sin espacios) y la mapea a clave lógica.
-     */
     private String mapearCabecera(String raw) {
         if (raw == null) return null;
         String sinTildes = Normalizer.normalize(raw.trim(), Normalizer.Form.NFD)
                 .replaceAll("\\p{InCombiningDiacriticalMarks}+", "");
         String compact = sinTildes.toUpperCase(Locale.ROOT).replaceAll("\\s+", " ").trim();
         return switch (compact) {
-            case "NUMERO DE TARJETA", "NUMERO TARJETA", "Nº TARJETA", "N TARJETA" -> KEY_NUMERO;
+            case "NUMERO DE TARJETA", "NUMERO TARJETA" -> KEY_NUMERO;
             case "MATRICULA" -> KEY_MATRICULA;
             case "NOMBRE" -> KEY_NOMBRE;
             case "CENTRO COSTE", "CENTRO DE COSTE" -> KEY_CENTRO;

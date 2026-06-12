@@ -23,7 +23,7 @@ public class ListadoTarjetasParserFactory {
     private final RepsolXlsxRowParser repsolParser;
     private final CepsaXlsxRowParser cepsaParser;
 
-    public Object parserPara(String codigoProveedor) {
+    public ListadoTarjetasRowParser parserPara(String codigoProveedor) {
         if (codigoProveedor == null) {
             throw new IllegalArgumentException("El código de proveedor es obligatorio");
         }
