@@ -120,14 +120,17 @@ public class ListadoTarjetasImportService {
     private void materializar(FilaImportada fila, ImportContext ctx) {
         if (!fila.conceptoConocido()) {
             ctx.filasIgnoradas++;
-            // Solo reportamos como ruido si el concepto NO es vacío. Las filas
-            // con concepto vacío en el Excel original son ruido conocido y no
-            // ayuda a la auditoría llenar el reporte con cientos de "''".
+            // NEW-13: mensaje claro con motivo concreto en lugar del contador
+            // genérico. El admin puede entender qué falla y arreglar el Excel.
             String concepto = fila.concepto();
-            if (concepto != null && !concepto.isBlank()) {
-                ctx.errores.add("Concepto no reconocido en fila con tarjeta '" + fila.numero()
-                        + "': '" + concepto + "' — procesado como TARJETA por defecto");
+            String motivo;
+            if (concepto == null || concepto.isBlank()) {
+                motivo = "Columna concepto vacía";
+            } else {
+                motivo = "Concepto '" + concepto + "' no reconocido";
             }
+            ctx.errores.add("Tarjeta " + fila.numero() + " — " + motivo
+                    + " · procesado como TARJETA por defecto");
         }
         materializarCentroCoste(fila, ctx);
         Trabajador trabajador = materializarTrabajador(fila, ctx);
