@@ -245,12 +245,11 @@ public class TicketController {
 
     @PostMapping("/ocr-preview")
     @PreAuthorize("isAuthenticated()")
-    @Operation(summary = "Preview OCR de ticket con autenticación PIN",
-            description = "Valida PIN y asignación de tarjeta. Si OK, extrae datos del ticket vía OpenAI Vision SIN crear ticket. Para mostrar al usuario los datos antes de la edición final.")
+    @Operation(summary = "Preview OCR de ticket",
+            description = "Valida la asignación activa de la tarjeta y, si OK, extrae datos del ticket vía OpenAI Vision SIN crear ticket. FLEET-01: el PIN ya no se exige aquí; existe solo a efectos de consulta.")
     public ResponseEntity<Map<String, Object>> ocrPreview(
             @RequestParam("imagen") MultipartFile imagen,
             @RequestParam("tarjetaId") Long tarjetaId,
-            @RequestParam("pin") String pin,
             Authentication authentication) {
         try {
             if (imagen == null || imagen.isEmpty()) {
@@ -261,14 +260,10 @@ public class TicketController {
                         .body(Map.of("error", "OCR no configurado: falta OPENAI_API_KEY"));
             }
 
-            // ── Validar PIN + asignación ANTES de hacer OCR ──────────────
+            // ── Validar asignación ANTES de hacer OCR ────────────────────
             try {
-                ticketService.validarPinYAsignacion(
-                        authentication.getName(), tarjetaId, pin);
+                ticketService.validarAsignacion(authentication.getName(), tarjetaId);
             } catch (com.tecozam.bills.shared.infrastructure.exception.BusinessException be) {
-                if ("PIN incorrecto".equals(be.getMessage())) {
-                    return ResponseEntity.status(401).body(Map.of("error", "PIN incorrecto"));
-                }
                 return ResponseEntity.badRequest().body(Map.of("error", be.getMessage()));
             }
 
@@ -356,7 +351,7 @@ public class TicketController {
                 ocrRaw = ex.ocrRaw;
             }
 
-            // ── Validar PIN y crear ticket ─────────────────────────────
+            // ── Validar asignación y crear ticket (FLEET-01: sin PIN) ──
             try {
                 TicketDTO ticket = ticketService.createOcrValidado(
                         authentication.getName(),
@@ -377,9 +372,6 @@ public class TicketController {
                 response.put("ocrData", ocrRaw);
                 return ResponseEntity.ok(response);
             } catch (com.tecozam.bills.shared.infrastructure.exception.BusinessException be) {
-                if ("PIN incorrecto".equals(be.getMessage())) {
-                    return ResponseEntity.status(401).body(Map.of("error", "PIN incorrecto"));
-                }
                 return ResponseEntity.badRequest().body(Map.of("error", be.getMessage()));
             }
 

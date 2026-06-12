@@ -10,6 +10,7 @@ import com.tecozam.bills.factura.infrastructure.parser.FacturaParserFactory;
 import com.tecozam.bills.factura.infrastructure.persistence.FacturaRepository;
 import com.tecozam.bills.proveedor.domain.Proveedor;
 import com.tecozam.bills.proveedor.infrastructure.persistence.ProveedorRepository;
+import com.tecozam.bills.shared.infrastructure.exception.BusinessException;
 import com.tecozam.bills.shared.infrastructure.exception.DuplicateResourceException;
 import com.tecozam.bills.shared.infrastructure.exception.ResourceNotFoundException;
 import com.tecozam.bills.shared.infrastructure.storage.FileStorageService;
@@ -63,17 +64,31 @@ public class FacturaService {
             throw new IllegalArgumentException("El archivo debe ser un PDF");
         }
 
-        // 3. Parsear
+        // 3. Validacion previa de extracto obligatorio para MOEVE/CEPSA
+        String codigoUpper = proveedor.getCodigo() == null ? "" : proveedor.getCodigo().toUpperCase();
+        boolean requiereExtracto = codigoUpper.contains("MOEVE") || codigoUpper.contains("CEPSA");
+        boolean tieneExtracto = extractoPdf != null && !extractoPdf.isEmpty();
+        if (requiereExtracto && !tieneExtracto) {
+            throw new BusinessException(
+                    "Para facturas de " + proveedor.getNombre()
+                            + " es obligatorio adjuntar el extracto PDF junto con la factura.");
+        }
+
+        // 4. Parsear
         FacturaParser parser = parserFactory.getParser(proveedor.getCodigo());
         FacturaParseResult result;
         try {
             result = parser.parse(
                     facturaPdf.getInputStream(),
-                    extractoPdf != null && !extractoPdf.isEmpty() ? extractoPdf.getInputStream() : null
+                    tieneExtracto ? extractoPdf.getInputStream() : null
             );
+        } catch (BusinessException e) {
+            throw e;
         } catch (Exception e) {
             log.error("[FacturaService] Error parseando PDF para proveedor {}: {}", proveedor.getCodigo(), e.getMessage(), e);
-            throw new RuntimeException("Error al parsear la factura PDF: " + e.getMessage(), e);
+            throw new BusinessException(
+                    "No se pudo procesar el PDF de la factura. Verifica que el archivo sea correcto y vuelve a intentarlo."
+                            + " Detalle tecnico: " + e.getMessage());
         }
 
         Factura factura = result.getFactura();
