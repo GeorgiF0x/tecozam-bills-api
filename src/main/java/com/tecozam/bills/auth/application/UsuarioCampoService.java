@@ -8,6 +8,8 @@ import com.tecozam.bills.auth.infrastructure.persistence.UsuarioCampoRepository;
 import com.tecozam.bills.shared.domain.enums.EstadoRegistro;
 import com.tecozam.bills.shared.infrastructure.exception.DuplicateResourceException;
 import com.tecozam.bills.shared.infrastructure.exception.ResourceNotFoundException;
+import com.tecozam.bills.trabajador.application.TrabajadorResolver;
+import com.tecozam.bills.trabajador.domain.OrigenTrabajador;
 import com.tecozam.bills.trabajador.domain.Trabajador;
 import com.tecozam.bills.trabajador.infrastructure.persistence.TrabajadorRepository;
 import lombok.RequiredArgsConstructor;
@@ -26,6 +28,7 @@ public class UsuarioCampoService {
 
     private final UsuarioCampoRepository usuarioCampoRepository;
     private final TrabajadorRepository trabajadorRepository;
+    private final TrabajadorResolver trabajadorResolver;
     private final PasswordEncoder passwordEncoder;
 
     @Transactional(readOnly = true)
@@ -52,15 +55,19 @@ public class UsuarioCampoService {
             throw new DuplicateResourceException("UsuarioCampo", "username", req.username());
         }
 
-        Trabajador trabajador = Trabajador.builder()
-                .nombre(req.nombre())
-                .apellidos(req.apellidos() != null ? req.apellidos() : "")
-                .activo(true)
-                .build();
-        if (req.dni() != null && !req.dni().isBlank()) {
-            trabajador.setDniNie(req.dni());
+        Trabajador trabajador = trabajadorResolver.resolver(
+                req.nombre(),
+                req.apellidos() != null ? req.apellidos() : "",
+                null,
+                req.dni(),
+                OrigenTrabajador.CAMPO);
+        // Si reusamos un trabajador previo cuyo origen era IMPORTACION pero ahora
+        // se promociona a usuario de campo, marcamos su origen como CAMPO para
+        // reflejar que la persona ya tiene cuenta operativa.
+        if (trabajador.getOrigen() == OrigenTrabajador.IMPORTACION) {
+            trabajador.setOrigen(OrigenTrabajador.CAMPO);
+            trabajador = trabajadorRepository.save(trabajador);
         }
-        trabajador = trabajadorRepository.save(trabajador);
 
         UsuarioCampo nuevo = UsuarioCampo.builder()
                 .username(req.username())
@@ -85,17 +92,18 @@ public class UsuarioCampoService {
         // Si todavía no tiene Trabajador asociado, lo creamos ahora con los
         // datos provisionales del propio UsuarioCampo (introducidos en signup).
         if (usuario.getTrabajador() == null) {
-            Trabajador trabajador = Trabajador.builder()
-                    .nombre(usuario.getNombre())
-                    .apellidos(usuario.getApellidos())
-                    .activo(true)
-                    .build();
-            if (usuario.getDni() != null && !usuario.getDni().isBlank()) {
-                trabajador.setDniNie(usuario.getDni());
+            Trabajador trabajador = trabajadorResolver.resolver(
+                    usuario.getNombre(),
+                    usuario.getApellidos() != null ? usuario.getApellidos() : "",
+                    null,
+                    usuario.getDni(),
+                    OrigenTrabajador.CAMPO);
+            if (trabajador.getOrigen() == OrigenTrabajador.IMPORTACION) {
+                trabajador.setOrigen(OrigenTrabajador.CAMPO);
+                trabajador = trabajadorRepository.save(trabajador);
             }
-            trabajador = trabajadorRepository.save(trabajador);
             usuario.setTrabajador(trabajador);
-            log.info("Trabajador maestro creado al activar usuario campo {}: id={}",
+            log.info("Trabajador maestro vinculado al activar usuario campo {}: id={}",
                     usuario.getUsername(), trabajador.getId());
         }
 

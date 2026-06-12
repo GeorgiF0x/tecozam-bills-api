@@ -10,7 +10,8 @@ import com.tecozam.bills.centrocoste.domain.CentroCoste;
 import com.tecozam.bills.centrocoste.infrastructure.persistence.CentroCosteRepository;
 import com.tecozam.bills.proveedor.domain.Proveedor;
 import com.tecozam.bills.proveedor.infrastructure.persistence.ProveedorRepository;
-import com.tecozam.bills.shared.util.NombreApellidosSplitter;
+import com.tecozam.bills.trabajador.application.TrabajadorResolver;
+import com.tecozam.bills.trabajador.domain.OrigenTrabajador;
 import com.tecozam.bills.shared.domain.enums.EstadoRecurso;
 import com.tecozam.bills.shared.infrastructure.exception.BusinessException;
 import com.tecozam.bills.tarjeta.domain.Tarjeta;
@@ -57,6 +58,7 @@ public class ListadoTarjetasImportService {
     private final TarjetaRepository tarjetaRepo;
     private final ViatRepository viatRepo;
     private final TrabajadorRepository trabajadorRepo;
+    private final TrabajadorResolver trabajadorResolver;
     private final CentroCosteRepository centroCosteRepo;
 
     public ImportTarjetasReportDTO importar(MultipartFile file, String codigoProveedor) {
@@ -157,23 +159,16 @@ public class ListadoTarjetasImportService {
             ctx.trabajadoresExistentes++;
             return cached;
         }
-        String[] split = NombreApellidosSplitter.split(key);
-        Optional<Trabajador> existente = trabajadorRepo
-                .findFirstByNombreIgnoreCaseAndApellidosIgnoreCase(split[0], split[1]);
-        if (existente.isPresent()) {
-            ctx.trabajadoresCache.put(key, existente.get());
-            ctx.trabajadoresExistentes++;
-            return existente.get();
-        }
-        Trabajador nuevo = Trabajador.builder()
-                .nombre(split[0])
-                .apellidos(split[1])
-                .activo(true)
-                .build();
-        Trabajador saved = trabajadorRepo.save(nuevo);
-        ctx.trabajadoresCache.put(key, saved);
-        ctx.trabajadoresCreados++;
-        return saved;
+        // BILLS-10: TrabajadorResolver decide si crear o reusar (busca por
+        // DNI/email/nombre+apellidos antes de crear). Asi evitamos duplicados
+        // entre import y signup.
+        long count = trabajadorRepo.count();
+        Trabajador resolved = trabajadorResolver.resolverDesdeNombreCompleto(
+                key, null, null, OrigenTrabajador.IMPORTACION);
+        boolean creado = trabajadorRepo.count() > count;
+        ctx.trabajadoresCache.put(key, resolved);
+        if (creado) ctx.trabajadoresCreados++; else ctx.trabajadoresExistentes++;
+        return resolved;
     }
 
     private void materializarTarjeta(FilaImportada fila, ImportContext ctx) {

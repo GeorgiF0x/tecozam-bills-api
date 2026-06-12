@@ -11,6 +11,8 @@ import com.tecozam.bills.shared.util.NombreApellidosSplitter;
 import com.tecozam.bills.shared.infrastructure.exception.BusinessException;
 import com.tecozam.bills.shared.infrastructure.exception.DuplicateResourceException;
 import com.tecozam.bills.shared.infrastructure.exception.ResourceNotFoundException;
+import com.tecozam.bills.trabajador.application.TrabajadorResolver;
+import com.tecozam.bills.trabajador.domain.OrigenTrabajador;
 import com.tecozam.bills.trabajador.domain.Trabajador;
 import com.tecozam.bills.trabajador.infrastructure.persistence.TrabajadorRepository;
 import lombok.RequiredArgsConstructor;
@@ -29,6 +31,7 @@ public class UsuarioOficinaService {
 
     private final UsuarioOficinaRepository usuarioOficinaRepository;
     private final TrabajadorRepository trabajadorRepository;
+    private final TrabajadorResolver trabajadorResolver;
     private final PasswordEncoder passwordEncoder;
 
     @Transactional(readOnly = true)
@@ -64,16 +67,16 @@ public class UsuarioOficinaService {
         }
 
         String[] partes = NombreApellidosSplitter.split(req.nombre());
-        Trabajador trabajador = Trabajador.builder()
-                .nombre(partes[0])
-                .apellidos(partes[1])
-                .email(req.email() != null && !req.email().isBlank() ? req.email() : null)
-                .activo(true)
-                .build();
-        if (req.dni() != null && !req.dni().isBlank()) {
-            trabajador.setDniNie(req.dni());
+        Trabajador trabajador = trabajadorResolver.resolver(
+                partes[0],
+                partes[1],
+                req.email(),
+                req.dni(),
+                OrigenTrabajador.OFICINA);
+        if (trabajador.getOrigen() == OrigenTrabajador.IMPORTACION) {
+            trabajador.setOrigen(OrigenTrabajador.OFICINA);
+            trabajador = trabajadorRepository.save(trabajador);
         }
-        trabajador = trabajadorRepository.save(trabajador);
 
         UsuarioOficina nuevo = UsuarioOficina.builder()
                 .username(req.username())
@@ -100,18 +103,18 @@ public class UsuarioOficinaService {
         // del nombre completo provisional guardado durante el signup.
         if (usuario.getTrabajador() == null) {
             String[] partes = NombreApellidosSplitter.split(usuario.getNombreCompleto());
-            Trabajador trabajador = Trabajador.builder()
-                    .nombre(partes[0])
-                    .apellidos(partes[1])
-                    .email(usuario.getEmail())
-                    .activo(true)
-                    .build();
-            if (usuario.getDni() != null && !usuario.getDni().isBlank()) {
-                trabajador.setDniNie(usuario.getDni());
+            Trabajador trabajador = trabajadorResolver.resolver(
+                    partes[0],
+                    partes[1],
+                    usuario.getEmail(),
+                    usuario.getDni(),
+                    OrigenTrabajador.OFICINA);
+            if (trabajador.getOrigen() == OrigenTrabajador.IMPORTACION) {
+                trabajador.setOrigen(OrigenTrabajador.OFICINA);
+                trabajador = trabajadorRepository.save(trabajador);
             }
-            trabajador = trabajadorRepository.save(trabajador);
             usuario.setTrabajador(trabajador);
-            log.info("Trabajador maestro creado al activar usuario oficina {}: id={}",
+            log.info("Trabajador maestro vinculado al activar usuario oficina {}: id={}",
                     usuario.getUsername(), trabajador.getId());
         }
 

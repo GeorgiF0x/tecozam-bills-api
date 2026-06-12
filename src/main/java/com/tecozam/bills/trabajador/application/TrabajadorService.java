@@ -3,6 +3,7 @@ package com.tecozam.bills.trabajador.application;
 import com.tecozam.bills.shared.infrastructure.exception.BusinessException;
 import com.tecozam.bills.shared.infrastructure.exception.DuplicateResourceException;
 import com.tecozam.bills.shared.infrastructure.exception.ResourceNotFoundException;
+import com.tecozam.bills.trabajador.domain.OrigenTrabajador;
 import com.tecozam.bills.trabajador.domain.Trabajador;
 import com.tecozam.bills.trabajador.dto.CreateTrabajadorRequest;
 import com.tecozam.bills.trabajador.dto.TrabajadorDTO;
@@ -54,6 +55,7 @@ public class TrabajadorService {
                 .email(request.email())
                 .dniNie(request.dniNie())
                 .activo(true)
+                .origen(OrigenTrabajador.OFICINA)
                 .build();
 
         trabajador = trabajadorRepository.save(trabajador);
@@ -115,6 +117,7 @@ public class TrabajadorService {
                 trabajador.getEmail(),
                 trabajador.getDniNie(),
                 trabajador.isActivo(),
+                trabajador.getOrigen() != null ? trabajador.getOrigen().name() : null,
                 trabajador.getCreadoEn()
         );
     }

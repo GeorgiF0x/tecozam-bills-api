@@ -1,7 +1,9 @@
 package com.tecozam.bills.trabajador.infrastructure.web;
 
+import com.tecozam.bills.trabajador.application.FusionarTrabajadoresService;
 import com.tecozam.bills.trabajador.application.TrabajadorService;
 import com.tecozam.bills.trabajador.dto.CreateTrabajadorRequest;
+import com.tecozam.bills.trabajador.dto.FusionarTrabajadoresResponse;
 import com.tecozam.bills.trabajador.dto.TrabajadorDTO;
 import com.tecozam.bills.trabajador.dto.UpdateTrabajadorRequest;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -28,6 +30,7 @@ import java.util.List;
 public class TrabajadorController {
 
     private final TrabajadorService trabajadorService;
+    private final FusionarTrabajadoresService fusionarService;
 
     @GetMapping
     public List<TrabajadorDTO> findAll(@RequestParam(defaultValue = "true") boolean activo) {
@@ -56,5 +59,18 @@ public class TrabajadorController {
     public ResponseEntity<Void> toggleActivo(@PathVariable Long id) {
         trabajadorService.toggleActivo(id);
         return ResponseEntity.noContent().build();
+    }
+
+    /**
+     * BILLS-10: fusiona dos trabajadores duplicados. Re-vincula tarjetas,
+     * tickets, prestamos y usuarios del perdedor al ganador y borra el
+     * perdedor. Devuelve los contadores de filas movidas.
+     */
+    @PostMapping("/{ganadorId}/fusionar/{perdedorId}")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<FusionarTrabajadoresResponse> fusionar(
+            @PathVariable Long ganadorId,
+            @PathVariable Long perdedorId) {
+        return ResponseEntity.ok(fusionarService.fusionar(ganadorId, perdedorId));
     }
 }

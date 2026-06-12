@@ -15,6 +15,8 @@ import com.tecozam.bills.proveedor.infrastructure.persistence.ProveedorRepositor
 import com.tecozam.bills.shared.domain.enums.EstadoRecurso;
 import com.tecozam.bills.shared.infrastructure.exception.BusinessException;
 import com.tecozam.bills.shared.util.NombreApellidosSplitter;
+import com.tecozam.bills.trabajador.application.TrabajadorResolver;
+import com.tecozam.bills.trabajador.domain.OrigenTrabajador;
 import com.tecozam.bills.tarjeta.domain.Tarjeta;
 import com.tecozam.bills.tarjeta.infrastructure.persistence.TarjetaRepository;
 import com.tecozam.bills.trabajador.domain.Trabajador;
@@ -108,6 +110,7 @@ public class RepsolImportService {
 
     private final CentroCosteRepository centroCosteRepository;
     private final TrabajadorRepository trabajadorRepository;
+    private final TrabajadorResolver trabajadorResolver;
     private final TarjetaRepository tarjetaRepository;
     private final ViatRepository viatRepository;
     private final ProveedorRepository proveedorRepository;
@@ -532,13 +535,11 @@ public class RepsolImportService {
             return existente.get();
         }
 
-        Trabajador t = Trabajador.builder()
-                .nombre(nombre)
-                .apellidos(apellidos)
-                .email(null)
-                .activo(true)
-                .build();
-        Trabajador saved = trabajadorRepository.save(t);
+        // BILLS-10: delegar a TrabajadorResolver para que el origen quede
+        // marcado correctamente (IMPORTACION) y se reuse cualquier registro
+        // previo creado por otra via.
+        Trabajador saved = trabajadorResolver.resolver(
+                nombre, apellidos, null, null, OrigenTrabajador.IMPORTACION);
         trabajadoresCache.put(cacheKey, saved);
         counters.trabajadoresCreados++;
         return saved;
