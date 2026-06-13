@@ -62,9 +62,21 @@ public class WebauthnCredentialRepositoryAdapter implements CredentialRepository
 
     @Override
     public Optional<RegisteredCredential> lookup(ByteArray credentialId, ByteArray userHandle) {
-        long userId = byteArrayToUserId(userHandle);
+        // El userHandle es OPCIONAL en la assertion: cuando la credencial es
+        // non-discoverable (que es nuestro caso, no marcamos residentKey), Chrome
+        // y Safari pueden enviar userHandle vacio. Si exigieramos 8 bytes con
+        // byteArrayToUserId, peta con "UserHandle no es un id long valido" y la
+        // assertion completa muere.
+        // El credentialId ya es unico globalmente y la firma se valida con la
+        // clave publica guardada — no hace falta cross-check por userId.
         return credRepo.findActiveByCredentialId(credentialId.getBytes())
-                .filter(c -> c.getUsuarioCampoId() != null && c.getUsuarioCampoId() == userId)
+                .filter(c -> {
+                    if (userHandle == null || userHandle.getBytes().length != Long.BYTES) {
+                        return true;
+                    }
+                    long userId = ByteBuffer.wrap(userHandle.getBytes()).getLong();
+                    return c.getUsuarioCampoId() != null && c.getUsuarioCampoId() == userId;
+                })
                 .map(this::toRegistered);
     }
 
