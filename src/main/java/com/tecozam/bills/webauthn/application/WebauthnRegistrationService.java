@@ -76,16 +76,24 @@ public class WebauthnRegistrationService {
                         .authenticatorSelection(selection)
                         .build());
 
-        String json;
+        // Mismo dual-format que AssertionRequest (ver WebauthnAuthenticationService).
+        // - toCredentialsCreateJson(): {"publicKey": {...}} -> navigator.credentials.create()
+        // - toJson(): {...} sin wrapper -> PublicKeyCredentialCreationOptions.fromJson()
+        // Antes guardabamos el formato browser y al deserializarlo se rompia el
+        // parsing en finishRegistration. En registration era menos visible que en
+        // assertion pero el patron es el mismo.
+        String wireJson;
+        String storedJson;
         try {
-            json = options.toCredentialsCreateJson();
+            wireJson = options.toCredentialsCreateJson();
+            storedJson = options.toJson();
         } catch (Exception ex) {
             throw new BusinessException("No se pudieron serializar las opciones WebAuthn: " + ex.getMessage());
         }
         String token = UUID.randomUUID().toString();
-        challengeStore.put(token, json.getBytes(), u.getId());
+        challengeStore.put(token, storedJson.getBytes(), u.getId());
 
-        return new RegisterStartResponse(token, json);
+        return new RegisterStartResponse(token, wireJson);
     }
 
     @Transactional

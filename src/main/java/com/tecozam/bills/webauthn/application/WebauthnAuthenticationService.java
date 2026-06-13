@@ -49,16 +49,26 @@ public class WebauthnAuthenticationService {
                         .userVerification(UserVerificationRequirement.REQUIRED)
                         .build());
 
-        String json;
+        // OJO: yubico expone dos formatos JSON distintos para AssertionRequest.
+        // - toCredentialsGetJson(): {"publicKey": {...}} — el formato que entiende
+        //   navigator.credentials.get() en el browser. Va al cliente.
+        // - toJson(): {"publicKeyCredentialRequestOptions": {...}, "username": "..."}
+        //   — el formato que entiende AssertionRequest.fromJson(...). Es el que
+        //   guardamos para reconstruir el request en verifyAssertion.
+        // Antes guardabamos toCredentialsGetJson y al deserializarlo el campo
+        // publicKeyCredentialRequestOptions venia null -> BusinessException.
+        String wireJson;
+        String storedJson;
         try {
-            json = req.toCredentialsGetJson();
+            wireJson = req.toCredentialsGetJson();
+            storedJson = req.toJson();
         } catch (Exception ex) {
             throw new BusinessException("No se pudieron serializar las opciones de assertion: " + ex.getMessage());
         }
         String token = UUID.randomUUID().toString();
-        challengeStore.put(token, json.getBytes(), u.getId());
+        challengeStore.put(token, storedJson.getBytes(), u.getId());
 
-        return new AssertionStartResponse(token, json);
+        return new AssertionStartResponse(token, wireJson);
     }
 
     /**
