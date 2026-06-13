@@ -12,6 +12,7 @@ public record UsuarioCampoDTO(
         Long trabajadorId,
         boolean activo,
         String estadoRegistro,
-        LocalDateTime creadoEn
+        LocalDateTime creadoEn,
+        boolean webauthnEnabled
 ) {
 }

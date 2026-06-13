@@ -1,5 +1,8 @@
 package com.tecozam.bills.tarjeta.application;
 
+import com.tecozam.bills.auditoria.application.AuditoriaPinService;
+import com.tecozam.bills.auditoria.domain.MetodoPinAcceso;
+import com.tecozam.bills.auditoria.domain.ResultadoPinAcceso;
 import com.tecozam.bills.auth.domain.Usuario;
 import com.tecozam.bills.auth.domain.UsuarioCampo;
 import com.tecozam.bills.auth.infrastructure.persistence.UsuarioCampoRepository;
@@ -45,6 +48,7 @@ public class TarjetaService {
     private final VehiculoRepository vehiculoRepository;
     private final UsuarioRepository usuarioRepository;
     private final UsuarioCampoRepository usuarioCampoRepository;
+    private final AuditoriaPinService auditoriaPinService;
 
     @Transactional(readOnly = true)
     public List<TarjetaDTO> findAll(boolean soloActivas) {
@@ -159,7 +163,7 @@ public class TarjetaService {
      * Solo el conductor con asignación activa puede guardar su propio PIN.
      * ADMIN puede para cualquier tarjeta.
      */
-    public void guardarPin(Long tarjetaId, String pin, String username) {
+    public void guardarPin(Long tarjetaId, String pin, String username, String ip, String userAgent) {
         Tarjeta tarjeta = tarjetaRepository.findById(tarjetaId)
                 .orElseThrow(() -> new ResourceNotFoundException("Tarjeta", tarjetaId));
 
@@ -179,6 +183,18 @@ public class TarjetaService {
         tarjeta.setPinEncrypted(pin);
         tarjetaRepository.save(tarjeta);
         log.info("PIN guardado para tarjeta id={} por usuario={}", tarjetaId, username);
+
+        // Auditoría: registramos solo cuando el caller es un usuario CAMPO (no admin).
+        UsuarioCampo campo = usuarioCampoRepository.findByUsername(username).orElse(null);
+        if (campo != null) {
+            auditoriaPinService.registrar(campo.getId(), tarjetaId,
+                    MetodoPinAcceso.PIN_GUARDADO, ResultadoPinAcceso.OK, ip, userAgent);
+        }
+    }
+
+    /** Backwards-compat: invoca la versión con ip/UA vacíos. */
+    public void guardarPin(Long tarjetaId, String pin, String username) {
+        guardarPin(tarjetaId, pin, username, "", "");
     }
 
     /**

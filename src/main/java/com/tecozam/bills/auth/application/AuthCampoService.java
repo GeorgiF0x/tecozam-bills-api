@@ -10,6 +10,7 @@ import com.tecozam.bills.shared.infrastructure.config.JwtConfig;
 import com.tecozam.bills.shared.infrastructure.exception.BusinessException;
 import com.tecozam.bills.shared.infrastructure.exception.ResourceNotFoundException;
 import com.tecozam.bills.shared.infrastructure.security.JwtTokenProvider;
+import com.tecozam.bills.webauthn.infrastructure.config.WebauthnProperties;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
@@ -39,6 +40,7 @@ public class AuthCampoService {
     private final JwtTokenProvider jwtTokenProvider;
     private final PasswordEncoder passwordEncoder;
     private final JwtConfig jwtConfig;
+    private final WebauthnProperties webauthnProperties;
 
     public TokenResponse login(LoginRequest request) {
         UsuarioCampo usuario = usuarioCampoRepository.findByUsername(request.username())
@@ -144,7 +146,8 @@ public class AuthCampoService {
                 u.getTrabajador() != null ? u.getTrabajador().getId() : null,
                 u.isActivo(),
                 u.getEstadoRegistro().name(),
-                u.getCreadoEn());
+                u.getCreadoEn(),
+                webauthnProperties.isEnabled());
     }
 
     private String hashSha256(String input) {

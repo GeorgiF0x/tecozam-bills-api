@@ -186,6 +186,8 @@ public class UsuarioCampoService {
     }
 
     private UsuarioCampoDTO toDTO(UsuarioCampo u) {
+        // webauthnEnabled solo es significativo cuando el propio usuario consulta /me;
+        // en listados del panel admin no aplica y va siempre a false.
         return new UsuarioCampoDTO(
                 u.getId(),
                 u.getUsername(),
@@ -196,6 +198,7 @@ public class UsuarioCampoService {
                 u.getTrabajador() != null ? u.getTrabajador().getId() : null,
                 u.isActivo(),
                 u.getEstadoRegistro().name(),
-                u.getCreadoEn());
+                u.getCreadoEn(),
+                false);
     }
 }

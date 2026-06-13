@@ -1,14 +1,18 @@
 package com.tecozam.bills.tarjeta.infrastructure.web;
 
+import com.tecozam.bills.tarjeta.application.RevealPinService;
 import com.tecozam.bills.tarjeta.application.TarjetaService;
 import com.tecozam.bills.tarjeta.dto.AsignarTarjetaRequest;
 import com.tecozam.bills.tarjeta.dto.CreateTarjetaRequest;
 import com.tecozam.bills.tarjeta.dto.GuardarPinRequest;
 import com.tecozam.bills.tarjeta.dto.MiTarjetaDTO;
+import com.tecozam.bills.tarjeta.dto.RevealPinRequest;
+import com.tecozam.bills.tarjeta.dto.RevealPinResponse;
 import com.tecozam.bills.tarjeta.dto.TarjetaAsignacionDTO;
 import com.tecozam.bills.tarjeta.dto.TarjetaDTO;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -32,6 +36,7 @@ import java.util.Map;
 public class TarjetaController {
 
     private final TarjetaService tarjetaService;
+    private final RevealPinService revealPinService;
 
     @GetMapping
     public List<TarjetaDTO> findAll(@RequestParam(defaultValue = "true") boolean activa) {
@@ -72,9 +77,35 @@ public class TarjetaController {
     public ResponseEntity<Map<String, Object>> guardarPin(
             @PathVariable Long id,
             @Valid @RequestBody GuardarPinRequest request,
-            Authentication authentication) {
-        tarjetaService.guardarPin(id, request.pin(), authentication.getName());
+            Authentication authentication,
+            HttpServletRequest httpRequest) {
+        tarjetaService.guardarPin(id, request.pin(), authentication.getName(),
+                clientIp(httpRequest), httpRequest.getHeader("User-Agent"));
         return ResponseEntity.ok(Map.of("success", true, "message", "PIN guardado"));
+    }
+
+    @PostMapping("/{id}/pin/reveal")
+    @PreAuthorize("hasRole('CAMPO')")
+    @Operation(summary = "Revelar PIN de tarjeta",
+            description = "Devuelve el PIN durante 30s tras validar assertion biométrica o, como fallback, la contraseña del usuario CAMPO. Rate-limit 10/min.")
+    public ResponseEntity<RevealPinResponse> revealPin(
+            @PathVariable Long id,
+            @Valid @RequestBody RevealPinRequest body,
+            Authentication authentication,
+            HttpServletRequest httpRequest) {
+        RevealPinResponse resp = revealPinService.reveal(
+                id, body, authentication.getName(),
+                clientIp(httpRequest), httpRequest.getHeader("User-Agent"));
+        return ResponseEntity.ok(resp);
+    }
+
+    private static String clientIp(HttpServletRequest req) {
+        String fwd = req.getHeader("X-Forwarded-For");
+        if (fwd != null && !fwd.isBlank()) {
+            int comma = fwd.indexOf(',');
+            return (comma > 0 ? fwd.substring(0, comma) : fwd).trim();
+        }
+        return req.getRemoteAddr();
     }
 
     @GetMapping("/mis-tarjetas")
