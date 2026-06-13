@@ -3,11 +3,10 @@ FROM maven:3.9-eclipse-temurin-21 AS build
 
 WORKDIR /app
 
-# Cache dependencies first (layer caching optimization)
+# Build en un solo paso. NO usar `dependency:go-offline`: escanea metadata.xml
+# de central-snapshots y reventaba el build cuando jackson-databind:2.19.5-SNAPSHOT
+# caducaba (lo intentaba descargar aunque Spring Boot BOM pina 2.18.3).
 COPY pom.xml .
-RUN mvn dependency:go-offline -B
-
-# Copy source and build
 COPY src ./src
 RUN mvn clean package -DskipTests -B
 
