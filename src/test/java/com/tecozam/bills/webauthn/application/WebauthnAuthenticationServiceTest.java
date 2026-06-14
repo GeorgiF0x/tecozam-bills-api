@@ -48,7 +48,12 @@ class WebauthnAuthenticationServiceTest {
         when(userRepo.findByUsername("campo")).thenReturn(Optional.of(u));
 
         AssertionRequest req = mock(AssertionRequest.class);
+        // El servicio guarda en ChallengeStore el formato toJson() (que es el
+        // que entiende fromJson() en verifyAssertion) y envia al browser el
+        // formato toCredentialsGetJson() {"publicKey": {...}}. Tenemos que
+        // mockear los dos o storedJson queda null y peta con NPE.
         when(req.toCredentialsGetJson()).thenReturn("{\"publicKey\":\"...\"}");
+        when(req.toJson()).thenReturn("{\"publicKeyCredentialRequestOptions\":{}}");
         when(relyingParty.startAssertion(any(StartAssertionOptions.class))).thenReturn(req);
 
         AssertionStartResponse resp = service.startAssertion("campo");

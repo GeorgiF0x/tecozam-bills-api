@@ -51,7 +51,11 @@ class WebauthnRegistrationServiceTest {
         when(credRepo.findActiveByUsuarioCampoId(42L)).thenReturn(Optional.empty());
 
         PublicKeyCredentialCreationOptions options = mock(PublicKeyCredentialCreationOptions.class);
+        // Dual-format de yubico: toCredentialsCreateJson() para el browser,
+        // toJson() para guardar en ChallengeStore. Si solo mockeamos uno,
+        // storedJson queda null y peta con NPE en getBytes().
         when(options.toCredentialsCreateJson()).thenReturn("{\"publicKey\":\"...\"}");
+        when(options.toJson()).thenReturn("{\"rp\":{},\"user\":{}}");
         when(relyingParty.startRegistration(any(StartRegistrationOptions.class))).thenReturn(options);
 
         RegisterStartResponse resp = service.startRegistration("campo");
@@ -62,8 +66,13 @@ class WebauthnRegistrationServiceTest {
     }
 
     @Test
-    @DisplayName("startRegistration falla si el usuario ya tiene credencial activa")
-    void startRegistration_yaEnrolado() {
+    @DisplayName("startRegistration con usuario ya enrolado desactiva la credencial vieja y continua")
+    void startRegistration_yaEnrolado() throws Exception {
+        // Cambio de comportamiento v1.0.7 14-jun: antes lanzabamos
+        // BusinessException("ya tiene credencial") y bloqueabamos. Ahora el
+        // operario puede re-enrolar (cambio de movil): la credencial vieja se
+        // soft-deletea ANTES de generar las opciones del browser, asi
+        // excludeCredentials va vacio y iOS no protesta con InvalidStateError.
         UsuarioCampo u = new UsuarioCampo();
         u.setId(42L);
         u.setUsername("campo");
@@ -72,9 +81,19 @@ class WebauthnRegistrationServiceTest {
         WebauthnCredential existing = WebauthnCredential.builder().usuarioCampoId(42L).build();
         when(credRepo.findActiveByUsuarioCampoId(42L)).thenReturn(Optional.of(existing));
 
-        assertThatThrownBy(() -> service.startRegistration("campo"))
-                .isInstanceOf(BusinessException.class)
-                .hasMessageContaining("ya tiene una credencial");
+        PublicKeyCredentialCreationOptions options = mock(PublicKeyCredentialCreationOptions.class);
+        when(options.toCredentialsCreateJson()).thenReturn("{\"publicKey\":\"...\"}");
+        when(options.toJson()).thenReturn("{\"rp\":{},\"user\":{}}");
+        when(relyingParty.startRegistration(any(StartRegistrationOptions.class))).thenReturn(options);
+
+        RegisterStartResponse resp = service.startRegistration("campo");
+
+        // La credencial vieja queda marcada como soft-deleted (no se borra
+        // fisicamente, queda en BD auditable).
+        assertThat(existing.getEliminadoEn()).isNotNull();
+        // Y el flow continua: se devuelve token + options para el browser.
+        assertThat(resp.token()).isNotBlank();
+        assertThat(resp.publicKeyCredentialCreationOptions()).contains("publicKey");
     }
 
     @Test
