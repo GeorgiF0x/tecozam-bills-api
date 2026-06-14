@@ -51,9 +51,10 @@ public class WebauthnRegistrationService {
         UsuarioCampo u = userRepo.findByUsername(username)
                 .orElseThrow(() -> new ResourceNotFoundException("UsuarioCampo", username));
 
-        if (credRepo.findActiveByUsuarioCampoId(u.getId()).isPresent()) {
-            throw new BusinessException("El usuario ya tiene una credencial biométrica registrada");
-        }
+        // Antes lanzabamos BusinessException si ya habia credencial activa, lo que
+        // impedia al operario cambiar de movil o volver a enrolarse tras perder el
+        // dispositivo. Ahora permitimos el flujo: la credencial vieja se marca
+        // como soft-deleted en finishRegistration cuando la nueva pasa attestation.
 
         UserIdentity userIdentity = UserIdentity.builder()
                 .name(u.getUsername())
@@ -116,6 +117,19 @@ public class WebauthnRegistrationService {
                             .request(options)
                             .response(pkc)
                             .build());
+
+            // Re-enrolment: si el usuario ya tenia una credencial activa, la
+            // soft-deleteamos antes de guardar la nueva. El indice UNIQUE filtrado
+            // por eliminado_en deja sitio. Va dentro del @Transactional —
+            // si la attestation hubiera fallado, ya habriamos salido antes; si
+            // el save de la nueva fallase, el rollback restaura tambien la vieja.
+            credRepo.findActiveByUsuarioCampoId(entry.usuarioCampoId())
+                    .ifPresent(old -> {
+                        old.softDelete();
+                        credRepo.save(old);
+                        log.info("WebAuthn: credencial anterior desactivada usuario={} credentialDbId={}",
+                                entry.usuarioCampoId(), old.getId());
+                    });
 
             WebauthnCredential cred = WebauthnCredential.builder()
                     .usuarioCampoId(entry.usuarioCampoId())
