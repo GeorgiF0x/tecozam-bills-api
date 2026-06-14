@@ -47,14 +47,28 @@ public class WebauthnRegistrationService {
     private final UsuarioCampoRepository userRepo;
     private final ChallengeStore challengeStore;
 
+    @Transactional
     public RegisterStartResponse startRegistration(String username) {
         UsuarioCampo u = userRepo.findByUsername(username)
                 .orElseThrow(() -> new ResourceNotFoundException("UsuarioCampo", username));
 
-        // Antes lanzabamos BusinessException si ya habia credencial activa, lo que
-        // impedia al operario cambiar de movil o volver a enrolarse tras perder el
-        // dispositivo. Ahora permitimos el flujo: la credencial vieja se marca
-        // como soft-deleted en finishRegistration cuando la nueva pasa attestation.
+        // Re-enrolment: soft-deleteamos la credencial activa anterior AQUI, no en
+        // finishRegistration. Razon: yubico llama internamente a
+        // getCredentialIdsForUsername para construir excludeCredentials en las
+        // opciones que enviamos al browser. Si la vieja sigue activa, iOS detecta
+        // que su Keychain ya tiene esa passkey y aborta con InvalidStateError
+        // antes incluso de pedir Face ID. Soft-deletear antes de generar las
+        // opciones hace que excludeCredentials vaya vacio y iOS deje crear.
+        // Trade-off: si el usuario abandona el flow sin completar la attestation,
+        // queda sin biometria hasta que vuelva a enrolar — el fallback de
+        // contrasena sigue disponible, asi que es aceptable.
+        credRepo.findActiveByUsuarioCampoId(u.getId())
+                .ifPresent(old -> {
+                    old.softDelete();
+                    credRepo.save(old);
+                    log.info("WebAuthn: credencial anterior desactivada para re-enrol usuario={} credentialDbId={}",
+                            u.getId(), old.getId());
+                });
 
         UserIdentity userIdentity = UserIdentity.builder()
                 .name(u.getUsername())
@@ -118,19 +132,9 @@ public class WebauthnRegistrationService {
                             .response(pkc)
                             .build());
 
-            // Re-enrolment: si el usuario ya tenia una credencial activa, la
-            // soft-deleteamos antes de guardar la nueva. El indice UNIQUE filtrado
-            // por eliminado_en deja sitio. Va dentro del @Transactional —
-            // si la attestation hubiera fallado, ya habriamos salido antes; si
-            // el save de la nueva fallase, el rollback restaura tambien la vieja.
-            credRepo.findActiveByUsuarioCampoId(entry.usuarioCampoId())
-                    .ifPresent(old -> {
-                        old.softDelete();
-                        credRepo.save(old);
-                        log.info("WebAuthn: credencial anterior desactivada usuario={} credentialDbId={}",
-                                entry.usuarioCampoId(), old.getId());
-                    });
-
+            // La credencial anterior (si la habia) ya fue soft-deleted en
+            // startRegistration — necesario para que excludeCredentials vaya
+            // vacio y iOS deje crear la nueva. Aqui solo persistimos la nueva.
             WebauthnCredential cred = WebauthnCredential.builder()
                     .usuarioCampoId(entry.usuarioCampoId())
                     .credentialId(result.getKeyId().getId().getBytes())
