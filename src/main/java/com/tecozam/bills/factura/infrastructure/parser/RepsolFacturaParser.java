@@ -33,7 +33,7 @@ import java.util.regex.Pattern;
 public class RepsolFacturaParser implements FacturaParser {
 
     // ── Cabecera ──────────────────────────────────────────────────────────────
-    private static final Pattern P_NUM_FACTURA   = Pattern.compile("N[úu]m\\.?\\s*Factura\\s+(\\S+)");
+    private static final Pattern P_NUM_FACTURA   = Pattern.compile("N[úu]m\\.?\\s*Factura\\s+(.+)");
     private static final Pattern P_PERIODO       = Pattern.compile("Fecha de operaci[oó]n\\s+(\\d{2}/\\d{2}/\\d{4})\\s+AL\\s+(\\d{2}/\\d{2}/\\d{4})");
     private static final Pattern P_NUM_CUENTA    = Pattern.compile("N[úu]m\\.?\\s*de\\s*Cuenta\\s+(\\d+)");
     private static final Pattern P_NIF           = Pattern.compile("NIF\\s+(ES[A-Z0-9]+)");

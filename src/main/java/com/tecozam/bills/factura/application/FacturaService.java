@@ -98,7 +98,17 @@ public class FacturaService {
         factura.setProveedor(proveedor);
         factura.setNombreCliente("TECOZAM SERVICIOS Y CONSTRUCCIONES S.L.");
 
-        // 4. Verificar duplicado
+        // 4. Verificar que se pudo extraer el número de factura. Sin esto, el
+        // INSERT posterior falla con una violación NOT NULL cruda (SQL Error
+        // 515) que no dice nada útil al usuario y deja la transacción a medias
+        // tras crear tarjetas nuevas en el maestro (rollback silencioso).
+        if (factura.getNumFactura() == null || factura.getNumFactura().isBlank()) {
+            throw new BusinessException(
+                    "No se pudo leer el número de factura del PDF para " + proveedor.getNombre()
+                            + ". Revisa que el archivo sea la factura correcta o contacta con soporte.");
+        }
+
+        // 4b. Verificar duplicado
         if (factura.getNumFactura() != null
                 && facturaRepository.existsByNumFacturaAndProveedorId(factura.getNumFactura(), proveedorId)) {
             throw new DuplicateResourceException("Factura", "numFactura", factura.getNumFactura());
