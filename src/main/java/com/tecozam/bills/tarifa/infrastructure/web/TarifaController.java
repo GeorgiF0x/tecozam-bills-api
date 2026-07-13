@@ -92,6 +92,48 @@ public class TarifaController {
         return ResponseEntity.status(HttpStatus.CREATED).body(toDTO(tarifa));
     }
 
+    @PutMapping("/{id}")
+    @Transactional
+    @PreAuthorize("hasAnyRole('ADMIN','GESTOR')")
+    public ResponseEntity<TarifaDTO> update(@PathVariable Long id, @Valid @RequestBody UpdateTarifaRequest request) {
+        Tarifa tarifa = tarifaRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Tarifa", id));
+
+        // Cierra automáticamente otra tarifa abierta del mismo proveedor si las
+        // nuevas fechas se solapan con ella (mismo criterio que al crear).
+        Long tarifaId = tarifa.getId();
+        tarifaRepository.findVigenteEnFecha(tarifa.getProveedor().getId(), request.vigenteDesde())
+                .filter(prev -> !prev.getId().equals(tarifaId))
+                .ifPresent(prev -> {
+                    if (prev.getVigenteHasta() == null) {
+                        prev.setVigenteHasta(request.vigenteDesde().minusDays(1));
+                        tarifaRepository.save(prev);
+                    }
+                });
+
+        tarifa.setCodigoTarifa(request.codigoTarifa());
+        tarifa.setVigenteDesde(request.vigenteDesde());
+        tarifa.setVigenteHasta(request.vigenteHasta());
+        tarifa.setObservaciones(request.observaciones());
+
+        // Reemplaza la lista de precios completa: orphanRemoval=true en Tarifa.precios
+        // borra las filas antiguas y persiste las nuevas al hacer save().
+        tarifa.getPrecios().clear();
+        for (var p : request.precios()) {
+            TarifaPrecio precio = TarifaPrecio.builder()
+                    .tarifa(tarifa)
+                    .producto(p.producto())
+                    .conceptoUnificado(p.conceptoUnificado())
+                    .precioSinIva(p.precioSinIva())
+                    .precioConIva(p.precioConIva())
+                    .build();
+            tarifa.getPrecios().add(precio);
+        }
+
+        tarifa = tarifaRepository.save(tarifa);
+        return ResponseEntity.ok(toDTO(tarifa));
+    }
+
     @DeleteMapping("/{id}")
     @Transactional
     @PreAuthorize("hasRole('ADMIN')")
