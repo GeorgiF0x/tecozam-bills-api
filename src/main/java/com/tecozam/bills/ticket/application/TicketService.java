@@ -96,7 +96,11 @@ public class TicketService {
                 .precioLitro(req.precioLitro())
                 .kms(req.kms())
                 .concepto(req.concepto())
-                .observaciones(req.observaciones());
+                .observaciones(req.observaciones())
+                .numTarjeta4ultimos(req.numTarjeta4ultimos())
+                .matricula(req.matricula())
+                .nifEstacion(req.nifEstacion())
+                .direccion(req.direccion());
 
         if (req.proveedorId() != null) {
             Proveedor proveedor = proveedorRepository.findById(req.proveedorId())

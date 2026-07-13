@@ -203,6 +203,13 @@ public class TicketController {
             String producto = getFieldAny(data, "producto", "concepto", "combustible");
             String numRecibo = getFieldAny(data, "numRecibo", "num_recibo", "referencia");
             int kms = (int) getNumField(data, "kms", "kilometros");
+            String numTarjeta4ultimos = getFieldAny(data, "numTarjeta4ultimos", "num_tarjeta_4ultimos");
+            if (numTarjeta4ultimos.length() > 4) {
+                numTarjeta4ultimos = numTarjeta4ultimos.substring(numTarjeta4ultimos.length() - 4);
+            }
+            String matricula = getField(data, "matricula");
+            String nifEstacion = getFieldAny(data, "nifEstacion", "nif_estacion");
+            String direccion = getField(data, "direccion");
 
             // Build fechaHora
             java.time.LocalDateTime fechaHora;
@@ -224,7 +231,11 @@ public class TicketController {
                     precioLitro > 0 ? java.math.BigDecimal.valueOf(precioLitro) : null,
                     kms > 0 ? kms : null,
                     producto.isBlank() ? null : producto,
-                    "OCR automático (OpenAI Vision)" + (numRecibo != null && !numRecibo.isEmpty() ? " — Recibo: " + numRecibo : "")
+                    "OCR automático (OpenAI Vision)" + (numRecibo != null && !numRecibo.isEmpty() ? " — Recibo: " + numRecibo : ""),
+                    numTarjeta4ultimos.isBlank() ? null : numTarjeta4ultimos,
+                    matricula.isBlank() ? null : matricula,
+                    nifEstacion.isBlank() ? null : nifEstacion,
+                    direccion.isBlank() ? null : direccion
             );
 
             TicketDTO savedTicket = ticketService.createManual(ticketRequest);
