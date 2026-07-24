@@ -28,6 +28,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -71,7 +72,7 @@ class RevealPinServiceTest {
     void reveal_biometria_ok() {
         when(userRepo.findByUsername("campo")).thenReturn(Optional.of(usuario));
         when(tarjetaRepo.findById(99L)).thenReturn(Optional.of(tarjeta));
-        when(asignacionRepo.findByTarjetaIdAndTrabajadorIdAndFechaHastaIsNull(99L, 500L))
+        when(asignacionRepo.findActivaByTarjetaIdAndTrabajadorId(eq(99L), eq(500L), any(java.time.LocalDate.class)))
                 .thenReturn(Optional.of(new TarjetaAsignacion()));
         when(webauthn.verifyAssertion("tok", "{}")).thenReturn(42L);
 
@@ -89,7 +90,7 @@ class RevealPinServiceTest {
     void reveal_password_ok() {
         when(userRepo.findByUsername("campo")).thenReturn(Optional.of(usuario));
         when(tarjetaRepo.findById(99L)).thenReturn(Optional.of(tarjeta));
-        when(asignacionRepo.findByTarjetaIdAndTrabajadorIdAndFechaHastaIsNull(99L, 500L))
+        when(asignacionRepo.findActivaByTarjetaIdAndTrabajadorId(eq(99L), eq(500L), any(java.time.LocalDate.class)))
                 .thenReturn(Optional.of(new TarjetaAsignacion()));
         when(passwordEncoder.matches("clave", "$2a$10$hash")).thenReturn(true);
 
@@ -105,7 +106,7 @@ class RevealPinServiceTest {
     void reveal_assertionMala() {
         when(userRepo.findByUsername("campo")).thenReturn(Optional.of(usuario));
         when(tarjetaRepo.findById(99L)).thenReturn(Optional.of(tarjeta));
-        when(asignacionRepo.findByTarjetaIdAndTrabajadorIdAndFechaHastaIsNull(99L, 500L))
+        when(asignacionRepo.findActivaByTarjetaIdAndTrabajadorId(eq(99L), eq(500L), any(java.time.LocalDate.class)))
                 .thenReturn(Optional.of(new TarjetaAsignacion()));
         when(webauthn.verifyAssertion("tok", "{}"))
                 .thenThrow(new BusinessException("Assertion WebAuthn rechazada"));
@@ -123,7 +124,7 @@ class RevealPinServiceTest {
     void reveal_sinAsignacion() {
         when(userRepo.findByUsername("campo")).thenReturn(Optional.of(usuario));
         when(tarjetaRepo.findById(99L)).thenReturn(Optional.of(tarjeta));
-        when(asignacionRepo.findByTarjetaIdAndTrabajadorIdAndFechaHastaIsNull(99L, 500L))
+        when(asignacionRepo.findActivaByTarjetaIdAndTrabajadorId(eq(99L), eq(500L), any(java.time.LocalDate.class)))
                 .thenReturn(Optional.empty());
 
         RevealPinRequest req = new RevealPinRequest(null, "clave");
@@ -139,7 +140,7 @@ class RevealPinServiceTest {
     void reveal_bodyInvalido() {
         when(userRepo.findByUsername("campo")).thenReturn(Optional.of(usuario));
         when(tarjetaRepo.findById(99L)).thenReturn(Optional.of(tarjeta));
-        when(asignacionRepo.findByTarjetaIdAndTrabajadorIdAndFechaHastaIsNull(99L, 500L))
+        when(asignacionRepo.findActivaByTarjetaIdAndTrabajadorId(eq(99L), eq(500L), any(java.time.LocalDate.class)))
                 .thenReturn(Optional.of(new TarjetaAsignacion()));
 
         RevealPinRequest req = new RevealPinRequest(null, null);

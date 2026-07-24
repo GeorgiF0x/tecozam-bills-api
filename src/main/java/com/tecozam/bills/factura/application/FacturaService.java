@@ -26,6 +26,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.time.LocalDate;
 import java.util.List;
 
 @Service
@@ -142,7 +143,7 @@ public class FacturaService {
                 // maestro aparte.
                 if (tr.getConductor() == null || tr.getConductor().isBlank()) {
                     tarjetaAsignacionRepository
-                            .findByTarjetaIdAndFechaHastaIsNull(tarjeta.getId())
+                            .findActivaByTarjetaId(tarjeta.getId(), LocalDate.now())
                             .ifPresent(asig -> {
                                 Trabajador t = asig.getTrabajador();
                                 if (t != null) {

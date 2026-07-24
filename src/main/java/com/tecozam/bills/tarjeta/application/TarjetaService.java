@@ -93,10 +93,13 @@ public class TarjetaService {
         Tarjeta tarjeta = tarjetaRepository.findById(tarjetaId)
                 .orElseThrow(() -> new ResourceNotFoundException("Tarjeta", tarjetaId));
 
-        // Cierra asignación activa anterior si existe
-        tarjetaAsignacionRepository.findByTarjetaIdAndFechaHastaIsNull(tarjetaId)
+        // Cierra asignación activa anterior si existe. Se cierra con fecha de
+        // ayer (no hoy): la consulta "activa" es inclusiva (fechaHasta >= hoy),
+        // asi que cerrar con la fecha de hoy dejaria la asignacion anterior
+        // contando como activa durante el resto del dia.
+        tarjetaAsignacionRepository.findActivaByTarjetaId(tarjetaId, LocalDate.now())
                 .ifPresent(asignacion -> {
-                    asignacion.setFechaHasta(LocalDate.now());
+                    asignacion.setFechaHasta(LocalDate.now().minusDays(1));
                     tarjetaAsignacionRepository.save(asignacion);
                 });
 
@@ -132,10 +135,11 @@ public class TarjetaService {
         Tarjeta tarjeta = tarjetaRepository.findById(tarjetaId)
                 .orElseThrow(() -> new ResourceNotFoundException("Tarjeta", tarjetaId));
 
-        // Cierra asignación activa
-        tarjetaAsignacionRepository.findByTarjetaIdAndFechaHastaIsNull(tarjetaId)
+        // Cierra asignación activa (ver comentario en asignar() sobre por que
+        // se usa ayer y no hoy).
+        tarjetaAsignacionRepository.findActivaByTarjetaId(tarjetaId, LocalDate.now())
                 .ifPresent(asignacion -> {
-                    asignacion.setFechaHasta(LocalDate.now());
+                    asignacion.setFechaHasta(LocalDate.now().minusDays(1));
                     tarjetaAsignacionRepository.save(asignacion);
                 });
 
@@ -175,7 +179,7 @@ public class TarjetaService {
                 throw new BusinessException("El usuario no tiene un trabajador asociado", "usuario");
             }
             tarjetaAsignacionRepository
-                    .findByTarjetaIdAndTrabajadorIdAndFechaHastaIsNull(tarjetaId, trabajador.getId())
+                    .findActivaByTarjetaIdAndTrabajadorId(tarjetaId, trabajador.getId(), LocalDate.now())
                     .orElseThrow(() -> new BusinessException(
                             "No tienes asignación activa para esta tarjeta", "tarjetaId"));
         }
@@ -210,7 +214,7 @@ public class TarjetaService {
         }
 
         List<TarjetaAsignacion> asignaciones =
-                tarjetaAsignacionRepository.findByTrabajadorIdAndFechaHastaIsNull(trabajador.getId());
+                tarjetaAsignacionRepository.findActivasByTrabajadorId(trabajador.getId(), LocalDate.now());
 
         return asignaciones.stream()
                 .map(a -> toMiTarjetaDTO(a.getTarjeta()))
@@ -255,7 +259,7 @@ public class TarjetaService {
 
     private TarjetaDTO toDTO(Tarjeta tarjeta) {
         TarjetaAsignacionDTO asignacionActual = tarjetaAsignacionRepository
-                .findByTarjetaIdAndFechaHastaIsNull(tarjeta.getId())
+                .findActivaByTarjetaId(tarjeta.getId(), LocalDate.now())
                 .map(this::toAsignacionDTO)
                 .orElse(null);
 

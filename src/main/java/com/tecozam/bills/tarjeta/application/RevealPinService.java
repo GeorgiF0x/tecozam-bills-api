@@ -20,6 +20,8 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDate;
+
 /**
  * Revela el PIN de una tarjeta a su conductor asignado tras validar biometría
  * (WebAuthn) o, como fallback, su contraseña. Cada intento (OK o FAILED)
@@ -52,7 +54,7 @@ public class RevealPinService {
         if (t == null) {
             throw new BusinessException("El usuario no tiene un trabajador asociado");
         }
-        asignacionRepo.findByTarjetaIdAndTrabajadorIdAndFechaHastaIsNull(tarjetaId, t.getId())
+        asignacionRepo.findActivaByTarjetaIdAndTrabajadorId(tarjetaId, t.getId(), LocalDate.now())
                 .orElseThrow(() -> new BusinessException(
                         "No tienes asignación activa para esta tarjeta"));
 
