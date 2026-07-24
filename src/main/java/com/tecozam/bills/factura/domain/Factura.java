@@ -115,10 +115,32 @@ public class Factura {
     protected void onPrePersist() {
         this.creadoEn = LocalDateTime.now();
         this.modificadoEn = LocalDateTime.now();
+        String currentUser = resolveCurrentUser();
+        if (this.creadoPor == null) {
+            this.creadoPor = currentUser;
+        }
+        this.modificadoPor = currentUser;
     }
 
     @PreUpdate
     protected void onPreUpdate() {
         this.modificadoEn = LocalDateTime.now();
+        this.modificadoPor = resolveCurrentUser();
+    }
+
+    /**
+     * Resuelve el usuario autenticado en la sesión actual (mismo criterio que
+     * {@link com.tecozam.bills.shared.domain.AuditableEntity}). Factura no
+     * extiende esa clase porque introduciría la columna eliminado_en (borrado
+     * lógico) sin migración — se duplica aquí la mínima lógica necesaria.
+     */
+    private static String resolveCurrentUser() {
+        var authentication = org.springframework.security.core.context.SecurityContextHolder
+                .getContext().getAuthentication();
+        if (authentication != null && authentication.isAuthenticated()
+                && !"anonymousUser".equals(authentication.getPrincipal())) {
+            return authentication.getName();
+        }
+        return "SYSTEM";
     }
 }
