@@ -32,6 +32,8 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
 import java.util.List;
 
 @Service
@@ -39,6 +41,9 @@ import java.util.List;
 @RequiredArgsConstructor
 @Slf4j
 public class TicketService {
+
+    /** Las facturas son mensuales: pasado este umbral sin cotejar, es un problema real, no falta de factura. */
+    private static final long DIAS_LIMITE_SIN_COTEJAR = 30;
 
     private final TicketRepository ticketRepository;
     private final OperacionRepository operacionRepository;
@@ -224,6 +229,42 @@ public class TicketService {
                 cotejados, sinCoincidencia, multiples, incidencias);
 
         return new CotejoResultDTO(cotejados, 0, sinCoincidencia, incidencias, multiples);
+    }
+
+    /**
+     * Escala a incidencia los tickets que llevan más de {@link #DIAS_LIMITE_SIN_COTEJAR}
+     * días sin cotejarse (PENDIENTE o SIN_COINCIDENCIA). Como las facturas son
+     * mensuales, si ha pasado más de un mes desde la fecha de la operación sin
+     * que aparezca una factura que la cubra, lo probable es un problema real
+     * (tarjeta equivocada, factura de ese periodo nunca importada...), no que
+     * "todavía no ha llegado la factura".
+     */
+    public int escalarTicketsAntiguos() {
+        List<Ticket> candidatos = ticketRepository.findByEstadoCotejoIn(List.of("PENDIENTE", "SIN_COINCIDENCIA"));
+
+        Usuario gestorDefault = usuarioRepository.findAll().stream()
+                .filter(u -> u.isActivo() && "GESTOR".equals(u.getRol().name()))
+                .findFirst()
+                .orElse(null);
+
+        LocalDateTime ahora = LocalDateTime.now();
+        List<Ticket> escalados = new ArrayList<>();
+
+        for (Ticket ticket : candidatos) {
+            long dias = ChronoUnit.DAYS.between(ticket.getFechaHora(), ahora);
+            if (dias > DIAS_LIMITE_SIN_COTEJAR) {
+                ticket.setEstadoCotejo("INCIDENCIA");
+                ticket.setTipoIncidencia("SIN_COTEJAR_1_MES");
+                ticket.setObservaciones("Auto-detectado: han pasado más de " + DIAS_LIMITE_SIN_COTEJAR
+                        + " días desde la operación sin encontrar una factura que la cubra");
+                if (gestorDefault != null) ticket.setAsignadoA(gestorDefault);
+                escalados.add(ticket);
+            }
+        }
+
+        ticketRepository.saveAll(escalados);
+        log.info("Escalado de tickets antiguos completado: {} tickets escalados a INCIDENCIA", escalados.size());
+        return escalados.size();
     }
 
     /**

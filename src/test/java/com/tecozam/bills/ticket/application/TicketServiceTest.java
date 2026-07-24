@@ -104,4 +104,30 @@ class TicketServiceTest {
         verify(ticketRepository, org.mockito.Mockito.atLeastOnce()).save(captor.capture());
         assertThat(captor.getAllValues().get(0).getNumTarjeta4ultimos()).isEqualTo("9012");
     }
+
+    @Test
+    @DisplayName("escalarTicketsAntiguos escala a INCIDENCIA los tickets PENDIENTE/SIN_COINCIDENCIA con mas de 30 dias desde la fecha de la operacion")
+    void escalarTicketsAntiguos_escalaLosSuficientementeAntiguos() {
+        Ticket viejo = Ticket.builder()
+                .estadoCotejo("PENDIENTE")
+                .fechaHora(LocalDateTime.now().minusDays(35))
+                .importeTotal(new BigDecimal("52.30"))
+                .build();
+        Ticket reciente = Ticket.builder()
+                .estadoCotejo("SIN_COINCIDENCIA")
+                .fechaHora(LocalDateTime.now().minusDays(10))
+                .importeTotal(new BigDecimal("40.00"))
+                .build();
+
+        when(ticketRepository.findByEstadoCotejoIn(List.of("PENDIENTE", "SIN_COINCIDENCIA")))
+                .thenReturn(List.of(viejo, reciente));
+        when(usuarioRepository.findAll()).thenReturn(List.of());
+
+        int escalados = service.escalarTicketsAntiguos();
+
+        assertThat(escalados).isEqualTo(1);
+        assertThat(viejo.getEstadoCotejo()).isEqualTo("INCIDENCIA");
+        assertThat(viejo.getTipoIncidencia()).isEqualTo("SIN_COTEJAR_1_MES");
+        assertThat(reciente.getEstadoCotejo()).isEqualTo("SIN_COINCIDENCIA");
+    }
 }
