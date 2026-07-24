@@ -2,6 +2,7 @@ package com.tecozam.bills.shared.infrastructure.exception;
 
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.ConstraintViolationException;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
@@ -18,6 +19,7 @@ import java.util.Map;
 import java.util.stream.Collectors;
 
 @RestControllerAdvice
+@Slf4j
 public class GlobalExceptionHandler {
 
     @ExceptionHandler(ResourceNotFoundException.class)
@@ -109,6 +111,14 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorResponse> handleGeneric(
             Exception ex, WebRequest request) {
+        String path = "";
+        if (request instanceof ServletWebRequest servletRequest) {
+            path = servletRequest.getRequest().getRequestURI();
+        }
+        // Sin este log, cualquier excepción no controlada era invisible en
+        // producción: el body solo dice "Error interno del servidor" y no
+        // quedaba rastro alguno en los logs del servidor.
+        log.error("Error no controlado en {}: {}", path, ex.getMessage(), ex);
         return buildResponse(
                 HttpStatus.INTERNAL_SERVER_ERROR,
                 "Error interno del servidor",
