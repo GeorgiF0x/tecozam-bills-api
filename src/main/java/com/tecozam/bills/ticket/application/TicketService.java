@@ -30,6 +30,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -358,7 +359,7 @@ public class TicketService {
                 .orElseThrow(() -> new ResourceNotFoundException("Tarjeta", tarjetaId));
 
         tarjetaAsignacionRepository
-                .findByTarjetaIdAndTrabajadorIdAndFechaHastaIsNull(tarjetaId, trabajador.getId())
+                .findActivaByTarjetaIdAndTrabajadorId(tarjetaId, trabajador.getId(), LocalDate.now())
                 .orElseThrow(() -> new BusinessException(
                         "No tienes asignación activa para esta tarjeta", "tarjetaId"));
     }
@@ -389,7 +390,7 @@ public class TicketService {
                 .orElseThrow(() -> new ResourceNotFoundException("Tarjeta", request.tarjetaId()));
 
         tarjetaAsignacionRepository
-                .findByTarjetaIdAndTrabajadorIdAndFechaHastaIsNull(request.tarjetaId(), trabajador.getId())
+                .findActivaByTarjetaIdAndTrabajadorId(request.tarjetaId(), trabajador.getId(), LocalDate.now())
                 .orElseThrow(() -> new BusinessException(
                         "No tienes asignación activa para esta tarjeta", "tarjetaId"));
 
@@ -411,6 +412,11 @@ public class TicketService {
         String observacionesTicket = "OCR validado con PIN"
                 + (numRecibo != null && !numRecibo.isBlank() ? " — Recibo: " + numRecibo : "");
 
+        String ultimos4 = tarjeta.getNumeroTarjeta();
+        if (ultimos4 != null && ultimos4.length() >= 4) {
+            ultimos4 = ultimos4.substring(ultimos4.length() - 4);
+        }
+
         Ticket ticket = Ticket.builder()
                 .origen("OCR_VALIDADO")
                 .estadoCotejo("PENDIENTE")
@@ -425,6 +431,7 @@ public class TicketService {
                 .kms(request.kilometros())
                 .concepto(producto)
                 .observaciones(observacionesTicket)
+                .numTarjeta4ultimos(ultimos4)
                 .build();
 
         ticket = ticketRepository.save(ticket);
@@ -435,8 +442,6 @@ public class TicketService {
         try {
             LocalDateTime desde = fechaHora.minusHours(2);
             LocalDateTime hasta = fechaHora.plusHours(2);
-            String ultimos4 = tarjeta.getNumeroTarjeta();
-            if (ultimos4.length() >= 4) ultimos4 = ultimos4.substring(ultimos4.length() - 4);
 
             List<Operacion> candidatas = operacionRepository.findParaCotejoConTarjeta(
                     desde, hasta, importeTotal, ultimos4);
