@@ -1,0 +1,3 @@
+Concepto Cantidad Base Tipo Cuota Importe
+Imponible I.V.A. I.V.A.
+GASOLEO ADITIVADO (L) 823,45 1.193,21 23% 274,44 1.467,65

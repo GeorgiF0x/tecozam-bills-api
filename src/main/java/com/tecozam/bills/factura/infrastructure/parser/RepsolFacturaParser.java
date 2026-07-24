@@ -39,11 +39,38 @@ public class RepsolFacturaParser implements FacturaParser {
     private static final Pattern P_NIF           = Pattern.compile("NIF\\s+(ES[A-Z0-9]+)");
     private static final Pattern P_IBAN          = Pattern.compile("IBAN[:\\s]+(ES\\d{2}[\\s\\d*]+)");
     private static final Pattern P_VENCIMIENTO   = Pattern.compile("VENCIMIENTO[:\\s]+(\\d{2}/\\d{2}/\\d{4})");
-    private static final Pattern P_TOTAL_FACTURA = Pattern.compile("Total\\s+Factura\\s+en\\s+Euros\\s+([\\d.]+,\\d{2})\\s+([\\d.]+,\\d{2})\\s+([\\d.]+,\\d{2})");
+    // Admite tanto "en Euros" (ES) como "em Euros" (PT). Captura TODA la
+    // tirada de tokens numéricos finales: las facturas PT observadas traen 4
+    // tokens (un token líder de descuento antes de base/cuota/total), frente
+    // a los 3 tokens habituales de las facturas ES. Nos quedamos con los
+    // ÚLTIMOS 3 tokens de la tirada, descartando cualquier sobrante inicial.
+    private static final Pattern P_TOTAL_FACTURA = Pattern.compile(
+            "Total\\s+Factura\\s+e[nm]\\s+Euros\\s+((?:[\\d.]+,\\d{2}\\s*)+)");
+
+    // ── Documentos de liquidación NLC (sin número de documento impreso) ────────
+    // Estos documentos NO tienen línea "Núm. Factura" ni "Total Factura en/em
+    // Euros" (no llevan desglose de IVA). Se detectan por "Total en Euros"
+    // (sin la palabra "Factura" entre "Total" y "en") junto con la ausencia
+    // de la línea de número de factura estándar.
+    private static final Pattern P_TOTAL_LIQUIDACION = Pattern.compile("Total\\s+en\\s+Euros\\s+([\\d.]+,\\d{2})");
+    private static final Pattern P_LUGAR_FECHA = Pattern.compile("Lugar\\s+y\\s+Fecha\\s+.+?-\\s*(\\d{2}/\\d{2}/\\d{4})");
 
     // ── Conceptos resumen ─────────────────────────────────────────────────────
-    private static final Pattern P_CONCEPTO_RES  = Pattern.compile(
-            "^(.+?)\\s+([\\d.]+,\\d{2})\\s+21%\\s+([\\d.]+,\\d{2})\\s+([\\d.]+,\\d{2})\\s+([\\d.]+,\\d{2})$");
+    // Cabecera real: "Concepto Cantidad Base Tipo Cuota Importe" (orden:
+    // cantidad, base imponible, tipo IVA, cuota IVA, importe). La cantidad
+    // (litros) es opcional: servicios como peajes/lubricantes no la traen.
+    // El tipo real varía entre 21%/10%/4% (ES) y también 23% (tasa estándar
+    // portuguesa); los importes admiten signo negativo (filas DESCUENTO).
+    private static final Pattern P_CONCEPTO_CON_CANTIDAD = Pattern.compile(
+            "^(.+?)\\s+(-?[\\d.]+,\\d{2})\\s+(-?[\\d.]+,\\d{2})\\s+(4|10|21|23)%\\s+(-?[\\d.]+,\\d{2})\\s+(-?[\\d.]+,\\d{2})$");
+    private static final Pattern P_CONCEPTO_SIN_CANTIDAD = Pattern.compile(
+            "^(.+?)\\s+(-?[\\d.]+,\\d{2})\\s+(4|10|21|23)%\\s+(-?[\\d.]+,\\d{2})\\s+(-?[\\d.]+,\\d{2})$");
+    // Fila de 2 columnas "Concepto Importe" de los documentos de liquidación:
+    // no hay columnas de tipo/cuota de IVA. Solo se aplica en contexto de
+    // liquidación (ver parseConceptosResumen(..., liquidacion=true)) porque,
+    // sin ese contexto, coincidiría también con las últimas columnas de las
+    // filas ES/PT normales (falso positivo).
+    private static final Pattern P_CONCEPTO_LIQUIDACION = Pattern.compile("^(.+?)\\s+(-?[\\d.]+,\\d{2})$");
 
     // ── Resumen por tarjeta ───────────────────────────────────────────────────
     private static final Pattern P_IMPORTE_TARJETA = Pattern.compile("^IMPORTE(\\d{16})\\s+(.+)$");
@@ -82,8 +109,17 @@ public class RepsolFacturaParser implements FacturaParser {
         List<TarjetaResumen> tarjetaResumenes = new ArrayList<>();
 
         // ── Nivel 1: Cabecera ─────────────────────────────────────────────────
+        // Los documentos de liquidación NLC no tienen "Núm. Factura" ni
+        // "Total Factura en/em Euros" (no llevan desglose de IVA); se
+        // detectan y se procesan por una vía distinta que genera un
+        // numFactura sintético (ver esDocumentoLiquidacion/aplicarCabeceraLiquidacion).
+        boolean esLiquidacion = esDocumentoLiquidacion(lines);
         try {
-            parseCabecera(lines, facturaBuilder);
+            if (esLiquidacion) {
+                aplicarCabeceraLiquidacion(lines, facturaBuilder);
+            } else {
+                parseCabecera(lines, facturaBuilder);
+            }
         } catch (Exception e) {
             log.warn("[Repsol] Error parseando cabecera: {}", e.getMessage());
         }
@@ -93,7 +129,7 @@ public class RepsolFacturaParser implements FacturaParser {
 
         // ── Nivel 2: Conceptos resumen ────────────────────────────────────────
         try {
-            parseConceptosResumen(lines, conceptos);
+            parseConceptosResumen(lines, conceptos, esLiquidacion);
         } catch (Exception e) {
             log.warn("[Repsol] Error parseando conceptos resumen: {}", e.getMessage());
         }
@@ -135,9 +171,21 @@ public class RepsolFacturaParser implements FacturaParser {
     // CABECERA
     // ─────────────────────────────────────────────────────────────────────────
 
-    private void parseCabecera(List<String> lines, Factura.FacturaBuilder b) {
+    void parseCabecera(List<String> lines, Factura.FacturaBuilder b) {
+        parseCabeceraComun(lines, b);
         for (String line : lines) {
             tryMatch(P_NUM_FACTURA, line).ifPresent(m -> b.numFactura(m.group(1)));
+            tryMatch(P_TOTAL_FACTURA, line).ifPresent(m -> aplicarTotalFactura(m.group(1), b));
+        }
+    }
+
+    /**
+     * Campos de cabecera compartidos por facturas normales (ES/PT) y
+     * documentos de liquidación NLC: período, número de cuenta, NIF, IBAN
+     * y vencimiento.
+     */
+    private void parseCabeceraComun(List<String> lines, Factura.FacturaBuilder b) {
+        for (String line : lines) {
             tryMatch(P_PERIODO, line).ifPresent(m -> {
                 b.periodoDesde(LocalDate.parse(m.group(1), FMT_DATE));
                 b.periodoHasta(LocalDate.parse(m.group(2), FMT_DATE));
@@ -147,12 +195,96 @@ public class RepsolFacturaParser implements FacturaParser {
             tryMatch(P_NIF, line).ifPresent(m -> b.nifCliente(m.group(1)));
             tryMatch(P_IBAN, line).ifPresent(m -> b.iban(m.group(1).strip()));
             tryMatch(P_VENCIMIENTO, line).ifPresent(m -> b.vencimiento(LocalDate.parse(m.group(1), FMT_DATE)));
-            tryMatch(P_TOTAL_FACTURA, line).ifPresent(m -> {
-                b.baseImponible(parseAmount(m.group(1)));
-                b.totalIva(parseAmount(m.group(2)));
-                b.totalFactura(parseAmount(m.group(3)));
-            });
         }
+    }
+
+    /**
+     * Extrae base/cuota/total de la tirada de tokens numéricos capturada por
+     * {@link #P_TOTAL_FACTURA}. Las facturas PT observadas traen un token
+     * líder adicional (bleed-through de una columna de descuento) antes de
+     * los 3 valores reales; nos quedamos con los ÚLTIMOS 3 tokens siempre,
+     * lo que también reproduce el comportamiento actual para ES (3 tokens).
+     */
+    private void aplicarTotalFactura(String tirada, Factura.FacturaBuilder b) {
+        String[] tokens = tirada.trim().split("\\s+");
+        if (tokens.length < 3) return;
+        String baseRaw  = tokens[tokens.length - 3];
+        String cuotaRaw = tokens[tokens.length - 2];
+        String totalRaw = tokens[tokens.length - 1];
+        b.baseImponible(parseAmount(baseRaw));
+        b.totalIva(parseAmount(cuotaRaw));
+        b.totalFactura(parseAmount(totalRaw));
+    }
+
+    /**
+     * Detecta documentos de liquidación NLC: no tienen "Núm. Factura" (número
+     * de factura estándar) y sí contienen una línea "Total en Euros" (sin la
+     * palabra "Factura" entre "Total" y "en"/"em", lo que descarta las líneas
+     * "Total Factura en/em Euros" de las facturas ES/PT normales).
+     */
+    boolean esDocumentoLiquidacion(List<String> lines) {
+        boolean tieneNumFactura = lines.stream().anyMatch(l -> P_NUM_FACTURA.matcher(l).find());
+        if (tieneNumFactura) return false;
+        return lines.stream().anyMatch(l -> P_TOTAL_LIQUIDACION.matcher(l).find());
+    }
+
+    /**
+     * Cabecera de documentos de liquidación NLC. Estos documentos no traen
+     * ningún número de documento impreso (verificado con volcado real de
+     * PDFBox en los 7 ejemplares disponibles), así que generamos un
+     * identificador SINTÉTICO a partir de la fecha de cabecera y el importe
+     * total: "LIQ-{ddMMyyyy}-{total}". No hay desglose de IVA en estos
+     * documentos: baseImponible = totalFactura, totalIva = 0.
+     */
+    void aplicarCabeceraLiquidacion(List<String> lines, Factura.FacturaBuilder b) {
+        parseCabeceraComun(lines, b);
+
+        String fecha = null;
+        String totalRaw = null;
+        for (String line : lines) {
+            if (fecha == null) {
+                Matcher mFecha = P_LUGAR_FECHA.matcher(line);
+                if (mFecha.find()) fecha = mFecha.group(1);
+            }
+            if (totalRaw == null) {
+                Matcher mTotal = P_TOTAL_LIQUIDACION.matcher(line);
+                if (mTotal.find()) totalRaw = mTotal.group(1);
+            }
+        }
+
+        // Fallback: la variante PT de estos documentos ("Nota de Liquidação")
+        // no trae la línea "Lugar y Fecha", pero sí la línea estándar
+        // "Fecha de operación {desde} AL {hasta}" (verificado en muestra real
+        // NLPX/00048416). Usamos el fin de período como fecha de referencia.
+        if (fecha == null) {
+            for (String line : lines) {
+                Matcher mPeriodo = P_PERIODO.matcher(line);
+                if (mPeriodo.find()) {
+                    fecha = mPeriodo.group(2);
+                    break;
+                }
+            }
+        }
+
+        if (totalRaw != null) {
+            BigDecimal total = parseAmount(totalRaw);
+            b.baseImponible(total);
+            b.totalIva(BigDecimal.ZERO);
+            b.totalFactura(total);
+        }
+        if (fecha != null && totalRaw != null) {
+            b.numFactura(generarNumFacturaSinteticoLiquidacion(fecha, totalRaw));
+        }
+    }
+
+    /**
+     * Genera el identificador sintético "LIQ-{ddMMyyyy}-{total}" para
+     * documentos de liquidación NLC, que no traen ningún número de
+     * documento real impreso en el PDF.
+     */
+    private String generarNumFacturaSinteticoLiquidacion(String fechaDdMmYyyy, String totalRaw) {
+        String fechaCompacta = fechaDdMmYyyy.replace("/", "");
+        return "LIQ-" + fechaCompacta + "-" + totalRaw;
     }
 
     private int extractPeriodoAno(List<String> lines) {
@@ -171,55 +303,94 @@ public class RepsolFacturaParser implements FacturaParser {
     // CONCEPTOS RESUMEN
     // ─────────────────────────────────────────────────────────────────────────
 
-    private void parseConceptosResumen(List<String> lines, List<FacturaConceptoResumen> conceptos) {
+    void parseConceptosResumen(List<String> lines, List<FacturaConceptoResumen> conceptos) {
+        parseConceptosResumen(lines, conceptos, false);
+    }
+
+    /**
+     * @param liquidacion cuando es {@code true}, se procesan las filas con el
+     *                    formato de 2 columnas "Concepto Importe" propio de
+     *                    los documentos de liquidación NLC (sin desglose de
+     *                    IVA), en lugar del formato habitual ES/PT.
+     */
+    void parseConceptosResumen(List<String> lines, List<FacturaConceptoResumen> conceptos, boolean liquidacion) {
         boolean inSection = false;
         for (String line : lines) {
+            String upper = line.toUpperCase(Locale.ROOT);
             // La sección de conceptos empieza después de la cabecera y antes de los IMPORTE7078...
-            if (line.startsWith("IMPORTE")) {
+            if (upper.startsWith("IMPORTE")) {
                 inSection = false;
             }
-            if (line.contains("CONCEPTO") && line.contains("CANTIDAD")) {
+            // Comparación insensible a mayúsculas: la cabecera real es
+            // "Concepto Cantidad ..." (solo la inicial en mayúscula), no
+            // "CONCEPTO CANTIDAD" — la comparación en mayúsculas original
+            // nunca coincidía con ninguna factura real.
+            if (upper.contains("CONCEPTO") && upper.contains("CANTIDAD")) {
                 inSection = true;
                 continue;
             }
             if (!inSection) continue;
 
-            Matcher m = P_CONCEPTO_RES.matcher(line);
-            if (m.matches()) {
-                String conceptoRaw = m.group(1).strip();
-                ConceptoUnificado unificado = resolveConceptoRepsol(conceptoRaw);
-                conceptos.add(FacturaConceptoResumen.builder()
-                        .conceptoOriginal(conceptoRaw)
-                        .conceptoUnificado(unificado.name())
-                        .cantidad(parseAmount(m.group(2)))
-                        .tipoIva(new BigDecimal("21.00"))
-                        .cuotaIva(parseAmount(m.group(3)))
-                        .baseImponible(parseAmount(m.group(4)))
-                        .importe(parseAmount(m.group(5)))
-                        .build());
-            }
+            addConceptoRepsolSiMatchea(line, conceptos, liquidacion);
         }
 
         // Fallback: buscar conceptos aunque no estemos en sección marcada
         if (conceptos.isEmpty()) {
             for (String line : lines) {
-                if (line.startsWith("IMPORTE")) break;
-                Matcher m = P_CONCEPTO_RES.matcher(line);
-                if (m.matches()) {
-                    String conceptoRaw = m.group(1).strip();
-                    ConceptoUnificado unificado = resolveConceptoRepsol(conceptoRaw);
-                    conceptos.add(FacturaConceptoResumen.builder()
-                            .conceptoOriginal(conceptoRaw)
-                            .conceptoUnificado(unificado.name())
-                            .cantidad(parseAmount(m.group(2)))
-                            .tipoIva(new BigDecimal("21.00"))
-                            .cuotaIva(parseAmount(m.group(3)))
-                            .baseImponible(parseAmount(m.group(4)))
-                            .importe(parseAmount(m.group(5)))
-                            .build());
-                }
+                if (line.toUpperCase(Locale.ROOT).startsWith("IMPORTE")) break;
+                addConceptoRepsolSiMatchea(line, conceptos, liquidacion);
             }
         }
+    }
+
+    private void addConceptoRepsolSiMatchea(String line, List<FacturaConceptoResumen> conceptos, boolean liquidacion) {
+        if (liquidacion) {
+            // Formato de liquidación NLC: fila de 2 columnas "Concepto Importe",
+            // sin tipo/cuota de IVA. Gateado tras el flag para no coincidir
+            // falsamente con las últimas columnas de las filas ES/PT normales.
+            Matcher mLiq = P_CONCEPTO_LIQUIDACION.matcher(line);
+            if (mLiq.matches()) {
+                addConceptoLiquidacion(conceptos, mLiq.group(1), mLiq.group(2));
+            }
+            return;
+        }
+        // Con columna de cantidad (litros), p. ej. combustible
+        Matcher mConCantidad = P_CONCEPTO_CON_CANTIDAD.matcher(line);
+        if (mConCantidad.matches()) {
+            addConceptoRepsol(conceptos, mConCantidad.group(1), mConCantidad.group(2),
+                    mConCantidad.group(3), mConCantidad.group(4), mConCantidad.group(5), mConCantidad.group(6));
+            return;
+        }
+        // Sin columna de cantidad, p. ej. peajes, lubricantes, descuentos
+        Matcher mSinCantidad = P_CONCEPTO_SIN_CANTIDAD.matcher(line);
+        if (mSinCantidad.matches()) {
+            addConceptoRepsol(conceptos, mSinCantidad.group(1), null,
+                    mSinCantidad.group(2), mSinCantidad.group(3), mSinCantidad.group(4), mSinCantidad.group(5));
+        }
+    }
+
+    /**
+     * Concepto de liquidación NLC: sin tipo/cuota de IVA (tipoIva=0,
+     * cuotaIva=0), baseImponible = importe.
+     */
+    private void addConceptoLiquidacion(List<FacturaConceptoResumen> conceptos, String conceptoRaw, String importeRaw) {
+        addConceptoRepsol(conceptos, conceptoRaw, null, importeRaw, "0", "0", importeRaw);
+    }
+
+    private void addConceptoRepsol(List<FacturaConceptoResumen> conceptos, String conceptoRaw,
+            String cantidadRaw, String baseRaw, String tipoRaw, String cuotaRaw, String importeRaw) {
+        String concepto = conceptoRaw.strip();
+        if (concepto.isBlank() || concepto.equalsIgnoreCase("CONCEPTO")) return;
+        ConceptoUnificado unificado = resolveConceptoRepsol(concepto);
+        conceptos.add(FacturaConceptoResumen.builder()
+                .conceptoOriginal(concepto)
+                .conceptoUnificado(unificado.name())
+                .cantidad(cantidadRaw != null ? parseAmount(cantidadRaw) : null)
+                .baseImponible(parseAmount(baseRaw))
+                .tipoIva(new BigDecimal(tipoRaw).setScale(2, java.math.RoundingMode.HALF_UP))
+                .cuotaIva(parseAmount(cuotaRaw))
+                .importe(parseAmount(importeRaw))
+                .build());
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -360,9 +531,11 @@ public class RepsolFacturaParser implements FacturaParser {
         List<String> obsTokens = new ArrayList<>();
         int i = tokens.length - 1;
 
-        // El último token puede ser una letra de observación (T, N, etc.)
+        // El último token puede ser un código de observación (T, F, TF, TFC, etc.)
+        // Longitud variable: no acotamos el número de letras porque un importe real
+        // nunca es puramente alfabético, así que no hay ambigüedad posible.
         String obs = null;
-        if (i >= 0 && tokens[i].matches("[A-Z]")) {
+        if (i >= 0 && tokens[i].matches("[A-Z]+")) {
             obs = tokens[i];
             i--;
         }
@@ -421,18 +594,16 @@ public class RepsolFacturaParser implements FacturaParser {
         BigDecimal dtoPorcentaje  = nums.size() > 6 ? nums.get(6) : null;
         BigDecimal dtoTotal       = nums.size() > 7 ? nums.get(7) : null;
         BigDecimal bonificacion   = nums.size() > 8 ? nums.get(8) : null;
-        BigDecimal importeTotal   = nums.size() > 9 ? nums.get(9) : null;
 
-        // Si sólo hay menos campos, asignamos lo que tengamos
-        if (nums.size() == 1) { importeTotal = nums.get(0); cantidad = null; }
+        // El importe realmente cobrado es siempre el ÚLTIMO número de la línea,
+        // sea cual sea el número de campos intermedios presentes: los peajes
+        // (AUTOPISTAS) solo traen 2 números (precio e importe), mientras que el
+        // combustible puede traer hasta 10. Indexar desde el final es el único
+        // criterio que se cumple en ambos formatos.
+        BigDecimal importeTotal = nums.isEmpty() ? null : nums.get(nums.size() - 1);
 
-        // Fallback: calcular importeTotal si no se pudo extraer
-        if (importeTotal == null && cantidad != null && precioIvaInc != null) {
-            importeTotal = cantidad.multiply(precioIvaInc).setScale(2, java.math.RoundingMode.HALF_UP);
-        }
-        if (importeTotal == null && importe != null) {
-            importeTotal = importe;
-        }
+        // Un único número no es la cantidad, es el propio importe total.
+        if (nums.size() == 1) { cantidad = null; }
 
         return Operacion.builder()
                 .referencia(referencia)
