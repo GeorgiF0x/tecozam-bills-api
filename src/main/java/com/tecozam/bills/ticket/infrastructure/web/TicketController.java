@@ -133,7 +133,7 @@ public class TicketController {
             String mimeType = imagen.getContentType() != null ? imagen.getContentType() : "image/jpeg";
 
             // Call OpenAI Vision API directly
-            String prompt = "Extrae los datos de este ticket de gasolinera o peaje español. " +
+            String prompt = "Extrae los datos de este ticket de gasolinera o peaje. El ticket puede estar en español o portugués; responde con los valores en el idioma original del ticket, salvo que se indique lo contrario. " +
                     "Devuelve SOLO un JSON válido con estos campos exactos: " +
                     "{ \"proveedor\": \"REPSOL o MOEVE_CEPSA u otro\", " +
                     "\"estacion\": \"nombre de la estación\", " +
@@ -424,7 +424,7 @@ public class TicketController {
         String base64 = Base64.getEncoder().encodeToString(imagen.getBytes());
         String mimeType = imagen.getContentType() != null ? imagen.getContentType() : "image/jpeg";
 
-        String prompt = "Extrae los datos de este ticket de gasolinera o peaje español. " +
+        String prompt = "Extrae los datos de este ticket de gasolinera o peaje. El ticket puede estar en español o portugués; responde con los valores en el idioma original del ticket, salvo que se indique lo contrario. " +
                 "Devuelve SOLO un JSON válido con estos campos exactos: " +
                 "{ \"proveedor\": \"REPSOL o MOEVE_CEPSA u otro\", " +
                 "\"estacion\": \"nombre de la estación\", " +
