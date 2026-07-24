@@ -712,6 +712,53 @@ class MoeveFacturaParserTest {
     }
 
     @Test
+    @DisplayName("parseExtracto reconoce operaciones cuando el establecimiento se parte en 2 líneas y la fecha/hora/datos quedan solas en una tercera línea sin prefijo (bug real: se perdían las 4 operaciones enteras de la tarjeta)")
+    void parseExtractoEstablecimientoPartidoSinPrefijoEnLineaDeOperacion() throws IOException {
+        List<String> lines = loadFixture("familyB_establecimiento_partido_sin_prefijo.txt");
+        List<TarjetaResumen> tarjetaResumenes = new ArrayList<>();
+
+        parser.parseExtracto(lines, tarjetaResumenes);
+
+        assertThat(tarjetaResumenes).hasSize(1);
+        TarjetaResumen tarjeta = tarjetaResumenes.get(0);
+        assertThat(tarjeta.getOperaciones()).hasSize(4);
+
+        Operacion primera = tarjeta.getOperaciones().get(0);
+        assertThat(primera.getEstablecimiento()).isEqualTo("P.A. MARCO CANAVESES SOALHÕES");
+        assertThat(primera.getConceptoOriginal()).isEqualTo("GASOLEO");
+        assertThat(primera.getFechaHora()).isEqualTo(LocalDateTime.of(2026, 6, 5, 16, 23));
+        assertThat(primera.getCantidad()).isEqualByComparingTo(new BigDecimal("28.56"));
+        assertThat(primera.getImporteTotal()).isEqualByComparingTo(new BigDecimal("52.30"));
+
+        Operacion ultima = tarjeta.getOperaciones().get(3);
+        assertThat(ultima.getEstablecimiento()).isEqualTo("P.A. MARCO CANAVESES SOALHÕES");
+        assertThat(ultima.getFechaHora()).isEqualTo(LocalDateTime.of(2026, 6, 26, 16, 29));
+        assertThat(ultima.getImporteTotal()).isEqualByComparingTo(new BigDecimal("55.61"));
+    }
+
+    @Test
+    @DisplayName("parseExtracto: establecimiento partido en 2 líneas no contamina la operación normal (de una sola línea) siguiente")
+    void parseExtractoEstablecimientoPartidoNoContaminaOperacionSiguiente() throws IOException {
+        List<String> lines = loadFixture("familyB_establecimiento_partido_mezclado.txt");
+        List<TarjetaResumen> tarjetaResumenes = new ArrayList<>();
+
+        parser.parseExtracto(lines, tarjetaResumenes);
+
+        assertThat(tarjetaResumenes).hasSize(1);
+        TarjetaResumen tarjeta = tarjetaResumenes.get(0);
+        assertThat(tarjeta.getOperaciones()).hasSize(3);
+
+        assertThat(tarjeta.getOperaciones().get(0).getEstablecimiento()).isEqualTo("P.A. CONSTANCE");
+        assertThat(tarjeta.getOperaciones().get(0).getImporteTotal()).isEqualByComparingTo(new BigDecimal("61.05"));
+
+        assertThat(tarjeta.getOperaciones().get(1).getEstablecimiento()).isEqualTo("P.A. MARCO CANAVESES SOALHÕES");
+        assertThat(tarjeta.getOperaciones().get(1).getImporteTotal()).isEqualByComparingTo(new BigDecimal("66.52"));
+
+        assertThat(tarjeta.getOperaciones().get(2).getEstablecimiento()).isEqualTo("P.A. CONSTANCE");
+        assertThat(tarjeta.getOperaciones().get(2).getImporteTotal()).isEqualByComparingTo(new BigDecimal("48.23"));
+    }
+
+    @Test
     @DisplayName("parseExtracto: importeTotal siempre es el último token numérico de la línea, sea cual sea el número de campos intermedios")
     void parseExtractoImporteTotalEsUltimoTokenNumerico() {
         List<String> lines = List.of(

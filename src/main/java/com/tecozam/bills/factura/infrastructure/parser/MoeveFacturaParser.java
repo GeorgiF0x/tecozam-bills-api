@@ -130,6 +130,19 @@ public class MoeveFacturaParser implements FacturaParser {
     private static final Pattern P_OP_LINE_B = Pattern.compile(
             "^(.+?)\\s+(\\d{2}-\\d{2}-\\d{4})\\s+(\\d{2}:\\d{2}(?::\\d{2})?)\\s+(.+)$");
 
+    // ── Extracto: línea de operación (Family B) sin establecimiento en la
+    // misma línea ───────────────────────────────────────────────────────────
+    // Cuando el nombre de la estación es demasiado largo para una línea (p. ej.
+    // "P.A. MARCO CANAVESES" + "SOALHÕES" en líneas separadas), la fecha/hora
+    // y el resto de la operación caen en una TERCERA línea que empieza
+    // directamente por la fecha, sin ningún prefijo de texto. P_OP_LINE_B no
+    // puede reconocerla (exige texto + espacio antes de la fecha). En este
+    // caso se usa el establecimiento ya acumulado en `currentEstablecimiento`
+    // a partir de las líneas de texto previas.
+    // Ejemplo real: "05-06-2026 16:23 GASOLEO 28,56 1,961 56,01 1,961 56,01 0,13EUR/L -3,713 52,30 23"
+    private static final Pattern P_OP_LINE_B_SIN_ESTABLECIMIENTO = Pattern.compile(
+            "^(\\d{2}-\\d{2}-\\d{4})\\s+(\\d{2}:\\d{2}(?::\\d{2})?)\\s+(.+)$");
+
     // ── Extracto: línea de operación de peaje/red (Family A) ─────────────────
     // Variante sin palabra clave de combustible (peajes/gestión de red, p. ej.
     // "USO RED PORTUGAL", peajes AUDASA): establecimiento genérico, fecha y
@@ -654,6 +667,26 @@ public class MoeveFacturaParser implements FacturaParser {
                 continue;
             }
 
+            // Detectar línea de operación Family B sin establecimiento propio
+            // (la fecha abre la línea directamente; el establecimiento ya se
+            // acumuló en currentEstablecimiento desde líneas de texto previas).
+            Matcher opBSinEstM = P_OP_LINE_B_SIN_ESTABLECIMIENTO.matcher(line);
+            if (opBSinEstM.matches() && currentEstablecimiento != null) {
+                try {
+                    Operacion op = parseLineaOperacionMoeveFamilyBSinEstablecimiento(
+                            opBSinEstM, currentEstablecimiento);
+                    op.setTarjetaResumen(currentTarjeta);
+                    currentTarjeta.getOperaciones().add(op);
+                } catch (Exception e) {
+                    log.warn("[Moeve] Error parseando operación Family B sin establecimiento '{}': {}",
+                            line, e.getMessage());
+                }
+                // El establecimiento ya se ha consumido; resetear para no
+                // arrastrarlo a la siguiente operación.
+                currentEstablecimiento = null;
+                continue;
+            }
+
             // Detectar línea de operación de peaje/red Family A (establecimiento
             // genérico + fecha yyyy-MM-dd + hora HH:mm + número de operación +
             // concepto sin palabra clave de combustible, p. ej. "USO RED PORTUGAL")
@@ -860,6 +893,24 @@ public class MoeveFacturaParser implements FacturaParser {
 
         return buildOperacionFromNumericTail(null, split.concepto(), fechaHora, establecimiento, null,
                 numTokens);
+    }
+
+    /**
+     * Igual que {@link #parseLineaOperacionMoeveFamilyB} pero para cuando la
+     * línea de operación NO trae establecimiento (empieza directamente por la
+     * fecha), porque el nombre de la estación se partió en líneas de texto
+     * anteriores y ya viene acumulado en {@code establecimiento}.
+     */
+    private Operacion parseLineaOperacionMoeveFamilyBSinEstablecimiento(Matcher m, String establecimiento) {
+        LocalDate fecha = LocalDate.parse(m.group(1), FMT_DD_MM_YYYY);
+        LocalDateTime fechaHora = fecha.atTime(parseHoraOpcionalSegundos(m.group(2)));
+
+        String[] tokens = m.group(3).strip().split("\\s+");
+        ConceptoSplit split = splitConceptoNumerico(tokens, 0);
+        List<String> numTokens = collectNumericTokens(tokens, split.nextIndex());
+
+        return buildOperacionFromNumericTail(null, split.concepto(), fechaHora,
+                trimEstablecimiento(establecimiento), null, numTokens);
     }
 
     /**
