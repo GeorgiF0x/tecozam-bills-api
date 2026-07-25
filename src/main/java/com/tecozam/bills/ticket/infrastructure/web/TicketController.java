@@ -13,6 +13,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -64,6 +65,14 @@ public class TicketController {
     @Operation(summary = "Obtener ticket", description = "Obtiene un ticket por su ID")
     public ResponseEntity<TicketDTO> findById(@PathVariable Long id) {
         return ResponseEntity.ok(ticketService.findById(id));
+    }
+
+    @DeleteMapping("/{id:\\d+}")
+    @PreAuthorize("hasRole('ADMIN')")
+    @Operation(summary = "Eliminar ticket", description = "Borrado lógico: deja de aparecer en los listados pero se conserva para auditoría")
+    public ResponseEntity<Void> eliminar(@PathVariable Long id) {
+        ticketService.eliminar(id);
+        return ResponseEntity.noContent().build();
     }
 
     @PostMapping

@@ -59,8 +59,21 @@ public class TicketService {
     public List<TicketDTO> findAll(String estadoCotejo) {
         List<Ticket> tickets = estadoCotejo != null
                 ? ticketRepository.findByEstadoCotejo(estadoCotejo)
-                : ticketRepository.findAll();
+                : ticketRepository.findAllActivos();
         return tickets.stream().map(this::toDTO).toList();
+    }
+
+    /**
+     * Borrado logico (no fisico): conserva el ticket para auditoria pero deja
+     * de aparecer en los listados normales. Solo ADMIN (verificado en el
+     * controller).
+     */
+    public void eliminar(Long id) {
+        Ticket ticket = ticketRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Ticket", id));
+        ticket.softDelete();
+        ticketRepository.save(ticket);
+        log.info("Ticket {} eliminado (borrado logico)", id);
     }
 
     @Transactional(readOnly = true)

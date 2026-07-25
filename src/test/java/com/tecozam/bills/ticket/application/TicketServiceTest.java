@@ -32,6 +32,7 @@ import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
@@ -129,5 +130,33 @@ class TicketServiceTest {
         assertThat(viejo.getEstadoCotejo()).isEqualTo("INCIDENCIA");
         assertThat(viejo.getTipoIncidencia()).isEqualTo("SIN_COTEJAR_1_MES");
         assertThat(reciente.getEstadoCotejo()).isEqualTo("SIN_COINCIDENCIA");
+    }
+
+    @Test
+    @DisplayName("eliminar hace borrado logico (softDelete), no borra la fila")
+    void eliminar_hacesBorradoLogico() {
+        Ticket ticket = Ticket.builder()
+                .estadoCotejo("PENDIENTE")
+                .importeTotal(new BigDecimal("52.30"))
+                .build();
+        ticket.setId(10L);
+
+        when(ticketRepository.findById(10L)).thenReturn(Optional.of(ticket));
+        when(ticketRepository.save(any(Ticket.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        service.eliminar(10L);
+
+        assertThat(ticket.isEliminado()).isTrue();
+        assertThat(ticket.getEliminadoEn()).isNotNull();
+        verify(ticketRepository).save(ticket);
+    }
+
+    @Test
+    @DisplayName("eliminar sobre un ticket inexistente lanza ResourceNotFoundException")
+    void eliminar_ticketInexistente_lanzaExcepcion() {
+        when(ticketRepository.findById(999L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.eliminar(999L))
+                .isInstanceOf(com.tecozam.bills.shared.infrastructure.exception.ResourceNotFoundException.class);
     }
 }

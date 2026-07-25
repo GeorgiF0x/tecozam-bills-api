@@ -2,23 +2,20 @@ package com.tecozam.bills.ticket.domain;
 
 import com.tecozam.bills.factura.domain.Operacion;
 import com.tecozam.bills.proveedor.domain.Proveedor;
+import com.tecozam.bills.shared.domain.BaseEntity;
 import com.tecozam.bills.tarjeta.domain.Tarjeta;
 import com.tecozam.bills.trabajador.domain.Trabajador;
 import com.tecozam.bills.vehiculo.domain.Vehiculo;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.FetchType;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.GenerationType;
-import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
-import jakarta.persistence.PrePersist;
-import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
+import lombok.EqualsAndHashCode;
 import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
@@ -30,11 +27,8 @@ import java.time.LocalDateTime;
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-public class Ticket {
-
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
+@EqualsAndHashCode(callSuper = true)
+public class Ticket extends BaseEntity {
 
     @Column(nullable = false)
     private String origen;
@@ -120,21 +114,4 @@ public class Ticket {
 
     @Column(name = "resuelto_en")
     private LocalDateTime resueltoEn;
-
-    @Column(name = "creado_en", updatable = false)
-    private LocalDateTime creadoEn;
-
-    @Column(name = "modificado_en")
-    private LocalDateTime modificadoEn;
-
-    @PrePersist
-    protected void onPrePersist() {
-        this.creadoEn = LocalDateTime.now();
-        this.modificadoEn = LocalDateTime.now();
-    }
-
-    @PreUpdate
-    protected void onPreUpdate() {
-        this.modificadoEn = LocalDateTime.now();
-    }
 }
