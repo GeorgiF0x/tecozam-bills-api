@@ -75,6 +75,14 @@ public class TicketController {
         return ResponseEntity.noContent().build();
     }
 
+    @DeleteMapping
+    @PreAuthorize("hasRole('ADMIN')")
+    @Operation(summary = "Eliminar tickets en masa", description = "Borrado lógico de varios tickets a la vez; conserva los registros para auditoría")
+    public ResponseEntity<Void> eliminarMasivo(@RequestBody List<Long> ids) {
+        ticketService.eliminarMasivo(ids);
+        return ResponseEntity.noContent().build();
+    }
+
     @PostMapping
     @PreAuthorize("hasAnyRole('ADMIN', 'GESTOR')")
     @Operation(summary = "Crear ticket manual", description = "Crea un nuevo ticket de forma manual")

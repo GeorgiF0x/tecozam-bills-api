@@ -159,4 +159,37 @@ class TicketServiceTest {
         assertThatThrownBy(() -> service.eliminar(999L))
                 .isInstanceOf(com.tecozam.bills.shared.infrastructure.exception.ResourceNotFoundException.class);
     }
+
+    @Test
+    @DisplayName("eliminarMasivo hace borrado logico de todos los tickets indicados")
+    void eliminarMasivo_marcaVariosTicketsComoEliminados() {
+        Ticket t1 = Ticket.builder().estadoCotejo("PENDIENTE").importeTotal(new BigDecimal("10.00")).build();
+        t1.setId(1L);
+        Ticket t2 = Ticket.builder().estadoCotejo("PENDIENTE").importeTotal(new BigDecimal("20.00")).build();
+        t2.setId(2L);
+
+        when(ticketRepository.findById(1L)).thenReturn(Optional.of(t1));
+        when(ticketRepository.findById(2L)).thenReturn(Optional.of(t2));
+        when(ticketRepository.save(any(Ticket.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        service.eliminarMasivo(List.of(1L, 2L));
+
+        assertThat(t1.isEliminado()).isTrue();
+        assertThat(t2.isEliminado()).isTrue();
+        verify(ticketRepository).save(t1);
+        verify(ticketRepository).save(t2);
+    }
+
+    @Test
+    @DisplayName("eliminarMasivo con un id inexistente lanza ResourceNotFoundException")
+    void eliminarMasivo_idInexistente_lanzaExcepcion() {
+        Ticket t1 = Ticket.builder().estadoCotejo("PENDIENTE").importeTotal(new BigDecimal("10.00")).build();
+        t1.setId(1L);
+
+        when(ticketRepository.findById(1L)).thenReturn(Optional.of(t1));
+        when(ticketRepository.findById(999L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.eliminarMasivo(List.of(1L, 999L)))
+                .isInstanceOf(com.tecozam.bills.shared.infrastructure.exception.ResourceNotFoundException.class);
+    }
 }

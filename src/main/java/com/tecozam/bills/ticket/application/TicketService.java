@@ -76,6 +76,21 @@ public class TicketService {
         log.info("Ticket {} eliminado (borrado logico)", id);
     }
 
+    /**
+     * Borrado logico en masa. Atomico: si algun id no existe, no se elimina
+     * ninguno (se propaga ResourceNotFoundException y la transaccion revierte).
+     */
+    @Transactional
+    public void eliminarMasivo(List<Long> ids) {
+        for (Long id : ids) {
+            Ticket ticket = ticketRepository.findById(id)
+                    .orElseThrow(() -> new ResourceNotFoundException("Ticket", id));
+            ticket.softDelete();
+            ticketRepository.save(ticket);
+        }
+        log.info("Tickets {} eliminados (borrado logico masivo)", ids);
+    }
+
     @Transactional(readOnly = true)
     public TicketDTO findById(Long id) {
         Ticket ticket = ticketRepository.findById(id)
