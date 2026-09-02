@@ -1,0 +1,15 @@
+Fecha de operación 01/07/2026 AL 31/07/2026
+Núm. Doc. Liq. NLC260134917
+Lugar y Fecha MADRID - 31/07/2026
+Resumen tarjetas
+Nº de Tarjeta 972401 0020 0109 9309 Nº de Matrícula C. GOMEZ Conductor
+Ref Fecha / Concepto Establecimiento Kms Cantidad Precio Precio Unitario Aplicado Importe Total % cent€/u Total € Total € serv.
+1405158 12/07 20:50 TIENDA CAFESTORE, S.A.U. CR.A-52 24,85 24,85 F
+1664481 21/07 12:18 TIENDA E.S.ESPINOSA N-VI PK 118, 12,02 12,02
+1223534 29/07 07:43 TIENDA E.S. QUINTANAPALLAI AUTOP 9,77 9,77
+1252220 31/07 18:42 TIENDA E.S. EL CARRO CTRA. N-620 10,62 10,62
+Total en Euros 57,26
+Nº de Tarjeta 972401 0020 0227 0964 Nº de Matrícula M.VICENTE Conductor MANUEL VICENTE
+1964350 09/07 06:56 TIENDA E.S. SIMANCAS CT N-620 PK 2,35 2,35
+1982395 11/07 06:53 TIENDA E.S. SIMANCAS CT N-620 PK 2,35 2,35 F
+Total en Euros 4,70

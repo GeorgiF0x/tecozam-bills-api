@@ -2,6 +2,8 @@ package com.tecozam.bills.factura.infrastructure.parser;
 
 import com.tecozam.bills.factura.domain.Factura;
 import com.tecozam.bills.factura.domain.FacturaConceptoResumen;
+import com.tecozam.bills.factura.domain.Operacion;
+import com.tecozam.bills.factura.domain.TarjetaResumen;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -164,5 +166,48 @@ class RepsolFacturaParserTest {
         assertThat(c.getBaseImponible()).isEqualByComparingTo(new BigDecimal("55.11"));
         assertThat(c.getTipoIva()).isEqualByComparingTo(BigDecimal.ZERO);
         assertThat(c.getCuotaIva()).isEqualByComparingTo(BigDecimal.ZERO);
+    }
+
+    @Test
+    @DisplayName("aplicarCabeceraLiquidacion usa el Núm. Doc. Liq. real cuando está impreso, y suma el total de TODAS las tarjetas (bug real: solo sumaba la primera)")
+    void aplicarCabeceraLiquidacionUsaNumDocLiqRealYSumaTodasLasTarjetas() throws IOException {
+        List<String> lines = loadFixture("liquidacion_multitarjeta.txt");
+        Factura.FacturaBuilder builder = Factura.builder();
+
+        parser.aplicarCabeceraLiquidacion(lines, builder);
+        Factura factura = builder.build();
+
+        assertThat(factura.getNumFactura()).isEqualTo("NLC260134917");
+        assertThat(factura.getTotalFactura()).isEqualByComparingTo(new BigDecimal("61.96"));
+        assertThat(factura.getBaseImponible()).isEqualByComparingTo(new BigDecimal("61.96"));
+    }
+
+    @Test
+    @DisplayName("parseOperaciones extrae conductor limpio (sin arrastrar la palabra 'Conductor'), matrícula con espacio, y separa establecimiento aunque 'E.S.' venga pegado al nombre o ausente (bugs reales de la factura Solred de agosto 2026)")
+    void parseOperacionesExtraeConductorMatriculaYEstablecimientoCorrectamente() throws IOException {
+        List<String> lines = loadFixture("liquidacion_multitarjeta.txt");
+        List<TarjetaResumen> tarjetas = new ArrayList<>();
+
+        parser.parseOperaciones(lines, tarjetas, 2026);
+
+        assertThat(tarjetas).hasSize(2);
+
+        TarjetaResumen gomez = tarjetas.get(0);
+        assertThat(gomez.getAlias()).isEqualTo("C. GOMEZ");
+        assertThat(gomez.getConductor()).isNull();
+        assertThat(gomez.getOperaciones()).hasSize(4);
+
+        Operacion cafestore = gomez.getOperaciones().get(0);
+        assertThat(cafestore.getConceptoOriginal()).isEqualTo("TIENDA");
+        assertThat(cafestore.getEstablecimiento()).isEqualTo("CAFESTORE, S.A.U. CR.A-52");
+
+        Operacion espinosa = gomez.getOperaciones().get(1);
+        assertThat(espinosa.getConceptoOriginal()).isEqualTo("TIENDA");
+        assertThat(espinosa.getEstablecimiento()).isEqualTo("ESPINOSA N-VI PK 118,");
+
+        TarjetaResumen vicente = tarjetas.get(1);
+        assertThat(vicente.getAlias()).isEqualTo("M.VICENTE");
+        assertThat(vicente.getConductor()).isEqualTo("MANUEL VICENTE");
+        assertThat(vicente.getOperaciones()).hasSize(2);
     }
 }

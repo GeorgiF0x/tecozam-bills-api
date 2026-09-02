@@ -54,6 +54,10 @@ public class RepsolFacturaParser implements FacturaParser {
     // de la línea de número de factura estándar.
     private static final Pattern P_TOTAL_LIQUIDACION = Pattern.compile("Total\\s+en\\s+Euros\\s+([\\d.]+,\\d{2})");
     private static final Pattern P_LUGAR_FECHA = Pattern.compile("Lugar\\s+y\\s+Fecha\\s+.+?-\\s*(\\d{2}/\\d{2}/\\d{4})");
+    // Numero real del documento de liquidacion, cuando lo trae impreso (no
+    // todos los ejemplares lo traen — de ahi el fallback sintetico de mas
+    // abajo, pero cuando SI esta presente tiene prioridad).
+    private static final Pattern P_NUM_DOC_LIQ = Pattern.compile("N[úu]m\\.?\\s*Doc\\.?\\s*Liq\\.?\\s+(\\S+)");
 
     // ── Conceptos resumen ─────────────────────────────────────────────────────
     // Cabecera real: "Concepto Cantidad Base Tipo Cuota Importe" (orden:
@@ -76,10 +80,15 @@ public class RepsolFacturaParser implements FacturaParser {
     private static final Pattern P_IMPORTE_TARJETA = Pattern.compile("^IMPORTE(\\d{16})\\s+(.+)$");
 
     // ── Cabecera de bloque de tarjeta en operaciones ──────────────────────────
+    // La matrícula puede traer espacio (ej. "C. GOMEZ" cuando en realidad es
+    // un alias de conductor, no una matrícula real) — por eso NO se puede
+    // capturar con \S+. El literal "Conductor" es la cabecera de columna que
+    // SIEMPRE aparece en la linea real (verificado con volcado PDFBox), con
+    // el nombre real detras solo si el conductor esta asignado; si no lo
+    // esta, la linea termina justo en "Conductor" sin nada despues. El grupo
+    // final es opcional para no romper variantes sin esa palabra.
     private static final Pattern P_TARJETA_HDR = Pattern.compile(
-            "N[\\u00ba°]\\s*de\\s*Tarjeta\\s+([\\d ]{15,23})\\s+N[\\u00ba°]\\s*de\\s*Matr[ií]cula\\s+(\\S+)");
-    private static final Pattern P_CONDUCTOR_HDR = Pattern.compile(
-            "N[\\u00ba°]\\s*de\\s*Tarjeta\\s+([\\d ]{15,23})\\s+N[\\u00ba°]\\s*de\\s*Matr[ií]cula\\s+\\S+\\s+(.+)$");
+            "N[\\u00ba°]\\s*de\\s*Tarjeta\\s+([\\d ]{15,23})\\s+N[\\u00ba°]\\s*de\\s*Matr[ií]cula\\s+(.+?)(?:\\s+Conductor\\b\\s*(.*))?$");
 
     // ── Línea de operación ────────────────────────────────────────────────────
     private static final Pattern P_OP_LINE = Pattern.compile(
@@ -229,26 +238,41 @@ public class RepsolFacturaParser implements FacturaParser {
     }
 
     /**
-     * Cabecera de documentos de liquidación NLC. Estos documentos no traen
-     * ningún número de documento impreso (verificado con volcado real de
-     * PDFBox en los 7 ejemplares disponibles), así que generamos un
-     * identificador SINTÉTICO a partir de la fecha de cabecera y el importe
-     * total: "LIQ-{ddMMyyyy}-{total}". No hay desglose de IVA en estos
+     * Cabecera de documentos de liquidación NLC. Algunos ejemplares no traen
+     * ningún número de documento impreso, así que generamos un identificador
+     * SINTÉTICO a partir de la fecha de cabecera y el importe total:
+     * "LIQ-{ddMMyyyy}-{total}" — pero cuando el documento SI trae el número
+     * real ("Núm. Doc. Liq. NLC260134917", verificado en factura real de
+     * agosto 2026), ese tiene prioridad. No hay desglose de IVA en estos
      * documentos: baseImponible = totalFactura, totalIva = 0.
      */
     void aplicarCabeceraLiquidacion(List<String> lines, Factura.FacturaBuilder b) {
         parseCabeceraComun(lines, b);
 
         String fecha = null;
-        String totalRaw = null;
+        String numDocLiq = null;
+        String primerTotalRaw = null;
+        BigDecimal totalSum = BigDecimal.ZERO;
+        boolean encontroTotal = false;
+
         for (String line : lines) {
             if (fecha == null) {
                 Matcher mFecha = P_LUGAR_FECHA.matcher(line);
                 if (mFecha.find()) fecha = mFecha.group(1);
             }
-            if (totalRaw == null) {
-                Matcher mTotal = P_TOTAL_LIQUIDACION.matcher(line);
-                if (mTotal.find()) totalRaw = mTotal.group(1);
+            if (numDocLiq == null) {
+                Matcher mDoc = P_NUM_DOC_LIQ.matcher(line);
+                if (mDoc.find()) numDocLiq = mDoc.group(1);
+            }
+            // Cada tarjeta del extracto trae su propia línea "Total en Euros
+            // X": el total real del documento es la SUMA de todas, no solo
+            // la primera (bug real: con 2+ tarjetas se perdía el importe de
+            // todas menos la primera — 57,26 en vez de 61,96 con 2 tarjetas).
+            Matcher mTotal = P_TOTAL_LIQUIDACION.matcher(line);
+            if (mTotal.find()) {
+                if (primerTotalRaw == null) primerTotalRaw = mTotal.group(1);
+                totalSum = totalSum.add(parseAmount(mTotal.group(1)));
+                encontroTotal = true;
             }
         }
 
@@ -266,14 +290,15 @@ public class RepsolFacturaParser implements FacturaParser {
             }
         }
 
-        if (totalRaw != null) {
-            BigDecimal total = parseAmount(totalRaw);
-            b.baseImponible(total);
+        if (encontroTotal) {
+            b.baseImponible(totalSum);
             b.totalIva(BigDecimal.ZERO);
-            b.totalFactura(total);
+            b.totalFactura(totalSum);
         }
-        if (fecha != null && totalRaw != null) {
-            b.numFactura(generarNumFacturaSinteticoLiquidacion(fecha, totalRaw));
+        if (numDocLiq != null) {
+            b.numFactura(numDocLiq);
+        } else if (fecha != null && primerTotalRaw != null) {
+            b.numFactura(generarNumFacturaSinteticoLiquidacion(fecha, primerTotalRaw));
         }
     }
 
@@ -438,7 +463,7 @@ public class RepsolFacturaParser implements FacturaParser {
     // OPERACIONES
     // ─────────────────────────────────────────────────────────────────────────
 
-    private void parseOperaciones(List<String> lines, List<TarjetaResumen> tarjetaResumenes, int periodoAno) {
+    void parseOperaciones(List<String> lines, List<TarjetaResumen> tarjetaResumenes, int periodoAno) {
         TarjetaResumen currentTarjeta = null;
         String currentMatricula = null;
         String currentConductor = null;
@@ -455,17 +480,8 @@ public class RepsolFacturaParser implements FacturaParser {
             if (hdrM.find()) {
                 String rawNum = hdrM.group(1).replaceAll("\\s+", "");
                 currentMatricula = hdrM.group(2).strip();
-                currentConductor = null;
-
-                // Intenta extraer conductor si está en la misma línea
-                Matcher condM = P_CONDUCTOR_HDR.matcher(line);
-                if (condM.find()) {
-                    String condPart = condM.group(2).strip();
-                    // Si hay algo después de la matrícula, es el conductor
-                    if (!condPart.isBlank() && !condPart.equals(currentMatricula)) {
-                        currentConductor = condPart;
-                    }
-                }
+                String condRaw = hdrM.group(3);
+                currentConductor = (condRaw != null && !condRaw.isBlank()) ? condRaw.strip() : null;
 
                 // Buscar o crear TarjetaResumen
                 currentTarjeta = tarjetaMap.get(rawNum);
@@ -558,8 +574,18 @@ public class RepsolFacturaParser implements FacturaParser {
         boolean inEstab = false;
         for (int j = 0; j <= i; j++) {
             String tok = tokens[j];
-            if (tok.equals("E.S.")) {
+            // El nombre del establecimiento a veces viene pegado a "E.S."
+            // sin espacio (p.ej. "E.S.ESPINOSA"), no solo como token exacto
+            // "E.S." separado — con equals() a secas esos casos se perdian
+            // enteros dentro del concepto (bug real visto en factura Solred
+            // "documento de liquidacion" de agosto 2026).
+            if (tok.startsWith("E.S.")) {
                 inEstab = true;
+                String pegado = tok.substring(4);
+                if (!pegado.isBlank()) {
+                    if (estabSb.length() > 0) estabSb.append(" ");
+                    estabSb.append(pegado);
+                }
                 continue;
             }
             if (inEstab) {
@@ -643,8 +669,10 @@ public class RepsolFacturaParser implements FacturaParser {
         if (lParen >= 0) {
             return new String[]{ combined.substring(0, lParen + 3).strip(), combined.substring(lParen + 3).strip() };
         }
-        // Conceptos de una sola palabra conocida
-        String[] knownConcepts = { "AUTOPISTAS", "LUBRICANTES", "ADBLUE", "LAVADOS/LUBRICS." };
+        // Conceptos de una sola palabra conocida. "TIENDA" cubre las compras
+        // de conveniencia de los documentos de liquidación (establecimiento
+        // sin marcador "E.S.", ej. "TIENDA CAFESTORE, S.A.U. CR.A-52").
+        String[] knownConcepts = { "AUTOPISTAS", "LUBRICANTES", "ADBLUE", "LAVADOS/LUBRICS.", "TIENDA" };
         for (String kc : knownConcepts) {
             if (combined.startsWith(kc)) {
                 return new String[]{ kc, combined.substring(kc.length()).strip() };
