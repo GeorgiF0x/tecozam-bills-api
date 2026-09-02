@@ -6,6 +6,8 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.List;
 
 @Repository
@@ -29,4 +31,22 @@ public interface TicketRepository extends JpaRepository<Ticket, Long> {
 
     /** Tickets cuya operación cotejada pertenece a una factura concreta (NEW-09). */
     List<Ticket> findByOperacionCotejadaFacturaId(Long facturaId);
+
+    /**
+     * Posibles duplicados: misma tarjeta + mismo importe en una ventana de
+     * minutos estrecha. Pensado para detectar fotos repetidas de la misma
+     * compra real (recibo cliente + comprobante fiscal + copia comercio),
+     * que de otro modo generan varios tickets que acaban cotejados contra la
+     * misma operación de la factura.
+     */
+    @Query("SELECT t FROM Ticket t WHERE t.numTarjeta4ultimos = :ultimos4 " +
+            "AND t.fechaHora BETWEEN :desde AND :hasta " +
+            "AND t.importeTotal = :importeTotal " +
+            "AND t.eliminadoEn IS NULL")
+    List<Ticket> findPosiblesDuplicados(
+            @Param("ultimos4") String ultimos4,
+            @Param("desde") LocalDateTime desde,
+            @Param("hasta") LocalDateTime hasta,
+            @Param("importeTotal") BigDecimal importeTotal
+    );
 }

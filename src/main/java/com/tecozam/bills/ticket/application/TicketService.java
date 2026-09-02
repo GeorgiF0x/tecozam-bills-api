@@ -34,6 +34,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 
 @Service
@@ -44,6 +45,9 @@ public class TicketService {
 
     /** Las facturas son mensuales: pasado este umbral sin cotejar, es un problema real, no falta de factura. */
     private static final long DIAS_LIMITE_SIN_COTEJAR = 30;
+
+    /** Ventana para detectar fotos repetidas de la misma compra (ver {@link #verificarNoEsDuplicado}). */
+    private static final long DUPLICADO_VENTANA_MINUTOS = 5;
 
     private final TicketRepository ticketRepository;
     private final OperacionRepository operacionRepository;
@@ -120,6 +124,8 @@ public class TicketService {
     }
 
     public TicketDTO createManual(CreateTicketManualRequest req) {
+        verificarNoEsDuplicado(req.numTarjeta4ultimos(), req.fechaHora(), req.importeTotal());
+
         Ticket.TicketBuilder builder = Ticket.builder()
                 .origen("MANUAL")
                 .estadoCotejo("PENDIENTE")
@@ -201,15 +207,26 @@ public class TicketService {
             LocalDateTime desde = ticket.getFechaHora().minusHours(2);
             LocalDateTime hasta = ticket.getFechaHora().plusHours(2);
 
-            List<Operacion> candidatas;
+            boolean tieneTarjeta = ticket.getNumTarjeta4ultimos() != null && !ticket.getNumTarjeta4ultimos().isBlank();
 
-            if (ticket.getNumTarjeta4ultimos() != null && !ticket.getNumTarjeta4ultimos().isBlank()) {
+            List<Operacion> candidatas;
+            if (tieneTarjeta) {
+                // Tarjeta + fecha/hora ya es casi una clave unica: NO se filtra
+                // por importe aqui. Las tarjetas de flota facturan a precio
+                // pactado, distinto del precio de venta al publico que marca el
+                // ticket fisico, asi que exigir importe exacto descartaba
+                // candidatas validas (bug real: ticket de 74,00€ cuya operacion
+                // real en factura era 63,27€, mismos tarjeta+fecha+litros).
                 candidatas = operacionRepository.findParaCotejoConTarjeta(
-                        desde, hasta, ticket.getImporteTotal(), ticket.getNumTarjeta4ultimos());
+                        desde, hasta, ticket.getNumTarjeta4ultimos());
             } else {
+                // Sin tarjeta conocida, el importe es la unica señal fuerte
+                // disponible para acotar la busqueda.
                 candidatas = operacionRepository.findParaCotejo(
                         desde, hasta, ticket.getImporteTotal());
             }
+
+            Operacion mejorCandidata = elegirMejorCandidata(candidatas, ticket);
 
             if (candidatas.isEmpty()) {
                 // No match at all → try wider search (±24h, no amount filter)
@@ -229,17 +246,16 @@ public class TicketService {
                     ticket.setEstadoCotejo("SIN_COINCIDENCIA");
                     sinCoincidencia++;
                 }
-            } else if (candidatas.size() == 1) {
-                Operacion op = candidatas.get(0);
-                ticket.setOperacionCotejada(op);
+            } else if (mejorCandidata != null) {
+                ticket.setOperacionCotejada(mejorCandidata);
 
                 // Check for discrepancies
-                String discrepancia = detectarDiscrepancia(ticket, op);
+                String discrepancia = detectarDiscrepancia(ticket, mejorCandidata);
                 if (discrepancia != null) {
                     // Match found but with discrepancy → auto-incident
                     ticket.setEstadoCotejo("INCIDENCIA");
                     ticket.setTipoIncidencia(discrepancia);
-                    ticket.setObservaciones("Auto-detectado: " + describeDiscrepancia(discrepancia, ticket, op));
+                    ticket.setObservaciones("Auto-detectado: " + describeDiscrepancia(discrepancia, ticket, mejorCandidata));
                     if (gestorDefault != null) ticket.setAsignadoA(gestorDefault);
                     incidencias++;
                 } else {
@@ -247,6 +263,8 @@ public class TicketService {
                     cotejados++;
                 }
             } else {
+                // Varias candidatas y ninguna claramente mas cercana en importe
+                // que las demas: ambiguo de verdad, requiere revision manual.
                 ticket.setEstadoCotejo("MULTIPLE");
                 multiples++;
             }
@@ -328,6 +346,69 @@ public class TicketService {
         }
 
         return null; // No discrepancy
+    }
+
+    /**
+     * Evita crear un ticket duplicado de una compra ya subida antes. Pensado
+     * para el caso real de que un trabajador fotografia varios recibos de la
+     * MISMA compra (recibo cliente + comprobante fiscal + copia comercio) y
+     * cada foto se sube como ticket aparte: sin este control, los 2-3 tickets
+     * acaban cotejados contra la misma operacion de la factura.
+     *
+     * Solo se activa si se conoce la tarjeta (sin tarjeta no hay señal fuerte
+     * para distinguir un duplicado real de dos compras distintas parecidas).
+     */
+    private void verificarNoEsDuplicado(String ultimos4, LocalDateTime fechaHora, java.math.BigDecimal importeTotal) {
+        if (ultimos4 == null || ultimos4.isBlank() || fechaHora == null || importeTotal == null) {
+            return;
+        }
+        List<Ticket> duplicados = ticketRepository.findPosiblesDuplicados(
+                ultimos4,
+                fechaHora.minusMinutes(DUPLICADO_VENTANA_MINUTOS),
+                fechaHora.plusMinutes(DUPLICADO_VENTANA_MINUTOS),
+                importeTotal);
+        if (!duplicados.isEmpty()) {
+            throw new BusinessException(
+                    "Ya existe un ticket con la misma tarjeta, fecha e importe — parece una foto repetida de la misma compra",
+                    "duplicado");
+        }
+    }
+
+    /**
+     * Elige la candidata a cotejar cuando la busqueda por tarjeta+fecha devuelve
+     * mas de una operacion (p.ej. diesel + AdBlue repostados casi a la vez, misma
+     * tarjeta). Se desempata por cercania de importe: si la mas cercana lo esta
+     * claramente mas que la segunda (al menos el doble de cerca), se elige esa;
+     * si estan empatadas o demasiado cerca entre si, es ambiguo de verdad y se
+     * deja para revision manual (MULTIPLE) en vez de arriesgar un cotejo erroneo.
+     */
+    private Operacion elegirMejorCandidata(List<Operacion> candidatas, Ticket ticket) {
+        if (candidatas.isEmpty()) {
+            return null;
+        }
+        if (candidatas.size() == 1) {
+            return candidatas.get(0);
+        }
+
+        List<Operacion> ordenadas = candidatas.stream()
+                .sorted(Comparator.comparing(op -> diffImporte(op, ticket)))
+                .toList();
+
+        BigDecimal mejorDiff = diffImporte(ordenadas.get(0), ticket);
+        BigDecimal segundaDiff = diffImporte(ordenadas.get(1), ticket);
+
+        if (mejorDiff.compareTo(segundaDiff) == 0) {
+            return null; // empate real, no hay forma de saber cual es
+        }
+        boolean claramenteMejor = segundaDiff.compareTo(mejorDiff.multiply(BigDecimal.valueOf(2))) >= 0;
+        return claramenteMejor ? ordenadas.get(0) : null;
+    }
+
+    private BigDecimal diffImporte(Operacion op, Ticket ticket) {
+        if (op.getImporteTotal() == null || ticket.getImporteTotal() == null) {
+            return BigDecimal.valueOf(Long.MAX_VALUE);
+        }
+        return op.getImporteTotal().subtract(ticket.getImporteTotal()).abs();
     }
 
     private String describeDiscrepancia(String tipo, Ticket ticket, Operacion op) {
@@ -486,6 +567,8 @@ public class TicketService {
             ultimos4 = ultimos4.substring(ultimos4.length() - 4);
         }
 
+        verificarNoEsDuplicado(ultimos4, fechaHora, importeTotal);
+
         Ticket ticket = Ticket.builder()
                 .origen("OCR_VALIDADO")
                 .estadoCotejo("PENDIENTE")
@@ -513,10 +596,10 @@ public class TicketService {
             LocalDateTime hasta = fechaHora.plusHours(2);
 
             List<Operacion> candidatas = operacionRepository.findParaCotejoConTarjeta(
-                    desde, hasta, importeTotal, ultimos4);
+                    desde, hasta, ultimos4);
+            Operacion op = elegirMejorCandidata(candidatas, ticket);
 
-            if (candidatas.size() == 1) {
-                Operacion op = candidatas.get(0);
+            if (op != null) {
                 String discrepancia = detectarDiscrepancia(ticket, op);
                 if (discrepancia == null) {
                     ticket.setOperacionCotejada(op);
