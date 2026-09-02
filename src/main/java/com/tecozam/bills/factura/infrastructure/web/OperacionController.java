@@ -32,6 +32,8 @@ public class OperacionController {
      * @param conceptoUnificado filtro por concepto unificado (opcional, ej: DIESEL, PEAJE)
      * @param fechaDesde       filtro fecha desde (ISO date, opcional)
      * @param fechaHasta       filtro fecha hasta (ISO date, opcional)
+     * @param numTarjeta       filtro por últimos dígitos de tarjeta (opcional)
+     * @param q                busca por establecimiento o concepto original (opcional)
      */
     @GetMapping
     public Page<OperacionDTO> findAll(
@@ -40,7 +42,9 @@ public class OperacionController {
             @RequestParam(required = false) Long proveedorId,
             @RequestParam(required = false) String conceptoUnificado,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fechaDesde,
-            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fechaHasta
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fechaHasta,
+            @RequestParam(required = false) String numTarjeta,
+            @RequestParam(required = false) String q
     ) {
         Pageable pageable = PageRequest.of(page, size);
 
@@ -48,7 +52,7 @@ public class OperacionController {
         LocalDateTime hasta = fechaHasta != null ? fechaHasta.atTime(23, 59, 59) : null;
 
         return operacionRepository
-                .findWithFiltersEager(proveedorId, conceptoUnificado, desde, hasta, pageable)
+                .findWithFiltersEager(proveedorId, conceptoUnificado, desde, hasta, numTarjeta, q, pageable)
                 .map(this::toDTO);
     }
 
