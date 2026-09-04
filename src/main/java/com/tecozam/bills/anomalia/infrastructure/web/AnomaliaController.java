@@ -58,43 +58,64 @@ public class AnomaliaController {
             .filter(o -> o.getTarjetaResumen() != null)
             .collect(Collectors.groupingBy(o -> o.getTarjetaResumen().getNumTarjeta()));
 
-        // Compute global average across all operations
-        double globalAvg = ops.stream()
-            .filter(o -> o.getImporteTotal() != null)
-            .mapToDouble(o -> o.getImporteTotal().doubleValue())
-            .average().orElse(0);
+        // Media de referencia POR PROVEEDOR, no una unica media global. Redes
+        // distintas (p.ej. Repsol vs Moeve) tienen estructuras de precio
+        // distintas, y comparar todas las tarjetas contra una media mezclada
+        // genera falsos positivos/negativos que no reflejan un consumo real
+        // anomalo, solo heterogeneidad esperada entre proveedores.
+        Map<String, Double> avgByProveedor = ops.stream()
+            .filter(o -> o.getImporteTotal() != null
+                && o.getFactura() != null
+                && o.getFactura().getProveedor() != null)
+            .collect(Collectors.groupingBy(
+                o -> o.getFactura().getProveedor().getNombre(),
+                Collectors.averagingDouble(o -> o.getImporteTotal().doubleValue())
+            ));
 
         List<Map<String, Object>> results = new ArrayList<>();
 
         for (var entry : byTarjeta.entrySet()) {
-            double cardTotal = entry.getValue().stream()
+            List<Operacion> cardOps = entry.getValue();
+            double cardTotal = cardOps.stream()
                 .filter(o -> o.getImporteTotal() != null)
                 .mapToDouble(o -> o.getImporteTotal().doubleValue())
                 .sum();
-            double cardAvg = entry.getValue().stream()
+            double cardAvg = cardOps.stream()
                 .filter(o -> o.getImporteTotal() != null)
                 .mapToDouble(o -> o.getImporteTotal().doubleValue())
                 .average().orElse(0);
-            int count = entry.getValue().size();
-            double totalLitros = entry.getValue().stream()
+            int count = cardOps.size();
+            double totalLitros = cardOps.stream()
                 .filter(o -> o.getCantidad() != null)
                 .mapToDouble(o -> o.getCantidad().doubleValue())
                 .sum();
-            String conductor = entry.getValue().stream()
+            String conductor = cardOps.stream()
                 .filter(o -> o.getTarjetaResumen() != null)
                 .map(o -> o.getTarjetaResumen().getConductor())
                 .filter(Objects::nonNull)
                 .findFirst().orElse(null);
+            String proveedor = cardOps.stream()
+                .filter(o -> o.getFactura() != null && o.getFactura().getProveedor() != null)
+                .map(o -> o.getFactura().getProveedor().getNombre())
+                .filter(Objects::nonNull)
+                .findFirst().orElse(null);
 
-            double desvPct = globalAvg > 0 ? ((cardAvg - globalAvg) / globalAvg) * 100 : 0;
+            // Sin proveedor conocido no hay base de comparacion fiable; usamos
+            // la propia media de la tarjeta (desviacion 0) en vez de mezclarla
+            // con proveedores distintos.
+            double referenciaAvg = (proveedor != null && avgByProveedor.containsKey(proveedor))
+                ? avgByProveedor.get(proveedor)
+                : cardAvg;
+            double desvPct = referenciaAvg > 0 ? ((cardAvg - referenciaAvg) / referenciaAvg) * 100 : 0;
 
             Map<String, Object> m = new LinkedHashMap<>();
             m.put("tarjeta", entry.getKey());
             m.put("conductor", conductor);
+            m.put("proveedor", proveedor);
             m.put("numOperaciones", count);
             m.put("totalGasto", cardTotal);
             m.put("mediaOperacion", cardAvg);
-            m.put("mediaGlobal", globalAvg);
+            m.put("mediaGlobal", referenciaAvg);
             m.put("desviacionPct", Math.round(desvPct * 10.0) / 10.0);
             m.put("totalLitros", totalLitros);
             m.put("excesivo", Math.abs(desvPct) > 30);

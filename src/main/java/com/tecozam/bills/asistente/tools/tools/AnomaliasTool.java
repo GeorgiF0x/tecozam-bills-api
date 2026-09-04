@@ -75,10 +75,17 @@ public class AnomaliasTool implements Tool {
 
         if ("consumo_excesivo".equals(tipo) || "todas".equals(tipo)) {
             var ops = operacionRepository.findAll();
-            double globalAvg = ops.stream()
-                .filter(o -> o.getImporteTotal() != null)
-                .mapToDouble(o -> o.getImporteTotal().doubleValue())
-                .average().orElse(0);
+            // Media de referencia POR PROVEEDOR (ver AnomaliaController):
+            // mezclar redes con estructuras de precio distintas en una sola
+            // media global genera falsos positivos que no son consumo real.
+            Map<String, Double> avgByProveedor = ops.stream()
+                .filter(o -> o.getImporteTotal() != null
+                    && o.getFactura() != null
+                    && o.getFactura().getProveedor() != null)
+                .collect(Collectors.groupingBy(
+                    o -> o.getFactura().getProveedor().getNombre(),
+                    Collectors.averagingDouble(o -> o.getImporteTotal().doubleValue())
+                ));
 
             ops.stream()
                 .filter(o -> o.getTarjetaResumen() != null)
@@ -89,7 +96,14 @@ public class AnomaliasTool implements Tool {
                         .filter(o -> o.getImporteTotal() != null)
                         .mapToDouble(o -> o.getImporteTotal().doubleValue())
                         .average().orElse(0);
-                    double desvPct = globalAvg > 0 ? ((cardAvg - globalAvg) / globalAvg) * 100 : 0;
+                    String proveedor = e.getValue().stream()
+                        .filter(o -> o.getFactura() != null && o.getFactura().getProveedor() != null)
+                        .map(o -> o.getFactura().getProveedor().getNombre())
+                        .filter(Objects::nonNull).findFirst().orElse(null);
+                    double referenciaAvg = (proveedor != null && avgByProveedor.containsKey(proveedor))
+                        ? avgByProveedor.get(proveedor)
+                        : cardAvg;
+                    double desvPct = referenciaAvg > 0 ? ((cardAvg - referenciaAvg) / referenciaAvg) * 100 : 0;
                     String conductor = e.getValue().stream()
                         .map(o -> o.getTarjetaResumen().getConductor())
                         .filter(Objects::nonNull).findFirst().orElse(null);
@@ -97,8 +111,9 @@ public class AnomaliasTool implements Tool {
                     row.put("tipo", "consumo_excesivo");
                     row.put("tarjeta", e.getKey());
                     row.put("conductor", conductor);
+                    row.put("proveedor", proveedor);
                     row.put("mediaOperacion", Math.round(cardAvg * 100.0) / 100.0);
-                    row.put("mediaGlobal", Math.round(globalAvg * 100.0) / 100.0);
+                    row.put("mediaGlobal", Math.round(referenciaAvg * 100.0) / 100.0);
                     row.put("desviacionPct", Math.round(desvPct * 10.0) / 10.0);
                     row.put("excesivo", Math.abs(desvPct) > 30);
                     return row;
