@@ -1,5 +1,7 @@
 package com.tecozam.bills.factura.dto;
 
+import java.util.List;
+
 public record ImportarFacturaResponse(
         Long facturaId,
         String numFactura,
@@ -7,5 +9,6 @@ public record ImportarFacturaResponse(
         int tarjetasImportadas,
         int operacionesImportadas,
         String rutaPdf,
-        String mensaje
+        String mensaje,
+        List<String> avisos
 ) {}

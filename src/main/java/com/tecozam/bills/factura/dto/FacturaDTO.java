@@ -3,6 +3,7 @@ package com.tecozam.bills.factura.dto;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.List;
 
 public record FacturaDTO(
         Long id,
@@ -23,5 +24,6 @@ public record FacturaDTO(
         LocalDateTime creadoEn,
         String creadoPor,
         int numTarjetas,
-        int numOperaciones
+        int numOperaciones,
+        List<String> avisosImport
 ) {}

@@ -42,6 +42,7 @@ public class FacturaService {
     private final FacturaParserFactory parserFactory;
     private final FileStorageService fileStorageService;
     private final TicketService ticketService;
+    private final FacturaImportValidator facturaImportValidator;
 
     /**
      * Importa una factura PDF (y opcionalmente un extracto) para un proveedor dado.
@@ -157,6 +158,17 @@ public class FacturaService {
             }
         }
 
+        // 6b. Validar plausibilidad de los datos parseados. No bloquea la
+        // importacion — un formato de factura no visto antes puede hacer que
+        // el parser lea mal un campo EN SILENCIO (mismo patron que el bug real
+        // de litros duplicados), y sin este chequeo ese dato entraria al
+        // cotejo sin que nadie se entere hasta que un ticket real lo revela.
+        List<String> avisos = facturaImportValidator.validar(factura);
+        if (!avisos.isEmpty()) {
+            factura.setAvisosImport(String.join("\n", avisos));
+            avisos.forEach(a -> log.warn("[FacturaService] Aviso de plausibilidad: {}", a));
+        }
+
         // 7. Persistir
         factura = facturaRepository.save(factura);
 
@@ -166,11 +178,16 @@ public class FacturaService {
                 .mapToInt(tr -> tr.getOperaciones().size())
                 .sum();
 
-        log.info("[FacturaService] Factura {} importada: {} tarjetas, {} operaciones",
-                factura.getNumFactura(), numTarjetas, numOperaciones);
+        log.info("[FacturaService] Factura {} importada: {} tarjetas, {} operaciones, {} avisos",
+                factura.getNumFactura(), numTarjetas, numOperaciones, avisos.size());
 
         // 8. Re-cotejo asíncrono de tickets pendientes
         cotejarPendientesAsync();
+
+        String mensaje = avisos.isEmpty()
+                ? "Factura importada correctamente"
+                : "Factura importada con " + avisos.size()
+                        + " aviso(s) — revisa el detalle antes de confiar en el cotejo automático.";
 
         return new ImportarFacturaResponse(
                 factura.getId(),
@@ -179,7 +196,8 @@ public class FacturaService {
                 numTarjetas,
                 numOperaciones,
                 factura.getRutaPdf(),
-                "Factura importada correctamente"
+                mensaje,
+                avisos
         );
     }
 
@@ -282,7 +300,10 @@ public class FacturaService {
                 f.getCreadoEn(),
                 f.getCreadoPor(),
                 numTarjetas,
-                numOperaciones
+                numOperaciones,
+                f.getAvisosImport() != null && !f.getAvisosImport().isBlank()
+                        ? List.of(f.getAvisosImport().split("\n"))
+                        : List.of()
         );
     }
 }

@@ -83,6 +83,18 @@ public class Factura {
     @Column(name = "ruta_pdf")
     private String rutaPdf;
 
+    /**
+     * Avisos de plausibilidad detectados por {@code FacturaImportValidator} al
+     * importar (precio/litro fuera de rango, importe que no cuadra con
+     * cantidad x precio, fecha fuera del periodo de la factura, etc). Varias
+     * lineas separadas por salto de linea. Null si no se detecto ningun aviso.
+     * No bloquea la importacion — es para revision humana, ya que un formato
+     * de factura nuevo no visto antes puede hacer que el parser lea mal un
+     * campo en silencio sin lanzar ninguna excepcion.
+     */
+    @Column(name = "avisos_import", columnDefinition = "NVARCHAR(MAX)")
+    private String avisosImport;
+
     @Column(name = "creado_en", updatable = false)
     private LocalDateTime creadoEn;
 
