@@ -631,6 +631,17 @@ public class RepsolFacturaParser implements FacturaParser {
         // Un único número no es la cantidad, es el propio importe total.
         if (nums.size() == 1) { cantidad = null; }
 
+        // Conceptos sin litros reales (TIENDA/PEAJE/LAVADO/DESCUENTO...) solo
+        // traen el importe repetido en la posicion donde iria la cantidad
+        // (ej. "TIENDA ... 12,02 12,02") — sin este filtro, ese 12,02 se
+        // guardaba como si fueran 12,02 litros y disparaba una falsa
+        // discrepancia "LITROS_NO_COINCIDEN" al cotejar (bug real: ticket de
+        // tienda sin litros vs. operacion con cantidad=importeTotal).
+        boolean tieneLitrosReales = conceptoUnificado == ConceptoUnificado.DIESEL
+                || conceptoUnificado == ConceptoUnificado.GASOLINA
+                || conceptoUnificado == ConceptoUnificado.ADBLUE;
+        if (!tieneLitrosReales) { cantidad = null; }
+
         return Operacion.builder()
                 .referencia(referencia)
                 .fechaHora(fechaHora)

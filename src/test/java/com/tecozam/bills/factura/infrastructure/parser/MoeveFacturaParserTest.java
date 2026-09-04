@@ -675,6 +675,10 @@ class MoeveFacturaParserTest {
         assertThat(op.getConceptoOriginal()).isEqualTo("PEAJE");
         assertThat(op.getFechaHora()).isEqualTo(LocalDateTime.of(2026, 2, 2, 5, 55, 0));
         assertThat(op.getImporteTotal()).isEqualByComparingTo(new BigDecimal("3.55"));
+        // PEAJE no tiene litros reales: el unico numero de la linea es el
+        // importe, no debe guardarse como si fueran 3,55 litros (mismo bug
+        // real ya corregido en RepsolFacturaParser para conceptos de TIENDA).
+        assertThat(op.getCantidad()).isNull();
     }
 
     @Test

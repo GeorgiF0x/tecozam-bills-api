@@ -826,6 +826,16 @@ public class MoeveFacturaParser implements FacturaParser {
         BigDecimal importeTotal   = numTokens.isEmpty()
                 ? null : parseAmount(numTokens.get(numTokens.size() - 1));
 
+        // Conceptos sin litros reales (PEAJE/LAVADO/DESCUENTO/OTRAS COMPRAS...)
+        // solo traen importe en la posicion donde iria "litros" — sin este
+        // filtro, ese importe se guardaba como si fueran litros y podia
+        // disparar una falsa discrepancia "LITROS_NO_COINCIDEN" al cotejar
+        // (mismo bug real ya corregido en RepsolFacturaParser).
+        boolean tieneLitrosReales = conceptoUnificado == ConceptoUnificado.DIESEL
+                || conceptoUnificado == ConceptoUnificado.GASOLINA
+                || conceptoUnificado == ConceptoUnificado.ADBLUE;
+        if (!tieneLitrosReales) { litros = null; }
+
         return Operacion.builder()
                 .referencia(referencia)
                 .fechaHora(fechaHora)

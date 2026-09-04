@@ -210,4 +210,18 @@ class RepsolFacturaParserTest {
         assertThat(vicente.getConductor()).isEqualTo("MANUEL VICENTE");
         assertThat(vicente.getOperaciones()).hasSize(2);
     }
+
+    @Test
+    @DisplayName("parseOperaciones no asigna cantidad (litros) a conceptos sin litros reales como TIENDA (bug real: 12,02 importe se guardaba como 12,02 litros y disparaba LITROS_NO_COINCIDEN al cotejar)")
+    void parseOperacionesNoAsignaCantidadAConceptosSinLitros() throws IOException {
+        List<String> lines = loadFixture("liquidacion_multitarjeta.txt");
+        List<TarjetaResumen> tarjetas = new ArrayList<>();
+
+        parser.parseOperaciones(lines, tarjetas, 2026);
+
+        Operacion espinosa = tarjetas.get(0).getOperaciones().get(1);
+        assertThat(espinosa.getEstablecimiento()).isEqualTo("ESPINOSA N-VI PK 118,");
+        assertThat(espinosa.getCantidad()).isNull();
+        assertThat(espinosa.getImporteTotal()).isEqualByComparingTo(new BigDecimal("12.02"));
+    }
 }
