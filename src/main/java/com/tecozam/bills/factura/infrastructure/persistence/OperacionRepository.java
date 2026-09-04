@@ -27,23 +27,59 @@ public interface OperacionRepository extends JpaRepository<Operacion, Long> {
     List<Operacion> findByFacturaId(@Param("facturaId") Long facturaId);
 
     /**
-     * Candidatas para cotejo cuando el ticket sabe la tarjeta: tarjeta+fecha/hora
-     * es una clave casi unica, así que el importe NO filtra aqui (las tarjetas de
-     * flota se facturan a precio pactado, distinto del precio de venta al publico
-     * que marca el ticket fisico — filtrar por importe exacto descartaba
-     * candidatas validas). El importe se usa despues, en detectarDiscrepancia y en
-     * el desempate entre varias candidatas.
+     * Candidatas para cotejo cuando el ticket sabe la tarjeta pero no tiene una
+     * {@code Tarjeta} formal vinculada (tickets manuales/OCR legacy sin
+     * tarjetaId): tarjeta+fecha/hora es una clave casi unica, así que el
+     * importe NO filtra aqui (las tarjetas de flota facturan a precio
+     * pactado, distinto del precio de venta al publico que marca el ticket
+     * fisico — filtrar por importe exacto descartaba candidatas validas). El
+     * importe se usa despues, en detectarDiscrepancia y en el desempate entre
+     * varias candidatas.
+     *
+     * Se excluyen operaciones ya cotejadas contra otro ticket activo: sin
+     * esto, dos tickets distintos (no duplicados de la misma foto — eso ya lo
+     * bloquea verificarNoEsDuplicado) podian acabar vinculados a la MISMA
+     * operacion si ambos caian cerca en fecha/importe (bug real, sin
+     * exclusividad ninguna query lo impedia).
      */
     @Query("SELECT o FROM Operacion o " +
             "WHERE o.fechaHora BETWEEN :desde AND :hasta " +
-            "AND o.tarjetaResumen.numTarjeta LIKE %:ultimos4")
+            "AND o.tarjetaResumen.numTarjeta LIKE %:ultimos4 " +
+            "AND NOT EXISTS (SELECT 1 FROM Ticket t WHERE t.operacionCotejada = o AND t.eliminadoEn IS NULL)")
     List<Operacion> findParaCotejoConTarjeta(
             @Param("desde") LocalDateTime desde,
             @Param("hasta") LocalDateTime hasta,
             @Param("ultimos4") String ultimos4
     );
 
-    @Query("SELECT o FROM Operacion o WHERE o.fechaHora BETWEEN :desde AND :hasta AND ABS(o.importeTotal - :importe) < 0.10")
+    /**
+     * Igual que {@link #findParaCotejoConTarjeta}, pero comparando el numero
+     * de tarjeta COMPLETO en vez de solo los ultimos 4 digitos. Con flotas
+     * grandes, dos tarjetas distintas pueden compartir los mismos ultimos 4
+     * digitos (con ~130 tarjetas reales, la probabilidad de al menos una
+     * colision es de ~57% — paradoja del cumpleaños); comparar el numero
+     * completo cuando el ticket tiene una Tarjeta formal vinculada elimina
+     * ese riesgo por completo. Se usa como primera opcion; el metodo por
+     * ultimos-4 queda como fallback para tickets sin Tarjeta formal.
+     */
+    @Query("SELECT o FROM Operacion o " +
+            "WHERE o.fechaHora BETWEEN :desde AND :hasta " +
+            "AND o.tarjetaResumen.numTarjeta = :numTarjetaCompleto " +
+            "AND NOT EXISTS (SELECT 1 FROM Ticket t WHERE t.operacionCotejada = o AND t.eliminadoEn IS NULL)")
+    List<Operacion> findParaCotejoConTarjetaExacta(
+            @Param("desde") LocalDateTime desde,
+            @Param("hasta") LocalDateTime hasta,
+            @Param("numTarjetaCompleto") String numTarjetaCompleto
+    );
+
+    /**
+     * Sin tarjeta conocida, el importe es la unica señal fuerte disponible.
+     * Tambien se usa como busqueda ampliada (ventana +-24h) cuando la
+     * busqueda estricta no encuentra nada. Excluye operaciones ya cotejadas
+     * (ver {@link #findParaCotejoConTarjeta}).
+     */
+    @Query("SELECT o FROM Operacion o WHERE o.fechaHora BETWEEN :desde AND :hasta AND ABS(o.importeTotal - :importe) < 0.10 " +
+            "AND NOT EXISTS (SELECT 1 FROM Ticket t WHERE t.operacionCotejada = o AND t.eliminadoEn IS NULL)")
     List<Operacion> findParaCotejo(
             @Param("desde") LocalDateTime desde,
             @Param("hasta") LocalDateTime hasta,

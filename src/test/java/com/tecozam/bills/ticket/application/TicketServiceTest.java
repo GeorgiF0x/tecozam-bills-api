@@ -90,7 +90,6 @@ class TicketServiceTest {
                 .thenReturn(Optional.of(new TarjetaAsignacion()));
         when(vehiculoRepository.findById(1L)).thenReturn(Optional.of(vehiculo));
         when(ticketRepository.save(any(Ticket.class))).thenAnswer(inv -> inv.getArgument(0));
-        when(operacionRepository.findParaCotejoConTarjeta(any(), any(), any())).thenReturn(List.of());
 
         CreateTicketOcrValidadoRequest request = new CreateTicketOcrValidadoRequest(
                 200L, null, CategoriaRecurso.VEHICULO, 1L, 5L, null,
@@ -107,6 +106,45 @@ class TicketServiceTest {
         ArgumentCaptor<Ticket> captor = ArgumentCaptor.forClass(Ticket.class);
         verify(ticketRepository, org.mockito.Mockito.atLeastOnce()).save(captor.capture());
         assertThat(captor.getAllValues().get(0).getNumTarjeta4ultimos()).isEqualTo("9012");
+    }
+
+    @Test
+    @DisplayName("createOcrValidado con discrepancia de precio vincula la operacion y marca INCIDENCIA de inmediato — bug real: antes se quedaba callado en PENDIENTE hasta pulsar Re-cotejar a mano")
+    void createOcrValidado_conDiscrepancia_marcaIncidenciaDeInmediato() {
+        UsuarioCampo campo = new UsuarioCampo();
+        campo.setUsername("campo1");
+        campo.setTrabajador(trabajador);
+        when(usuarioCampoRepository.findByUsername("campo1")).thenReturn(Optional.of(campo));
+
+        when(tarjetaRepository.findById(200L)).thenReturn(Optional.of(tarjeta));
+        when(tarjetaAsignacionRepository.findActivaByTarjetaIdAndTrabajadorId(eq(200L), eq(2L), any(LocalDate.class)))
+                .thenReturn(Optional.of(new TarjetaAsignacion()));
+        when(vehiculoRepository.findById(1L)).thenReturn(Optional.of(vehiculo));
+        when(ticketRepository.save(any(Ticket.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        Operacion operacionConPrecioDistinto = Operacion.builder()
+                .fechaHora(LocalDateTime.of(2026, 6, 5, 16, 23))
+                .importeTotal(new BigDecimal("40.00"))
+                .build();
+        operacionConPrecioDistinto.setId(99L);
+        when(operacionRepository.findParaCotejoConTarjetaExacta(any(), any(), eq("708011008022419012")))
+                .thenReturn(List.of(operacionConPrecioDistinto));
+
+        CreateTicketOcrValidadoRequest request = new CreateTicketOcrValidadoRequest(
+                200L, null, CategoriaRecurso.VEHICULO, 1L, 5L, null,
+                "P.A. MARCO CANAVESES SOALHÕES", LocalDateTime.of(2026, 6, 5, 16, 23),
+                new BigDecimal("52.30"), new BigDecimal("28.56"), new BigDecimal("1.961"),
+                "GASOLEO", null, null, null);
+
+        var resultado = service.createOcrValidado(
+                "campo1", request,
+                "P.A. MARCO CANAVESES SOALHÕES", LocalDateTime.of(2026, 6, 5, 16, 23),
+                new BigDecimal("52.30"), new BigDecimal("28.56"), new BigDecimal("1.961"),
+                "GASOLEO", null);
+
+        assertThat(resultado.estadoCotejo()).isEqualTo("INCIDENCIA");
+        assertThat(resultado.tipoIncidencia()).isEqualTo("PRECIO_NO_CONCUERDA");
+        assertThat(resultado.operacionCotejadaId()).isNotNull();
     }
 
     @Test
@@ -349,5 +387,124 @@ class TicketServiceTest {
                 .isInstanceOf(com.tecozam.bills.shared.infrastructure.exception.BusinessException.class);
 
         verify(ticketRepository, never()).save(any(Ticket.class));
+    }
+
+    @Test
+    @DisplayName("cotejarPendientes usa la tarjeta completa (exacta) cuando el ticket tiene una Tarjeta formal vinculada, no solo los ultimos 4 digitos — evita colisiones entre tarjetas distintas con el mismo sufijo")
+    void cotejarPendientes_usaTarjetaExactaCuandoHayTarjetaVinculada() {
+        Ticket ticket = Ticket.builder()
+                .estadoCotejo("PENDIENTE")
+                .fechaHora(LocalDateTime.of(2026, 7, 1, 10, 4))
+                .importeTotal(new BigDecimal("74.00"))
+                .numTarjeta4ultimos("5614")
+                .tarjeta(tarjeta) // tarjeta de prueba: numeroTarjeta "708011008022419012"
+                .build();
+
+        Operacion operacion = Operacion.builder()
+                .fechaHora(LocalDateTime.of(2026, 7, 1, 10, 4))
+                .importeTotal(new BigDecimal("74.00"))
+                .build();
+
+        when(ticketRepository.findByEstadoCotejo("PENDIENTE")).thenReturn(List.of(ticket));
+        when(usuarioRepository.findAll()).thenReturn(List.of());
+        when(operacionRepository.findParaCotejoConTarjetaExacta(any(), any(), eq("708011008022419012")))
+                .thenReturn(List.of(operacion));
+
+        service.cotejarPendientes();
+
+        assertThat(ticket.getOperacionCotejada()).isEqualTo(operacion);
+        assertThat(ticket.getEstadoCotejo()).isEqualTo("COTEJADO");
+        verify(operacionRepository, never()).findParaCotejoConTarjeta(any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("cotejarPendientes marca discrepancia de precio aunque la operacion venga con importe negativo (nota de credito) — antes dividir por un importe negativo invertia el signo y el chequeo nunca saltaba")
+    void cotejarPendientes_detectaDiscrepanciaConImporteNegativoEnOperacion() {
+        Ticket ticket = Ticket.builder()
+                .estadoCotejo("PENDIENTE")
+                .fechaHora(LocalDateTime.of(2026, 7, 1, 10, 4))
+                .importeTotal(new BigDecimal("50.00"))
+                .numTarjeta4ultimos("5614")
+                .build();
+
+        Operacion operacionNegativa = Operacion.builder()
+                .fechaHora(LocalDateTime.of(2026, 7, 1, 10, 4))
+                .importeTotal(new BigDecimal("-50.00"))
+                .build();
+
+        when(ticketRepository.findByEstadoCotejo("PENDIENTE")).thenReturn(List.of(ticket));
+        when(usuarioRepository.findAll()).thenReturn(List.of());
+        when(operacionRepository.findParaCotejoConTarjeta(any(), any(), eq("5614")))
+                .thenReturn(List.of(operacionNegativa));
+
+        service.cotejarPendientes();
+
+        assertThat(ticket.getEstadoCotejo()).isEqualTo("INCIDENCIA");
+        assertThat(ticket.getTipoIncidencia()).isEqualTo("PRECIO_NO_CONCUERDA");
+    }
+
+    @Test
+    @DisplayName("cotejarPendientes marca FECHA_INCORRECTA cuando la operacion esta a mas de 90 min del ticket, dentro de la ventana de busqueda de +-2h — antes el umbral de 240 min nunca podia saltar")
+    void cotejarPendientes_detectaFechaIncorrectaDentroDeLaVentanaDeBusqueda() {
+        Ticket ticket = Ticket.builder()
+                .estadoCotejo("PENDIENTE")
+                .fechaHora(LocalDateTime.of(2026, 7, 1, 10, 0))
+                .importeTotal(new BigDecimal("50.00"))
+                .numTarjeta4ultimos("5614")
+                .build();
+
+        Operacion operacionLejana = Operacion.builder()
+                .fechaHora(LocalDateTime.of(2026, 7, 1, 11, 45)) // 105 min de diferencia
+                .importeTotal(new BigDecimal("50.00"))
+                .build();
+
+        when(ticketRepository.findByEstadoCotejo("PENDIENTE")).thenReturn(List.of(ticket));
+        when(usuarioRepository.findAll()).thenReturn(List.of());
+        when(operacionRepository.findParaCotejoConTarjeta(any(), any(), eq("5614")))
+                .thenReturn(List.of(operacionLejana));
+
+        service.cotejarPendientes();
+
+        assertThat(ticket.getEstadoCotejo()).isEqualTo("INCIDENCIA");
+        assertThat(ticket.getTipoIncidencia()).isEqualTo("FECHA_INCORRECTA");
+    }
+
+    @Test
+    @DisplayName("vincularOperacion rechaza vincular una operacion que ya esta cotejada contra otro ticket activo")
+    void vincularOperacion_operacionYaVinculadaAOtroTicket_lanzaExcepcion() {
+        Ticket ticketOrigen = Ticket.builder().estadoCotejo("PENDIENTE").build();
+        ticketOrigen.setId(1L);
+        Ticket ticketDestino = Ticket.builder().estadoCotejo("PENDIENTE").build();
+        ticketDestino.setId(2L);
+        Operacion operacion = Operacion.builder().importeTotal(new BigDecimal("50.00")).build();
+        operacion.setId(500L);
+
+        when(ticketRepository.findById(2L)).thenReturn(Optional.of(ticketDestino));
+        when(operacionRepository.findById(500L)).thenReturn(Optional.of(operacion));
+        when(ticketRepository.findByOperacionCotejadaIdActivos(500L)).thenReturn(List.of(ticketOrigen));
+
+        assertThatThrownBy(() -> service.vincularOperacion(2L, 500L))
+                .isInstanceOf(com.tecozam.bills.shared.infrastructure.exception.BusinessException.class);
+
+        verify(ticketRepository, never()).save(any(Ticket.class));
+    }
+
+    @Test
+    @DisplayName("vincularOperacion permite re-vincular el mismo ticket a la misma operacion (no es un conflicto real)")
+    void vincularOperacion_mismoTicketMismaOperacion_noLanzaExcepcion() {
+        Ticket ticket = Ticket.builder().estadoCotejo("COTEJADO").build();
+        ticket.setId(2L);
+        Operacion operacion = Operacion.builder().importeTotal(new BigDecimal("50.00")).build();
+        operacion.setId(500L);
+
+        when(ticketRepository.findById(2L)).thenReturn(Optional.of(ticket));
+        when(operacionRepository.findById(500L)).thenReturn(Optional.of(operacion));
+        when(ticketRepository.findByOperacionCotejadaIdActivos(500L)).thenReturn(List.of(ticket));
+        when(ticketRepository.save(any(Ticket.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        service.vincularOperacion(2L, 500L);
+
+        assertThat(ticket.getOperacionCotejada()).isEqualTo(operacion);
+        assertThat(ticket.getEstadoCotejo()).isEqualTo("COTEJADO");
     }
 }

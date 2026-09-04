@@ -191,12 +191,7 @@ public class TicketService {
 
     public CotejoResultDTO cotejarPendientes() {
         List<Ticket> pendientes = ticketRepository.findByEstadoCotejo("PENDIENTE");
-
-        // Find a default GESTOR user for auto-assignment of incidents
-        Usuario gestorDefault = usuarioRepository.findAll().stream()
-                .filter(u -> u.isActivo() && "GESTOR".equals(u.getRol().name()))
-                .findFirst()
-                .orElse(null);
+        Usuario gestorDefault = findGestorDefault();
 
         int cotejados = 0;
         int sinCoincidencia = 0;
@@ -207,33 +202,18 @@ public class TicketService {
             LocalDateTime desde = ticket.getFechaHora().minusHours(2);
             LocalDateTime hasta = ticket.getFechaHora().plusHours(2);
 
-            boolean tieneTarjeta = ticket.getNumTarjeta4ultimos() != null && !ticket.getNumTarjeta4ultimos().isBlank();
-
-            List<Operacion> candidatas;
-            if (tieneTarjeta) {
-                // Tarjeta + fecha/hora ya es casi una clave unica: NO se filtra
-                // por importe aqui. Las tarjetas de flota facturan a precio
-                // pactado, distinto del precio de venta al publico que marca el
-                // ticket fisico, asi que exigir importe exacto descartaba
-                // candidatas validas (bug real: ticket de 74,00€ cuya operacion
-                // real en factura era 63,27€, mismos tarjeta+fecha+litros).
-                candidatas = operacionRepository.findParaCotejoConTarjeta(
-                        desde, hasta, ticket.getNumTarjeta4ultimos());
-            } else {
-                // Sin tarjeta conocida, el importe es la unica señal fuerte
-                // disponible para acotar la busqueda.
-                candidatas = operacionRepository.findParaCotejo(
-                        desde, hasta, ticket.getImporteTotal());
-            }
-
+            List<Operacion> candidatas = buscarCandidatas(ticket, desde, hasta);
             Operacion mejorCandidata = elegirMejorCandidata(candidatas, ticket);
 
             if (candidatas.isEmpty()) {
-                // No match at all → try wider search (±24h, no amount filter)
-                List<Operacion> wider = operacionRepository.findParaCotejo(
+                // No match at all → try wider search (±24h). Mantiene la misma
+                // prioridad tarjeta>importe que la busqueda estricta: antes esta
+                // busqueda ampliada ignoraba la tarjeta por completo y podia
+                // etiquetar SIN_COINCIDENCIA basandose en una operacion de OTRA
+                // tarjeta que por casualidad caia cerca en fecha/importe.
+                List<Operacion> wider = buscarCandidatas(ticket,
                         ticket.getFechaHora().minusHours(24),
-                        ticket.getFechaHora().plusHours(24),
-                        ticket.getImporteTotal());
+                        ticket.getFechaHora().plusHours(24));
 
                 if (wider.isEmpty()) {
                     // No operation found → auto-incident
@@ -247,20 +227,11 @@ public class TicketService {
                     sinCoincidencia++;
                 }
             } else if (mejorCandidata != null) {
-                ticket.setOperacionCotejada(mejorCandidata);
-
-                // Check for discrepancies
-                String discrepancia = detectarDiscrepancia(ticket, mejorCandidata);
-                if (discrepancia != null) {
-                    // Match found but with discrepancy → auto-incident
-                    ticket.setEstadoCotejo("INCIDENCIA");
-                    ticket.setTipoIncidencia(discrepancia);
-                    ticket.setObservaciones("Auto-detectado: " + describeDiscrepancia(discrepancia, ticket, mejorCandidata));
-                    if (gestorDefault != null) ticket.setAsignadoA(gestorDefault);
-                    incidencias++;
-                } else {
-                    ticket.setEstadoCotejo("COTEJADO");
+                aplicarResultadoCotejo(ticket, mejorCandidata, gestorDefault);
+                if ("COTEJADO".equals(ticket.getEstadoCotejo())) {
                     cotejados++;
+                } else {
+                    incidencias++;
                 }
             } else {
                 // Varias candidatas y ninguna claramente mas cercana en importe
@@ -314,38 +285,80 @@ public class TicketService {
     }
 
     /**
+     * Umbral de discrepancia de fecha. Debe ser MENOR que la ventana de
+     * busqueda de candidatas (+-2h = 120 min): con un umbral >=120 min este
+     * chequeo era codigo muerto, nunca podia saltar porque toda candidata
+     * encontrada ya estaba, por definicion de la busqueda, a <=120 min del
+     * ticket (bug real: el umbral original era de 240 min).
+     */
+    private static final long MINUTOS_LIMITE_DIFERENCIA_FECHA = 90;
+
+    /**
      * Detects discrepancies between a ticket and a matched operation.
      * Returns the tipo_incidencia or null if everything matches.
      */
     private String detectarDiscrepancia(Ticket ticket, Operacion operacion) {
-        // Price check: >5% difference
+        // Price check: >5% difference. Se divide por el VALOR ABSOLUTO del
+        // importe de la operacion (no por el importe con signo): si algun
+        // dia una operacion individual trae importe negativo (nota de
+        // credito), dividir por un numero negativo invierte el signo de la
+        // fraccion entera y el chequeo nunca saltaba pasase lo que pasase
+        // (bug real, no detectado en datos actuales pero posible).
         if (ticket.getImporteTotal() != null && operacion.getImporteTotal() != null) {
             double ticketAmt = ticket.getImporteTotal().doubleValue();
             double opAmt = operacion.getImporteTotal().doubleValue();
-            if (opAmt > 0 && Math.abs(ticketAmt - opAmt) / opAmt > 0.05) {
+            if (opAmt != 0 && Math.abs(ticketAmt - opAmt) / Math.abs(opAmt) > 0.05) {
                 return "PRECIO_NO_CONCUERDA";
             }
         }
 
-        // Liters check: >10% difference
+        // Liters check: >10% difference. Mismo razonamiento que el importe.
         if (ticket.getLitros() != null && operacion.getCantidad() != null) {
             double ticketL = ticket.getLitros().doubleValue();
             double opL = operacion.getCantidad().doubleValue();
-            if (opL > 0 && Math.abs(ticketL - opL) / opL > 0.10) {
+            if (opL != 0 && Math.abs(ticketL - opL) / Math.abs(opL) > 0.10) {
                 return "LITROS_NO_COINCIDEN";
             }
         }
 
-        // Date check: >4h difference
+        // Date check
         if (ticket.getFechaHora() != null && operacion.getFechaHora() != null) {
             long diffMinutes = Math.abs(
                     java.time.Duration.between(ticket.getFechaHora(), operacion.getFechaHora()).toMinutes());
-            if (diffMinutes > 240) {
+            if (diffMinutes > MINUTOS_LIMITE_DIFERENCIA_FECHA) {
                 return "FECHA_INCORRECTA";
             }
         }
 
         return null; // No discrepancy
+    }
+
+    /**
+     * Vincula el ticket a la operacion candidata y decide COTEJADO vs
+     * INCIDENCIA segun detectarDiscrepancia. Usado tanto por el cotejo por
+     * lote como por el cotejo inmediato al subir un ticket (createOcrValidado)
+     * — antes este segundo, al encontrar una discrepancia, se quedaba callado
+     * dejando el ticket en PENDIENTE sin vincular nada hasta que alguien
+     * pulsara "Re-cotejar" a mano (bug real).
+     */
+    private void aplicarResultadoCotejo(Ticket ticket, Operacion operacion, Usuario gestorDefault) {
+        ticket.setOperacionCotejada(operacion);
+        String discrepancia = detectarDiscrepancia(ticket, operacion);
+        if (discrepancia != null) {
+            ticket.setEstadoCotejo("INCIDENCIA");
+            ticket.setTipoIncidencia(discrepancia);
+            ticket.setObservaciones("Auto-detectado: " + describeDiscrepancia(discrepancia, ticket, operacion));
+            if (gestorDefault != null) ticket.setAsignadoA(gestorDefault);
+        } else {
+            ticket.setEstadoCotejo("COTEJADO");
+        }
+    }
+
+    private Usuario findGestorDefault() {
+        return usuarioRepository.findAll().stream()
+                .filter(u -> u.isActivo() && "GESTOR".equals(u.getRol().name()))
+                .findFirst()
+                .orElse(null);
     }
 
     /**
@@ -372,6 +385,26 @@ public class TicketService {
                     "Ya existe un ticket con la misma tarjeta, fecha e importe — parece una foto repetida de la misma compra",
                     "duplicado");
         }
+    }
+
+    /**
+     * Busca operaciones candidatas para el ticket en la ventana de fecha dada,
+     * en orden de preferencia: tarjeta completa (exacta, sin riesgo de
+     * colision de ultimos 4 digitos) > tarjeta por ultimos 4 (LIKE, cuando el
+     * ticket no tiene una Tarjeta formal vinculada) > importe (si no hay
+     * ninguna tarjeta conocida). Se reutiliza tanto para la busqueda estricta
+     * (+-2h) como para la ampliada (+-24h) para que ambas respeten la misma
+     * prioridad de señal.
+     */
+    private List<Operacion> buscarCandidatas(Ticket ticket, LocalDateTime desde, LocalDateTime hasta) {
+        String numTarjetaCompleto = ticket.getTarjeta() != null ? ticket.getTarjeta().getNumeroTarjeta() : null;
+        if (numTarjetaCompleto != null && !numTarjetaCompleto.isBlank()) {
+            return operacionRepository.findParaCotejoConTarjetaExacta(desde, hasta, numTarjetaCompleto);
+        }
+        if (ticket.getNumTarjeta4ultimos() != null && !ticket.getNumTarjeta4ultimos().isBlank()) {
+            return operacionRepository.findParaCotejoConTarjeta(desde, hasta, ticket.getNumTarjeta4ultimos());
+        }
+        return operacionRepository.findParaCotejo(desde, hasta, ticket.getImporteTotal());
     }
 
     /**
@@ -451,6 +484,15 @@ public class TicketService {
                 .orElseThrow(() -> new ResourceNotFoundException("Ticket", id));
         Operacion operacion = operacionRepository.findById(operacionId)
                 .orElseThrow(() -> new ResourceNotFoundException("Operacion", operacionId));
+
+        boolean yaVinculadaAOtroTicket = ticketRepository.findByOperacionCotejadaIdActivos(operacionId).stream()
+                .anyMatch(t -> !t.getId().equals(id));
+        if (yaVinculadaAOtroTicket) {
+            throw new BusinessException(
+                    "Esta operación ya está vinculada a otro ticket — desvincúlala primero si quieres reasignarla",
+                    "operacionId");
+        }
+
         ticket.setOperacionCotejada(operacion);
         ticket.setEstadoCotejo("COTEJADO");
         Ticket saved = ticketRepository.save(ticket);
@@ -595,20 +637,14 @@ public class TicketService {
             LocalDateTime desde = fechaHora.minusHours(2);
             LocalDateTime hasta = fechaHora.plusHours(2);
 
-            List<Operacion> candidatas = operacionRepository.findParaCotejoConTarjeta(
-                    desde, hasta, ultimos4);
+            List<Operacion> candidatas = buscarCandidatas(ticket, desde, hasta);
             Operacion op = elegirMejorCandidata(candidatas, ticket);
 
             if (op != null) {
-                String discrepancia = detectarDiscrepancia(ticket, op);
-                if (discrepancia == null) {
-                    ticket.setOperacionCotejada(op);
-                    ticket.setEstadoCotejo("COTEJADO");
-                    ticket = ticketRepository.save(ticket);
-                    log.info("[OCR-VALIDADO] Cotejo automático exitoso: ticket={} operacion={}", ticket.getId(), op.getId());
-                } else {
-                    log.info("[OCR-VALIDADO] Discrepancia en cotejo automático: ticket={} tipo={}", ticket.getId(), discrepancia);
-                }
+                aplicarResultadoCotejo(ticket, op, findGestorDefault());
+                ticket = ticketRepository.save(ticket);
+                log.info("[OCR-VALIDADO] Cotejo automático: ticket={} operacion={} estado={}",
+                        ticket.getId(), op.getId(), ticket.getEstadoCotejo());
             }
         } catch (Exception e) {
             log.warn("[OCR-VALIDADO] Error en cotejo automático para ticket={}: {}", ticket.getId(), e.getMessage());

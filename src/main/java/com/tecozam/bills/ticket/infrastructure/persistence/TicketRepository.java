@@ -33,6 +33,14 @@ public interface TicketRepository extends JpaRepository<Ticket, Long> {
     List<Ticket> findByOperacionCotejadaFacturaId(Long facturaId);
 
     /**
+     * Tickets activos ya vinculados a una operacion concreta. Se usa para
+     * evitar que "Vincular operacion" (accion manual) enlace la misma
+     * operacion a dos tickets a la vez.
+     */
+    @Query("SELECT t FROM Ticket t WHERE t.operacionCotejada.id = :operacionId AND t.eliminadoEn IS NULL")
+    List<Ticket> findByOperacionCotejadaIdActivos(@Param("operacionId") Long operacionId);
+
+    /**
      * Posibles duplicados: misma tarjeta + mismo importe en una ventana de
      * minutos estrecha. Pensado para detectar fotos repetidas de la misma
      * compra real (recibo cliente + comprobante fiscal + copia comercio),
