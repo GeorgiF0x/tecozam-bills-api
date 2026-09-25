@@ -12,6 +12,10 @@ public interface ProveedorRepository extends JpaRepository<Proveedor, Long> {
 
     List<Proveedor> findByActivoTrue();
 
+    List<Proveedor> findByEliminadoEnIsNull();
+
+    List<Proveedor> findByActivoTrueAndEliminadoEnIsNull();
+
     Optional<Proveedor> findByCodigo(String codigo);
 
     boolean existsByCodigo(String codigo);
