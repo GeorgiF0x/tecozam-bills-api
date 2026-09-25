@@ -12,6 +12,10 @@ public interface TrabajadorRepository extends JpaRepository<Trabajador, Long> {
 
     List<Trabajador> findByActivoTrue();
 
+    List<Trabajador> findByEliminadoEnIsNull();
+
+    List<Trabajador> findByActivoTrueAndEliminadoEnIsNull();
+
     Optional<Trabajador> findByEmail(String email);
 
     boolean existsByEmail(String email);
