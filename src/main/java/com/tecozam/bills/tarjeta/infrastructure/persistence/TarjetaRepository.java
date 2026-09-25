@@ -18,4 +18,8 @@ public interface TarjetaRepository extends JpaRepository<Tarjeta, Long> {
     Optional<Tarjeta> findByNumeroTarjeta(String numeroTarjeta);
 
     boolean existsByNumeroTarjeta(String numeroTarjeta);
+
+    List<Tarjeta> findByEliminadoEnIsNull();
+
+    List<Tarjeta> findByActivaTrueAndEliminadoEnIsNull();
 }

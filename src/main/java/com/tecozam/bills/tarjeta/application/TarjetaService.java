@@ -21,6 +21,7 @@ import com.tecozam.bills.tarjeta.dto.CreateTarjetaRequest;
 import com.tecozam.bills.tarjeta.dto.MiTarjetaDTO;
 import com.tecozam.bills.tarjeta.dto.TarjetaAsignacionDTO;
 import com.tecozam.bills.tarjeta.dto.TarjetaDTO;
+import com.tecozam.bills.tarjeta.dto.UpdateTarjetaRequest;
 import com.tecozam.bills.tarjeta.infrastructure.persistence.TarjetaAsignacionRepository;
 import com.tecozam.bills.tarjeta.infrastructure.persistence.TarjetaRepository;
 import com.tecozam.bills.trabajador.domain.Trabajador;
@@ -53,8 +54,8 @@ public class TarjetaService {
     @Transactional(readOnly = true)
     public List<TarjetaDTO> findAll(boolean soloActivas) {
         List<Tarjeta> tarjetas = soloActivas
-                ? tarjetaRepository.findByActivaTrue()
-                : tarjetaRepository.findAll();
+                ? tarjetaRepository.findByActivaTrueAndEliminadoEnIsNull()
+                : tarjetaRepository.findByEliminadoEnIsNull();
         return tarjetas.stream()
                 .map(this::toDTO)
                 .toList();
@@ -87,6 +88,61 @@ public class TarjetaService {
         log.info("Tarjeta creada: {} (id={})", tarjeta.getNumeroTarjeta(), tarjeta.getId());
 
         return toDTO(tarjeta);
+    }
+
+    /**
+     * Edita una tarjeta existente. Permite corregir el numero de tarjeta (p.ej.
+     * un digito mal leido al importar el Excel), pero cambiarlo NO reprocesa
+     * retroactivamente el cotejo de tickets/operaciones ya vinculados con el
+     * numero anterior — mismo principio que con los parsers de factura.
+     */
+    public TarjetaDTO update(Long id, UpdateTarjetaRequest request) {
+        Tarjeta tarjeta = tarjetaRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Tarjeta", id));
+
+        if (!tarjeta.getNumeroTarjeta().equals(request.numeroTarjeta())
+                && tarjetaRepository.existsByNumeroTarjeta(request.numeroTarjeta())) {
+            throw new DuplicateResourceException("Tarjeta", "numeroTarjeta", request.numeroTarjeta());
+        }
+
+        Proveedor proveedor = proveedorRepository.findById(request.proveedorId())
+                .orElseThrow(() -> new ResourceNotFoundException("Proveedor", request.proveedorId()));
+
+        tarjeta.setNumeroTarjeta(request.numeroTarjeta());
+        tarjeta.setAlias(request.alias());
+        tarjeta.setProveedor(proveedor);
+
+        tarjeta = tarjetaRepository.save(tarjeta);
+        log.info("Tarjeta {} actualizada (id={})", tarjeta.getNumeroTarjeta(), id);
+
+        return toDTO(tarjeta);
+    }
+
+    /**
+     * Borrado logico (no fisico): conserva la tarjeta para auditoria pero deja
+     * de aparecer en los listados normales. Solo ADMIN (verificado en el
+     * controller).
+     */
+    public void eliminar(Long id) {
+        Tarjeta tarjeta = tarjetaRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Tarjeta", id));
+        tarjeta.softDelete();
+        tarjetaRepository.save(tarjeta);
+        log.info("Tarjeta {} eliminada (borrado logico)", id);
+    }
+
+    /**
+     * Borrado logico en masa. Atomico: si algun id no existe, no se elimina
+     * ninguno (se propaga ResourceNotFoundException y la transaccion revierte).
+     */
+    public void eliminarMasivo(List<Long> ids) {
+        for (Long id : ids) {
+            Tarjeta tarjeta = tarjetaRepository.findById(id)
+                    .orElseThrow(() -> new ResourceNotFoundException("Tarjeta", id));
+            tarjeta.softDelete();
+            tarjetaRepository.save(tarjeta);
+        }
+        log.info("Tarjetas {} eliminadas (borrado logico masivo)", ids);
     }
 
     public TarjetaDTO asignar(Long tarjetaId, AsignarTarjetaRequest request) {

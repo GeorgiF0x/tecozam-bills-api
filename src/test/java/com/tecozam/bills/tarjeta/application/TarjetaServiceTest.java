@@ -8,9 +8,12 @@ import com.tecozam.bills.proveedor.infrastructure.persistence.ProveedorRepositor
 import com.tecozam.bills.shared.domain.enums.EstadoRecurso;
 import com.tecozam.bills.tarjeta.domain.Tarjeta;
 import com.tecozam.bills.tarjeta.domain.TarjetaAsignacion;
+import com.tecozam.bills.shared.infrastructure.exception.DuplicateResourceException;
+import com.tecozam.bills.shared.infrastructure.exception.ResourceNotFoundException;
 import com.tecozam.bills.tarjeta.dto.AsignarTarjetaRequest;
 import com.tecozam.bills.tarjeta.dto.MiTarjetaDTO;
 import com.tecozam.bills.tarjeta.dto.TarjetaDTO;
+import com.tecozam.bills.tarjeta.dto.UpdateTarjetaRequest;
 import com.tecozam.bills.tarjeta.infrastructure.persistence.TarjetaAsignacionRepository;
 import com.tecozam.bills.tarjeta.infrastructure.persistence.TarjetaRepository;
 import com.tecozam.bills.trabajador.domain.Trabajador;
@@ -29,9 +32,11 @@ import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -153,5 +158,56 @@ class TarjetaServiceTest {
         ArgumentCaptor<TarjetaAsignacion> captor = ArgumentCaptor.forClass(TarjetaAsignacion.class);
         verify(tarjetaAsignacionRepository).save(captor.capture());
         assertThat(captor.getValue().getFechaHasta()).isEqualTo(LocalDate.now().minusDays(1));
+    }
+
+    @Test
+    @DisplayName("update corrige el numero de tarjeta cuando el nuevo numero no esta en uso")
+    void update_corrigeNumeroTarjeta() {
+        when(tarjetaRepository.findById(10114L)).thenReturn(Optional.of(tarjeta));
+        when(tarjetaRepository.existsByNumeroTarjeta("1111111111111111")).thenReturn(false);
+        when(proveedorRepository.findById(1L)).thenReturn(Optional.of(tarjeta.getProveedor()));
+        when(tarjetaRepository.save(any(Tarjeta.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        UpdateTarjetaRequest request = new UpdateTarjetaRequest("1111111111111111", "Alias nuevo", 1L);
+        TarjetaDTO dto = service.update(10114L, request);
+
+        assertThat(dto.numeroTarjeta()).isEqualTo("1111111111111111");
+        assertThat(dto.alias()).isEqualTo("Alias nuevo");
+    }
+
+    @Test
+    @DisplayName("update rechaza el numero de tarjeta si ya lo tiene otra tarjeta distinta")
+    void update_rechazaNumeroDuplicado() {
+        when(tarjetaRepository.findById(10114L)).thenReturn(Optional.of(tarjeta));
+        when(tarjetaRepository.existsByNumeroTarjeta("8888888888888888")).thenReturn(true);
+
+        UpdateTarjetaRequest request = new UpdateTarjetaRequest("8888888888888888", "Alias", 1L);
+
+        assertThatThrownBy(() -> service.update(10114L, request))
+                .isInstanceOf(DuplicateResourceException.class);
+        verify(tarjetaRepository, never()).save(any(Tarjeta.class));
+    }
+
+    @Test
+    @DisplayName("eliminar hace borrado logico (softDelete), no borra el registro")
+    void eliminar_hacesBorradoLogico() {
+        when(tarjetaRepository.findById(10114L)).thenReturn(Optional.of(tarjeta));
+        when(tarjetaRepository.save(any(Tarjeta.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        service.eliminar(10114L);
+
+        assertThat(tarjeta.isEliminado()).isTrue();
+        verify(tarjetaRepository).save(tarjeta);
+    }
+
+    @Test
+    @DisplayName("eliminarMasivo con un id inexistente lanza ResourceNotFoundException (rollback real a nivel de transaccion de BD)")
+    void eliminarMasivo_idInexistente_lanzaExcepcion() {
+        when(tarjetaRepository.findById(10114L)).thenReturn(Optional.of(tarjeta));
+        when(tarjetaRepository.findById(999L)).thenReturn(Optional.empty());
+        when(tarjetaRepository.save(any(Tarjeta.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        assertThatThrownBy(() -> service.eliminarMasivo(List.of(10114L, 999L)))
+                .isInstanceOf(ResourceNotFoundException.class);
     }
 }
