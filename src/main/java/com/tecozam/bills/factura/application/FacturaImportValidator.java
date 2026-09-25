@@ -36,6 +36,14 @@ public class FacturaImportValidator {
     private static final BigDecimal CANTIDAD_MAX_REPOSTAJE = new BigDecimal("500");
     private static final double TOLERANCIA_IMPORTE_CALCULADO = 0.15; // 15%
     private static final int DIAS_GRACIA_PERIODO = 7;
+    // Tolerancia mas ajustada que TOLERANCIA_IMPORTE_CALCULADO: ese 15% es por
+    // operacion individual (donde un redondeo de precio/litro puede acumular
+    // bastante desviacion relativa). Aqui comparamos el TOTAL de la factura
+    // (dato impreso en la cabecera) contra la suma de todas las operaciones
+    // extraidas: en ese agregado los redondeos individuales se compensan entre
+    // si, asi que una desviacion real de mas del 2% ya indica que el LLM leyo
+    // mal (o se salto) alguna operacion, no un simple redondeo.
+    private static final double TOLERANCIA_TOTAL_FACTURA = 0.02; // 2%
 
     public List<String> validar(Factura factura) {
         List<String> avisos = new ArrayList<>();
@@ -46,7 +54,39 @@ public class FacturaImportValidator {
             }
         }
 
+        validarTotalFactura(factura, avisos);
+
         return avisos;
+    }
+
+    /**
+     * Compara el total de cabecera de la factura (dato impreso, fuente de
+     * verdad) contra la suma de importeTotal de todas las operaciones
+     * extraidas. Pensado sobre todo para el modo LLM (ver
+     * odd/tasks/import-llm-switch.md): si el LLM se salta o duplica una
+     * operacion al extraer, el total impreso no cuadrara con la suma, aunque
+     * cada operacion individual parezca plausible por separado.
+     */
+    private void validarTotalFactura(Factura factura, List<String> avisos) {
+        BigDecimal totalFactura = factura.getTotalFactura();
+        if (totalFactura == null) return;
+
+        BigDecimal sumaOperaciones = factura.getTarjetaResumenes().stream()
+                .flatMap(tr -> tr.getOperaciones().stream())
+                .map(Operacion::getImporteTotal)
+                .filter(java.util.Objects::nonNull)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        if (sumaOperaciones.signum() == 0) return;
+
+        double diffPct = Math.abs(totalFactura.doubleValue() - sumaOperaciones.doubleValue())
+                / totalFactura.doubleValue();
+        if (diffPct > TOLERANCIA_TOTAL_FACTURA) {
+            avisos.add(String.format(Locale.ROOT,
+                    "Total de factura (%.2f€) no cuadra con la suma de operaciones extraidas (%.2f€, %.1f%% de diferencia). "
+                            + "Posible operacion no extraida o duplicada.",
+                    totalFactura.doubleValue(), sumaOperaciones.doubleValue(), diffPct * 100));
+        }
     }
 
     private void validarOperacion(Factura factura, TarjetaResumen tr, Operacion op, List<String> avisos) {

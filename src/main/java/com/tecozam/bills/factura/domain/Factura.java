@@ -95,6 +95,18 @@ public class Factura {
     @Column(name = "avisos_import", columnDefinition = "NVARCHAR(MAX)")
     private String avisosImport;
 
+    /**
+     * Cuando la factura se importo con el modo LLM (ver
+     * odd/tasks/import-llm-switch.md) y {@code FacturaImportValidator} detecto
+     * avisos de plausibilidad, esta factura queda excluida del cotejo
+     * automatico (ver {@code OperacionRepository.findParaCotejo*}) hasta que
+     * un humano la revise. En modo regex (por defecto) siempre es false: el
+     * comportamiento de avisos no bloqueantes no cambia.
+     */
+    @Column(name = "requiere_revision_manual", nullable = false)
+    @Builder.Default
+    private boolean requiereRevisionManual = false;
+
     @Column(name = "creado_en", updatable = false)
     private LocalDateTime creadoEn;
 

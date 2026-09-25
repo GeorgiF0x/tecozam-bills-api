@@ -45,6 +45,7 @@ public interface OperacionRepository extends JpaRepository<Operacion, Long> {
     @Query("SELECT o FROM Operacion o " +
             "WHERE o.fechaHora BETWEEN :desde AND :hasta " +
             "AND o.tarjetaResumen.numTarjeta LIKE %:ultimos4 " +
+            "AND o.factura.requiereRevisionManual = false " +
             "AND NOT EXISTS (SELECT 1 FROM Ticket t WHERE t.operacionCotejada = o AND t.eliminadoEn IS NULL)")
     List<Operacion> findParaCotejoConTarjeta(
             @Param("desde") LocalDateTime desde,
@@ -65,6 +66,7 @@ public interface OperacionRepository extends JpaRepository<Operacion, Long> {
     @Query("SELECT o FROM Operacion o " +
             "WHERE o.fechaHora BETWEEN :desde AND :hasta " +
             "AND o.tarjetaResumen.numTarjeta = :numTarjetaCompleto " +
+            "AND o.factura.requiereRevisionManual = false " +
             "AND NOT EXISTS (SELECT 1 FROM Ticket t WHERE t.operacionCotejada = o AND t.eliminadoEn IS NULL)")
     List<Operacion> findParaCotejoConTarjetaExacta(
             @Param("desde") LocalDateTime desde,
@@ -79,6 +81,7 @@ public interface OperacionRepository extends JpaRepository<Operacion, Long> {
      * (ver {@link #findParaCotejoConTarjeta}).
      */
     @Query("SELECT o FROM Operacion o WHERE o.fechaHora BETWEEN :desde AND :hasta AND ABS(o.importeTotal - :importe) < 0.10 " +
+            "AND o.factura.requiereRevisionManual = false " +
             "AND NOT EXISTS (SELECT 1 FROM Ticket t WHERE t.operacionCotejada = o AND t.eliminadoEn IS NULL)")
     List<Operacion> findParaCotejo(
             @Param("desde") LocalDateTime desde,

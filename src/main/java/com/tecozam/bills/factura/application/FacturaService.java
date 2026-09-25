@@ -1,5 +1,6 @@
 package com.tecozam.bills.factura.application;
 
+import com.tecozam.bills.admin.application.ConfiguracionImportService;
 import com.tecozam.bills.factura.domain.Factura;
 import com.tecozam.bills.factura.domain.TarjetaResumen;
 import com.tecozam.bills.factura.dto.FacturaDTO;
@@ -43,6 +44,7 @@ public class FacturaService {
     private final FileStorageService fileStorageService;
     private final TicketService ticketService;
     private final FacturaImportValidator facturaImportValidator;
+    private final ConfiguracionImportService configuracionImportService;
 
     /**
      * Importa una factura PDF (y opcionalmente un extracto) para un proveedor dado.
@@ -80,7 +82,8 @@ public class FacturaService {
         }
 
         // 4. Parsear
-        FacturaParser parser = parserFactory.getParser(proveedor.getCodigo());
+        boolean modoLlmActivo = configuracionImportService.obtener().modoLlmActivo();
+        FacturaParser parser = parserFactory.getParser(proveedor.getCodigo(), modoLlmActivo);
         FacturaParseResult result;
         try {
             result = parser.parse(
@@ -167,6 +170,17 @@ public class FacturaService {
         if (!avisos.isEmpty()) {
             factura.setAvisosImport(String.join("\n", avisos));
             avisos.forEach(a -> log.warn("[FacturaService] Aviso de plausibilidad: {}", a));
+
+            // Con modo LLM, los avisos SI bloquean el cotejo automatico (ver
+            // odd/tasks/import-llm-switch.md): la factura se persiste para que
+            // no se pierda el trabajo de import, pero queda fuera de
+            // OperacionRepository.findParaCotejo* hasta revision manual. En
+            // modo regex (por defecto) el comportamiento no cambia: los avisos
+            // siguen siendo solo informativos.
+            if (modoLlmActivo) {
+                factura.setRequiereRevisionManual(true);
+                log.warn("[FacturaService] Factura marcada para revision manual (modo LLM + avisos de plausibilidad)");
+            }
         }
 
         // 7. Persistir

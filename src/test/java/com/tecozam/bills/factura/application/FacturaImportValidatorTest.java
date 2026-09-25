@@ -116,6 +116,37 @@ class FacturaImportValidatorTest {
         assertThat(avisos).noneMatch(a -> a.contains("importe negativo"));
     }
 
+    @Test
+    void totalFacturaCuadraConSumaDeOperaciones_noGeneraAviso() {
+        Factura factura = facturaConPeriodo(LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31));
+        factura.setTotalFactura(new BigDecimal("74.00"));
+        TarjetaResumen tr = tarjetaResumen(factura, "1234");
+        tr.getOperaciones().add(operacion(tr, factura,
+                LocalDateTime.of(2026, 7, 15, 10, 0), ConceptoUnificado.DIESEL,
+                "44.90", "1.648", "74.00"));
+
+        List<String> avisos = validator.validar(factura);
+
+        assertThat(avisos).noneMatch(a -> a.contains("Total de factura"));
+    }
+
+    @Test
+    void totalFacturaNoCuadraConSumaDeOperaciones_generaAviso_replicaLlmSeSaltaOperacion() {
+        // Escenario del modo LLM (ver odd/tasks/import-llm-switch.md): el
+        // total impreso en la cabecera es 200,00€ pero solo se extrajo una
+        // operacion de 74,00€ — indica que el LLM se salto o no vio el resto.
+        Factura factura = facturaConPeriodo(LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31));
+        factura.setTotalFactura(new BigDecimal("200.00"));
+        TarjetaResumen tr = tarjetaResumen(factura, "1234");
+        tr.getOperaciones().add(operacion(tr, factura,
+                LocalDateTime.of(2026, 7, 15, 10, 0), ConceptoUnificado.DIESEL,
+                "44.90", "1.648", "74.00"));
+
+        List<String> avisos = validator.validar(factura);
+
+        assertThat(avisos).anyMatch(a -> a.contains("Total de factura"));
+    }
+
     // ─── Helpers ──────────────────────────────────────────────────────────
 
     private Factura facturaConPeriodo(LocalDate desde, LocalDate hasta) {
