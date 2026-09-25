@@ -1,5 +1,6 @@
 package com.tecozam.bills.viat.application;
 
+import com.tecozam.bills.prestamo.infrastructure.persistence.PrestamoRepository;
 import com.tecozam.bills.shared.domain.enums.EstadoRecurso;
 import com.tecozam.bills.shared.infrastructure.exception.BusinessException;
 import com.tecozam.bills.shared.infrastructure.exception.DuplicateResourceException;
@@ -23,12 +24,13 @@ import java.util.List;
 public class ViatService {
 
     private final ViatRepository viatRepository;
+    private final PrestamoRepository prestamoRepository;
 
     @Transactional(readOnly = true)
     public List<ViatDTO> findAll(boolean soloActivos) {
         List<Viat> viats = soloActivos
-                ? viatRepository.findByActivoTrue()
-                : viatRepository.findAll();
+                ? viatRepository.findByActivoTrueAndEliminadoEnIsNull()
+                : viatRepository.findByEliminadoEnIsNull();
         return viats.stream()
                 .map(this::toDTO)
                 .toList();
@@ -85,6 +87,54 @@ public class ViatService {
         log.info("Viat actualizado: {}", viat.getId());
 
         return toDTO(viat);
+    }
+
+    /**
+     * Borrado logico (por defecto) o fisico (real=true) de un viat. Solo ADMIN
+     * (verificado en el controller). El borrado real solo se permite si el
+     * viat no tiene ningun historial asociado (prestamos); en caso contrario
+     * se rechaza para no romper la trazabilidad de auditoria.
+     */
+    public void eliminar(Long id, boolean real) {
+        Viat viat = viatRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Viat", id));
+
+        if (real) {
+            eliminarFisicamente(viat);
+            log.info("Viat {} eliminado (borrado fisico)", id);
+        } else {
+            viat.softDelete();
+            viatRepository.save(viat);
+            log.info("Viat {} eliminado (borrado logico)", id);
+        }
+    }
+
+    /**
+     * Borrado en masa (logico o real segun el parametro). Atomico: si algun id
+     * no existe o no puede borrarse de forma real, no se elimina ninguno
+     * (se propaga la excepcion y la transaccion revierte).
+     */
+    public void eliminarMasivo(List<Long> ids, boolean real) {
+        for (Long id : ids) {
+            Viat viat = viatRepository.findById(id)
+                    .orElseThrow(() -> new ResourceNotFoundException("Viat", id));
+            if (real) {
+                eliminarFisicamente(viat);
+            } else {
+                viat.softDelete();
+                viatRepository.save(viat);
+            }
+        }
+        log.info("Viats {} eliminados (borrado {} masivo)", ids, real ? "fisico" : "logico");
+    }
+
+    private void eliminarFisicamente(Viat viat) {
+        if (prestamoRepository.existsByViatId(viat.getId())) {
+            throw new BusinessException(
+                    "No se puede eliminar permanentemente: este VIAT tiene historial asociado "
+                            + "(prestamos). Usa el borrado logico en su lugar.");
+        }
+        viatRepository.delete(viat);
     }
 
     public void cambiarEstado(Long id, String estadoStr) {

@@ -4,11 +4,13 @@ import com.tecozam.bills.viat.application.ViatService;
 import com.tecozam.bills.viat.dto.CreateViatRequest;
 import com.tecozam.bills.viat.dto.UpdateViatRequest;
 import com.tecozam.bills.viat.dto.ViatDTO;
+import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -56,6 +58,22 @@ public class ViatController {
     @PreAuthorize("hasAnyRole('ADMIN','GESTOR')")
     public ResponseEntity<Void> cambiarEstado(@PathVariable Long id, @RequestBody Map<String, String> body) {
         viatService.cambiarEstado(id, body.get("estado"));
+        return ResponseEntity.noContent().build();
+    }
+
+    @DeleteMapping("/{id:\\d+}")
+    @PreAuthorize("hasRole('ADMIN')")
+    @Operation(summary = "Eliminar viat", description = "Por defecto, borrado lógico (se conserva para auditoría). Con real=true, borrado físico si no tiene historial asociado")
+    public ResponseEntity<Void> eliminar(@PathVariable Long id, @RequestParam(defaultValue = "false") boolean real) {
+        viatService.eliminar(id, real);
+        return ResponseEntity.noContent().build();
+    }
+
+    @DeleteMapping
+    @PreAuthorize("hasRole('ADMIN')")
+    @Operation(summary = "Eliminar viats en masa", description = "Por defecto, borrado lógico en masa. Con real=true, borrado físico si ninguno tiene historial asociado")
+    public ResponseEntity<Void> eliminarMasivo(@RequestBody List<Long> ids, @RequestParam(defaultValue = "false") boolean real) {
+        viatService.eliminarMasivo(ids, real);
         return ResponseEntity.noContent().build();
     }
 }

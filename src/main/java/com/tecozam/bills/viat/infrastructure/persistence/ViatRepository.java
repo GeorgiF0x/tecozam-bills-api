@@ -18,4 +18,8 @@ public interface ViatRepository extends JpaRepository<Viat, Long> {
     Optional<Viat> findByCodigo(String codigo);
 
     boolean existsByCodigo(String codigo);
+
+    List<Viat> findByEliminadoEnIsNull();
+
+    List<Viat> findByActivoTrueAndEliminadoEnIsNull();
 }
