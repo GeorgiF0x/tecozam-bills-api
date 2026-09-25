@@ -18,4 +18,6 @@ public interface UsuarioCampoRepository extends JpaRepository<UsuarioCampo, Long
     boolean existsByUsername(String username);
 
     List<UsuarioCampo> findByEstadoRegistro(EstadoRegistro estadoRegistro);
+
+    boolean existsByTrabajadorId(Long trabajadorId);
 }

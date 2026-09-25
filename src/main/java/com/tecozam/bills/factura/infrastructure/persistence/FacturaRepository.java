@@ -22,6 +22,8 @@ public interface FacturaRepository extends JpaRepository<Factura, Long> {
 
     List<Factura> findByProveedorIdOrderByFechaDesc(Long proveedorId);
 
+    boolean existsByProveedorId(Long proveedorId);
+
     @Query("SELECT COALESCE(SUM(f.totalFactura), 0) FROM Factura f")
     BigDecimal sumTotalFactura();
 

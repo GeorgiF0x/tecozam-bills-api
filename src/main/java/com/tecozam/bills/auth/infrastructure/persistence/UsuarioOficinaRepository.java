@@ -21,4 +21,6 @@ public interface UsuarioOficinaRepository extends JpaRepository<UsuarioOficina, 
     List<UsuarioOficina> findByEstadoRegistro(EstadoRegistro estadoRegistro);
 
     long countByRolAndActivoTrue(Rol rol);
+
+    boolean existsByTrabajadorId(Long trabajadorId);
 }

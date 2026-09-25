@@ -22,4 +22,6 @@ public interface TarjetaRepository extends JpaRepository<Tarjeta, Long> {
     List<Tarjeta> findByEliminadoEnIsNull();
 
     List<Tarjeta> findByActivaTrueAndEliminadoEnIsNull();
+
+    boolean existsByProveedorId(Long proveedorId);
 }

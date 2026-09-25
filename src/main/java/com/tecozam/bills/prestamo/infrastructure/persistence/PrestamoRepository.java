@@ -19,4 +19,12 @@ public interface PrestamoRepository extends JpaRepository<Prestamo, Long> {
     long countByEstado(String estado);
 
     boolean existsByTarjetaId(Long tarjetaId);
+
+    boolean existsByVehiculoId(Long vehiculoId);
+
+    boolean existsByViatId(Long viatId);
+
+    boolean existsByCentroCosteId(Long centroCosteId);
+
+    boolean existsByTrabajadorId(Long trabajadorId);
 }

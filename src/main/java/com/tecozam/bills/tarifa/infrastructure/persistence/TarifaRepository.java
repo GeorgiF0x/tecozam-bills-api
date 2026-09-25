@@ -13,6 +13,8 @@ import java.util.Optional;
 public interface TarifaRepository extends JpaRepository<Tarifa, Long> {
     List<Tarifa> findByProveedorIdOrderByVigenteDesdeDesc(Long proveedorId);
 
+    boolean existsByProveedorId(Long proveedorId);
+
     @Query("SELECT t FROM Tarifa t WHERE t.proveedor.id = :proveedorId AND t.vigenteDesde <= :fecha AND (t.vigenteHasta IS NULL OR t.vigenteHasta >= :fecha) ORDER BY t.vigenteDesde DESC")
     Optional<Tarifa> findVigenteEnFecha(@Param("proveedorId") Long proveedorId, @Param("fecha") LocalDate fecha);
 }
