@@ -1,10 +1,12 @@
 package com.tecozam.bills.admin.application;
 
 import com.tecozam.bills.admin.dto.ImportTarjetasReportDTO;
+import com.tecozam.bills.admin.infrastructure.import_.ConceptoClassifier;
 import com.tecozam.bills.admin.infrastructure.import_.FilaImportada;
 import com.tecozam.bills.admin.infrastructure.import_.ImportContext;
 import com.tecozam.bills.admin.infrastructure.import_.ListadoTarjetasParserFactory;
 import com.tecozam.bills.admin.infrastructure.import_.ListadoTarjetasRowParser;
+import com.tecozam.bills.admin.infrastructure.import_.LlmListadoTarjetasParser;
 import com.tecozam.bills.admin.infrastructure.import_.TipoRecurso;
 import com.tecozam.bills.centrocoste.domain.CentroCoste;
 import com.tecozam.bills.centrocoste.infrastructure.persistence.CentroCosteRepository;
@@ -33,6 +35,8 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
@@ -60,6 +64,8 @@ public class ListadoTarjetasImportService {
     private final TrabajadorRepository trabajadorRepo;
     private final TrabajadorResolver trabajadorResolver;
     private final CentroCosteRepository centroCosteRepo;
+    private final ConfiguracionImportService configuracionImportService;
+    private final LlmListadoTarjetasParser llmListadoTarjetasParser;
 
     public ImportTarjetasReportDTO importar(MultipartFile file, String codigoProveedor) {
         long inicio = System.currentTimeMillis();
@@ -73,7 +79,24 @@ public class ListadoTarjetasImportService {
         ListadoTarjetasRowParser parser = parserFactory.parserPara(codigoProveedor);
         Proveedor proveedor = resolverProveedor(codigoProveedor);
         ImportContext ctx = new ImportContext(proveedor);
+        List<String> filasParaRevision = new ArrayList<>();
 
+        boolean modoLlm = configuracionImportService.obtener().modoLlmActivo();
+
+        if (modoLlm) {
+            importarConLlm(file, codigoProveedor, ctx, filasParaRevision);
+        } else {
+            importarConRegex(file, parser, ctx);
+        }
+
+        long duracion = System.currentTimeMillis() - inicio;
+        log.info("Listado {} importado ({}): tarjetas={}, viats={}, ignoradas={}, paraRevision={}, duracion={}ms",
+                codigoProveedor, modoLlm ? "LLM" : "regex", ctx.tarjetasCreadas, ctx.viatsCreados,
+                ctx.filasIgnoradas, filasParaRevision.size(), duracion);
+        return toDTO(ctx, duracion, filasParaRevision);
+    }
+
+    private void importarConRegex(MultipartFile file, ListadoTarjetasRowParser parser, ImportContext ctx) {
         try (InputStream in = file.getInputStream();
              Workbook wb = new XSSFWorkbook(in)) {
             Sheet hoja = wb.getSheetAt(0);
@@ -86,11 +109,43 @@ public class ListadoTarjetasImportService {
         } catch (IOException e) {
             throw new BusinessException("Excel inválido o ilegible", e);
         }
+    }
 
-        long duracion = System.currentTimeMillis() - inicio;
-        log.info("Listado {} importado: tarjetas={}, viats={}, ignoradas={}, duracion={}ms",
-                codigoProveedor, ctx.tarjetasCreadas, ctx.viatsCreados, ctx.filasIgnoradas, duracion);
-        return toDTO(ctx, duracion);
+    /**
+     * Modo LLM (ver odd/tasks/import-llm-switch.md): una sola llamada al LLM
+     * por hoja, con cross-check obligatorio contra {@link ConceptoClassifier}
+     * (el regex determinista) para cada fila. Si el LLM y el regex coinciden
+     * en la clasificación TARJETA/VIAT, se materializa igual que en modo
+     * regex; si discrepan, la fila NO se materializa — se deja en
+     * {@code filasParaRevision} para que el admin decida, en vez de que el
+     * sistema elija en silencio cuál de las dos clasificaciones es correcta.
+     */
+    private void importarConLlm(MultipartFile file, String codigoProveedor, ImportContext ctx,
+            List<String> filasParaRevision) {
+        try (InputStream in = file.getInputStream();
+             Workbook wb = new XSSFWorkbook(in)) {
+            Sheet hoja = wb.getSheetAt(0);
+            List<FilaImportada> filasLlm = llmListadoTarjetasParser.parsearHoja(hoja, codigoProveedor);
+            for (FilaImportada fila : filasLlm) {
+                TipoRecurso tipoRegex = ConceptoClassifier.clasificar(fila.concepto());
+                if (tipoRegex == fila.tipo()) {
+                    materializar(fila, ctx);
+                } else {
+                    filasParaRevision.add(String.format(
+                            "Tarjeta %s (\"%s\"): LLM sugiere %s, clasificador sugiere %s — requiere revisión manual",
+                            fila.numero(), fila.concepto(), fila.tipo(), tipoRegex));
+                }
+            }
+        } catch (IOException e) {
+            throw new BusinessException("Excel inválido o ilegible", e);
+        } catch (BusinessException e) {
+            throw e;
+        } catch (Exception e) {
+            log.error("[ListadoTarjetasImportService] Error en modo LLM para proveedor {}: {}",
+                    codigoProveedor, e.getMessage(), e);
+            throw new BusinessException(
+                    "No se pudo procesar el listado con el modo LLM. Detalle técnico: " + e.getMessage());
+        }
     }
 
     private void validarArchivo(MultipartFile file) {
@@ -234,7 +289,7 @@ public class ListadoTarjetasImportService {
         ctx.viatsCreados++;
     }
 
-    private ImportTarjetasReportDTO toDTO(ImportContext ctx, long duracion) {
+    private ImportTarjetasReportDTO toDTO(ImportContext ctx, long duracion, List<String> filasParaRevision) {
         return new ImportTarjetasReportDTO(
                 ctx.centrosCreados,
                 ctx.centrosExistentes,
@@ -246,6 +301,7 @@ public class ListadoTarjetasImportService {
                 ctx.viatsExistentes,
                 ctx.filasIgnoradas,
                 ctx.errores,
-                duracion);
+                duracion,
+                filasParaRevision);
     }
 }

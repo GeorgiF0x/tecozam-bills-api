@@ -337,7 +337,8 @@ public class RepsolImportService {
                 counters.viatsExistentes,
                 counters.filasIgnoradas,
                 errores,
-                duracionMs
+                duracionMs,
+                java.util.List.of()
         );
     }
 
