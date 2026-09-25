@@ -12,6 +12,10 @@ public interface CentroCosteRepository extends JpaRepository<CentroCoste, Long> 
 
     List<CentroCoste> findByActivoTrue();
 
+    List<CentroCoste> findByActivoTrueAndEliminadoEnIsNull();
+
+    List<CentroCoste> findByEliminadoEnIsNull();
+
     Optional<CentroCoste> findByCodigo(String codigo);
 
     boolean existsByCodigo(String codigo);
