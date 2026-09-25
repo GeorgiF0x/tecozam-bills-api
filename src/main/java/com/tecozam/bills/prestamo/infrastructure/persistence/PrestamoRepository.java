@@ -17,4 +17,6 @@ public interface PrestamoRepository extends JpaRepository<Prestamo, Long> {
     List<Prestamo> findByEstadoAndFechaFinPrevistaBefore(String estado, LocalDate date);
 
     long countByEstado(String estado);
+
+    boolean existsByTarjetaId(Long tarjetaId);
 }

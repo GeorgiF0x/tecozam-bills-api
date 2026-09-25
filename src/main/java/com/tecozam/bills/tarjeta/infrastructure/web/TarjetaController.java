@@ -65,17 +65,17 @@ public class TarjetaController {
 
     @DeleteMapping("/{id:\\d+}")
     @PreAuthorize("hasRole('ADMIN')")
-    @Operation(summary = "Eliminar tarjeta", description = "Borrado lógico: deja de aparecer en los listados pero se conserva para auditoría")
-    public ResponseEntity<Void> eliminar(@PathVariable Long id) {
-        tarjetaService.eliminar(id);
+    @Operation(summary = "Eliminar tarjeta", description = "Por defecto, borrado lógico (se conserva para auditoría). Con real=true, borrado físico si no tiene historial asociado")
+    public ResponseEntity<Void> eliminar(@PathVariable Long id, @RequestParam(defaultValue = "false") boolean real) {
+        tarjetaService.eliminar(id, real);
         return ResponseEntity.noContent().build();
     }
 
     @DeleteMapping
     @PreAuthorize("hasRole('ADMIN')")
-    @Operation(summary = "Eliminar tarjetas en masa", description = "Borrado lógico de varias tarjetas a la vez; conserva los registros para auditoría")
-    public ResponseEntity<Void> eliminarMasivo(@RequestBody List<Long> ids) {
-        tarjetaService.eliminarMasivo(ids);
+    @Operation(summary = "Eliminar tarjetas en masa", description = "Por defecto, borrado lógico en masa. Con real=true, borrado físico si ninguna tiene historial asociado")
+    public ResponseEntity<Void> eliminarMasivo(@RequestBody List<Long> ids, @RequestParam(defaultValue = "false") boolean real) {
+        tarjetaService.eliminarMasivo(ids, real);
         return ResponseEntity.noContent().build();
     }
 

@@ -1,13 +1,17 @@
 package com.tecozam.bills.tarjeta.application;
 
 import com.tecozam.bills.auditoria.application.AuditoriaPinService;
+import com.tecozam.bills.auditoria.infrastructure.persistence.PinAccesoEventoRepository;
 import com.tecozam.bills.auth.infrastructure.persistence.UsuarioCampoRepository;
 import com.tecozam.bills.auth.infrastructure.persistence.UsuarioRepository;
+import com.tecozam.bills.factura.infrastructure.persistence.TarjetaResumenRepository;
+import com.tecozam.bills.prestamo.infrastructure.persistence.PrestamoRepository;
 import com.tecozam.bills.proveedor.domain.Proveedor;
 import com.tecozam.bills.proveedor.infrastructure.persistence.ProveedorRepository;
 import com.tecozam.bills.shared.domain.enums.EstadoRecurso;
 import com.tecozam.bills.tarjeta.domain.Tarjeta;
 import com.tecozam.bills.tarjeta.domain.TarjetaAsignacion;
+import com.tecozam.bills.shared.infrastructure.exception.BusinessException;
 import com.tecozam.bills.shared.infrastructure.exception.DuplicateResourceException;
 import com.tecozam.bills.shared.infrastructure.exception.ResourceNotFoundException;
 import com.tecozam.bills.tarjeta.dto.AsignarTarjetaRequest;
@@ -16,6 +20,7 @@ import com.tecozam.bills.tarjeta.dto.TarjetaDTO;
 import com.tecozam.bills.tarjeta.dto.UpdateTarjetaRequest;
 import com.tecozam.bills.tarjeta.infrastructure.persistence.TarjetaAsignacionRepository;
 import com.tecozam.bills.tarjeta.infrastructure.persistence.TarjetaRepository;
+import com.tecozam.bills.ticket.infrastructure.persistence.TicketRepository;
 import com.tecozam.bills.trabajador.domain.Trabajador;
 import com.tecozam.bills.trabajador.infrastructure.persistence.TrabajadorRepository;
 import com.tecozam.bills.vehiculo.infrastructure.persistence.VehiculoRepository;
@@ -51,6 +56,10 @@ class TarjetaServiceTest {
     @Mock UsuarioRepository usuarioRepository;
     @Mock UsuarioCampoRepository usuarioCampoRepository;
     @Mock AuditoriaPinService auditoriaPinService;
+    @Mock TicketRepository ticketRepository;
+    @Mock TarjetaResumenRepository tarjetaResumenRepository;
+    @Mock PrestamoRepository prestamoRepository;
+    @Mock PinAccesoEventoRepository pinAccesoEventoRepository;
 
     TarjetaService service;
 
@@ -61,7 +70,8 @@ class TarjetaServiceTest {
     void setUp() {
         service = new TarjetaService(tarjetaRepository, tarjetaAsignacionRepository, proveedorRepository,
                 trabajadorRepository, vehiculoRepository, usuarioRepository, usuarioCampoRepository,
-                auditoriaPinService);
+                auditoriaPinService, ticketRepository, tarjetaResumenRepository, prestamoRepository,
+                pinAccesoEventoRepository);
 
         Proveedor proveedor = new Proveedor();
         proveedor.setId(1L);
@@ -194,10 +204,11 @@ class TarjetaServiceTest {
         when(tarjetaRepository.findById(10114L)).thenReturn(Optional.of(tarjeta));
         when(tarjetaRepository.save(any(Tarjeta.class))).thenAnswer(inv -> inv.getArgument(0));
 
-        service.eliminar(10114L);
+        service.eliminar(10114L, false);
 
         assertThat(tarjeta.isEliminado()).isTrue();
         verify(tarjetaRepository).save(tarjeta);
+        verify(tarjetaRepository, never()).delete(any(Tarjeta.class));
     }
 
     @Test
@@ -207,7 +218,36 @@ class TarjetaServiceTest {
         when(tarjetaRepository.findById(999L)).thenReturn(Optional.empty());
         when(tarjetaRepository.save(any(Tarjeta.class))).thenAnswer(inv -> inv.getArgument(0));
 
-        assertThatThrownBy(() -> service.eliminarMasivo(List.of(10114L, 999L)))
+        assertThatThrownBy(() -> service.eliminarMasivo(List.of(10114L, 999L), false))
                 .isInstanceOf(ResourceNotFoundException.class);
+    }
+
+    @Test
+    @DisplayName("eliminar con real=true borra fisicamente si la tarjeta no tiene historial")
+    void eliminar_real_sinHistorial_borraFisicamente() {
+        when(tarjetaRepository.findById(10114L)).thenReturn(Optional.of(tarjeta));
+        when(tarjetaAsignacionRepository.existsByTarjetaId(10114L)).thenReturn(false);
+        when(ticketRepository.existsByTarjetaId(10114L)).thenReturn(false);
+        when(tarjetaResumenRepository.existsByTarjetaId(10114L)).thenReturn(false);
+        when(prestamoRepository.existsByTarjetaId(10114L)).thenReturn(false);
+        when(pinAccesoEventoRepository.existsByTarjetaId(10114L)).thenReturn(false);
+
+        service.eliminar(10114L, true);
+
+        verify(tarjetaRepository).delete(tarjeta);
+        verify(tarjetaRepository, never()).save(any(Tarjeta.class));
+    }
+
+    @Test
+    @DisplayName("eliminar con real=true rechaza el borrado si la tarjeta tiene historial asociado")
+    void eliminar_real_conHistorial_lanzaBusinessException() {
+        when(tarjetaRepository.findById(10114L)).thenReturn(Optional.of(tarjeta));
+        when(tarjetaAsignacionRepository.existsByTarjetaId(10114L)).thenReturn(false);
+        when(ticketRepository.existsByTarjetaId(10114L)).thenReturn(true);
+
+        assertThatThrownBy(() -> service.eliminar(10114L, true))
+                .isInstanceOf(BusinessException.class);
+        verify(tarjetaRepository, never()).delete(any(Tarjeta.class));
+        verify(tarjetaRepository, never()).save(any(Tarjeta.class));
     }
 }

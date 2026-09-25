@@ -7,6 +7,9 @@ import com.tecozam.bills.auth.domain.Usuario;
 import com.tecozam.bills.auth.domain.UsuarioCampo;
 import com.tecozam.bills.auth.infrastructure.persistence.UsuarioCampoRepository;
 import com.tecozam.bills.auth.infrastructure.persistence.UsuarioRepository;
+import com.tecozam.bills.auditoria.infrastructure.persistence.PinAccesoEventoRepository;
+import com.tecozam.bills.factura.infrastructure.persistence.TarjetaResumenRepository;
+import com.tecozam.bills.prestamo.infrastructure.persistence.PrestamoRepository;
 import com.tecozam.bills.proveedor.domain.Proveedor;
 import com.tecozam.bills.proveedor.infrastructure.persistence.ProveedorRepository;
 import com.tecozam.bills.shared.domain.enums.EstadoRecurso;
@@ -24,6 +27,7 @@ import com.tecozam.bills.tarjeta.dto.TarjetaDTO;
 import com.tecozam.bills.tarjeta.dto.UpdateTarjetaRequest;
 import com.tecozam.bills.tarjeta.infrastructure.persistence.TarjetaAsignacionRepository;
 import com.tecozam.bills.tarjeta.infrastructure.persistence.TarjetaRepository;
+import com.tecozam.bills.ticket.infrastructure.persistence.TicketRepository;
 import com.tecozam.bills.trabajador.domain.Trabajador;
 import com.tecozam.bills.trabajador.infrastructure.persistence.TrabajadorRepository;
 import com.tecozam.bills.vehiculo.domain.Vehiculo;
@@ -50,6 +54,10 @@ public class TarjetaService {
     private final UsuarioRepository usuarioRepository;
     private final UsuarioCampoRepository usuarioCampoRepository;
     private final AuditoriaPinService auditoriaPinService;
+    private final TicketRepository ticketRepository;
+    private final TarjetaResumenRepository tarjetaResumenRepository;
+    private final PrestamoRepository prestamoRepository;
+    private final PinAccesoEventoRepository pinAccesoEventoRepository;
 
     @Transactional(readOnly = true)
     public List<TarjetaDTO> findAll(boolean soloActivas) {
@@ -119,30 +127,60 @@ public class TarjetaService {
     }
 
     /**
-     * Borrado logico (no fisico): conserva la tarjeta para auditoria pero deja
-     * de aparecer en los listados normales. Solo ADMIN (verificado en el
-     * controller).
+     * Borrado logico (por defecto) o fisico (real=true) de una tarjeta. Solo
+     * ADMIN (verificado en el controller). El borrado real solo se permite si
+     * la tarjeta no tiene ningun historial asociado (asignaciones, tickets,
+     * resumenes de factura, prestamos o accesos a PIN); en caso contrario se
+     * rechaza para no romper la trazabilidad de auditoria.
      */
-    public void eliminar(Long id) {
+    public void eliminar(Long id, boolean real) {
         Tarjeta tarjeta = tarjetaRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Tarjeta", id));
-        tarjeta.softDelete();
-        tarjetaRepository.save(tarjeta);
-        log.info("Tarjeta {} eliminada (borrado logico)", id);
+
+        if (real) {
+            eliminarFisicamente(tarjeta);
+            log.info("Tarjeta {} eliminada (borrado fisico)", id);
+        } else {
+            tarjeta.softDelete();
+            tarjetaRepository.save(tarjeta);
+            log.info("Tarjeta {} eliminada (borrado logico)", id);
+        }
     }
 
     /**
-     * Borrado logico en masa. Atomico: si algun id no existe, no se elimina
-     * ninguno (se propaga ResourceNotFoundException y la transaccion revierte).
+     * Borrado en masa (logico o real segun el parametro). Atomico: si algun id
+     * no existe o no puede borrarse de forma real, no se elimina ninguno
+     * (se propaga la excepcion y la transaccion revierte).
      */
-    public void eliminarMasivo(List<Long> ids) {
+    public void eliminarMasivo(List<Long> ids, boolean real) {
         for (Long id : ids) {
             Tarjeta tarjeta = tarjetaRepository.findById(id)
                     .orElseThrow(() -> new ResourceNotFoundException("Tarjeta", id));
-            tarjeta.softDelete();
-            tarjetaRepository.save(tarjeta);
+            if (real) {
+                eliminarFisicamente(tarjeta);
+            } else {
+                tarjeta.softDelete();
+                tarjetaRepository.save(tarjeta);
+            }
         }
-        log.info("Tarjetas {} eliminadas (borrado logico masivo)", ids);
+        log.info("Tarjetas {} eliminadas (borrado {} masivo)", ids, real ? "fisico" : "logico");
+    }
+
+    private void eliminarFisicamente(Tarjeta tarjeta) {
+        if (tieneHistorial(tarjeta.getId())) {
+            throw new BusinessException(
+                    "No se puede eliminar permanentemente: esta tarjeta tiene historial asociado "
+                            + "(asignaciones, tickets, facturas o prestamos). Usa el borrado logico en su lugar.");
+        }
+        tarjetaRepository.delete(tarjeta);
+    }
+
+    private boolean tieneHistorial(Long tarjetaId) {
+        return tarjetaAsignacionRepository.existsByTarjetaId(tarjetaId)
+                || ticketRepository.existsByTarjetaId(tarjetaId)
+                || tarjetaResumenRepository.existsByTarjetaId(tarjetaId)
+                || prestamoRepository.existsByTarjetaId(tarjetaId)
+                || pinAccesoEventoRepository.existsByTarjetaId(tarjetaId);
     }
 
     public TarjetaDTO asignar(Long tarjetaId, AsignarTarjetaRequest request) {

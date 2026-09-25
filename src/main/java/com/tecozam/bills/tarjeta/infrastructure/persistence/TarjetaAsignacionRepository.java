@@ -15,6 +15,8 @@ public interface TarjetaAsignacionRepository extends JpaRepository<TarjetaAsigna
 
     List<TarjetaAsignacion> findByTarjetaIdOrderByFechaDesdeDesc(Long tarjetaId);
 
+    boolean existsByTarjetaId(Long tarjetaId);
+
     /**
      * Una asignacion esta activa si no tiene fecha de fin, o si esa fecha
      * todavia no ha pasado. Antes se exigia fechaHasta IS NULL, lo que dejaba

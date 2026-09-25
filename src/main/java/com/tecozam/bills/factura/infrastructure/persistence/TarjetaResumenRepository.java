@@ -10,4 +10,6 @@ import java.util.List;
 public interface TarjetaResumenRepository extends JpaRepository<TarjetaResumen, Long> {
 
     List<TarjetaResumen> findByFacturaId(Long facturaId);
+
+    boolean existsByTarjetaId(Long tarjetaId);
 }

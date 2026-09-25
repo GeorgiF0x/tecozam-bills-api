@@ -17,6 +17,9 @@ public interface TicketRepository extends JpaRepository<Ticket, Long> {
     @Query("SELECT t FROM Ticket t WHERE t.eliminadoEn IS NULL")
     List<Ticket> findAllActivos();
 
+    /** Incluye tickets borrados logicamente: existe la FK, hay historial real. */
+    boolean existsByTarjetaId(Long tarjetaId);
+
     @Query("SELECT t FROM Ticket t WHERE t.estadoCotejo = :estadoCotejo AND t.eliminadoEn IS NULL")
     List<Ticket> findByEstadoCotejo(@Param("estadoCotejo") String estadoCotejo);
 
