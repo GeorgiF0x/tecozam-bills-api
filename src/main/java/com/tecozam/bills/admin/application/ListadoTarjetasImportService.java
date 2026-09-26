@@ -125,8 +125,9 @@ public class ListadoTarjetasImportService {
         try (InputStream in = file.getInputStream();
              Workbook wb = new XSSFWorkbook(in)) {
             Sheet hoja = wb.getSheetAt(0);
-            List<FilaImportada> filasLlm = llmListadoTarjetasParser.parsearHoja(hoja, codigoProveedor);
-            for (FilaImportada fila : filasLlm) {
+            LlmListadoTarjetasParser.ResultadoParseoLlm resultado =
+                    llmListadoTarjetasParser.parsearHoja(hoja, codigoProveedor);
+            for (FilaImportada fila : resultado.filas()) {
                 TipoRecurso tipoRegex = ConceptoClassifier.clasificar(fila.concepto());
                 if (tipoRegex == fila.tipo()) {
                     materializar(fila, ctx);
@@ -135,6 +136,11 @@ public class ListadoTarjetasImportService {
                             "Tarjeta %s (\"%s\"): LLM sugiere %s, clasificador sugiere %s — requiere revisión manual",
                             fila.numero(), fila.concepto(), fila.tipo(), tipoRegex));
                 }
+            }
+            for (String numero : resultado.numerosPerdidos()) {
+                filasParaRevision.add(String.format(
+                        "Tarjeta %s: el LLM no la procesó en su lote (posible truncamiento), requiere importación manual o reintento",
+                        numero));
             }
         } catch (IOException e) {
             throw new BusinessException("Excel inválido o ilegible", e);

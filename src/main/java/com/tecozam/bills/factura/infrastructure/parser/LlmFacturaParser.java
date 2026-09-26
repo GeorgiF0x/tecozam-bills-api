@@ -97,6 +97,11 @@ public class LlmFacturaParser implements FacturaParser {
                 + codigoProveedor + "). Extrae ÚNICAMENTE los datos que aparezcan literalmente en el texto. "
                 + "No inventes ni calcules valores que no estén presentes. Fechas en formato yyyy-MM-dd. "
                 + "Fechas y horas de operaciones en formato yyyy-MM-ddTHH:mm:ss. "
+                + "Si un campo (especialmente periodoDesde, periodoHasta, vencimiento, numCuenta, nifCliente, "
+                + "iban) no aparece literalmente en el texto, devuelve null para ese campo. NUNCA inventes ni "
+                + "derives una fecha o valor a partir de otro campo — por ejemplo, nunca uses la fecha de la "
+                + "factura como periodoDesde/periodoHasta si esos campos no aparecen explícitamente en el texto. "
+                + "Es preferible devolver null a adivinar. "
                 + "Para 'conceptoUnificado' de cada concepto/operación, clasifica el texto original a "
                 + "exactamente uno de estos valores: " + Arrays.stream(ConceptoUnificado.values())
                         .map(Enum::name).collect(Collectors.joining(", ")) + ".";
@@ -165,8 +170,8 @@ public class LlmFacturaParser implements FacturaParser {
 
         props.putObject("numFactura").put("type", "string");
         props.putObject("fecha").put("type", "string");
-        props.putObject("periodoDesde").put("type", "string");
-        props.putObject("periodoHasta").put("type", "string");
+        nullableString(props, "periodoDesde");
+        nullableString(props, "periodoHasta");
         nullableString(props, "vencimiento");
         nullableString(props, "numCuenta");
         nullableString(props, "nifCliente");

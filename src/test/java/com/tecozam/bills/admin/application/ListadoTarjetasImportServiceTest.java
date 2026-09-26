@@ -80,7 +80,8 @@ class ListadoTarjetasImportServiceTest {
     void modoLlm_clasificacionCoincide_seMaterializa() throws Exception {
         FilaImportada fila = new FilaImportada(
                 "0007078833651671188", "1234-ABC", "Juan Perez", "OBRA-1", "DIESEL E+", TipoRecurso.TARJETA, true);
-        when(llmListadoTarjetasParser.parsearHoja(any(), eq("REPSOL"))).thenReturn(List.of(fila));
+        when(llmListadoTarjetasParser.parsearHoja(any(), eq("REPSOL")))
+                .thenReturn(new LlmListadoTarjetasParser.ResultadoParseoLlm(List.of(fila), List.of()));
         when(tarjetaRepo.findByNumeroTarjeta(any())).thenReturn(Optional.empty());
         when(tarjetaRepo.save(any(Tarjeta.class))).thenAnswer(inv -> inv.getArgument(0));
 
@@ -98,7 +99,8 @@ class ListadoTarjetasImportServiceTest {
         // pero el LLM sugiere VIAT -> discrepancia.
         FilaImportada fila = new FilaImportada(
                 "0007078833651671188", "1234-ABC", "Juan Perez", "OBRA-1", "DIESEL E+", TipoRecurso.VIAT, true);
-        when(llmListadoTarjetasParser.parsearHoja(any(), eq("REPSOL"))).thenReturn(List.of(fila));
+        when(llmListadoTarjetasParser.parsearHoja(any(), eq("REPSOL")))
+                .thenReturn(new LlmListadoTarjetasParser.ResultadoParseoLlm(List.of(fila), List.of()));
 
         ImportTarjetasReportDTO report = service.importar(excelVacio(), "REPSOL");
 
@@ -108,6 +110,25 @@ class ListadoTarjetasImportServiceTest {
         assertThat(report.viatsCreados()).isZero();
         assertThat(report.filasParaRevision()).hasSize(1);
         assertThat(report.filasParaRevision().get(0)).contains("0007078833651671188");
+    }
+
+    @Test
+    @DisplayName("modo LLM: numeros perdidos por el LLM (truncamiento de lote) van a revision, sin bloquear las filas que si llegaron")
+    void modoLlm_numerosPerdidos_vanARevisionSinBloquearElResto() throws Exception {
+        FilaImportada filaOk = new FilaImportada(
+                "0007078833651671188", "1234-ABC", "Juan Perez", "OBRA-1", "DIESEL E+", TipoRecurso.TARJETA, true);
+        when(llmListadoTarjetasParser.parsearHoja(any(), eq("REPSOL")))
+                .thenReturn(new LlmListadoTarjetasParser.ResultadoParseoLlm(
+                        List.of(filaOk), List.of("0007078833651679999")));
+        when(tarjetaRepo.findByNumeroTarjeta(any())).thenReturn(Optional.empty());
+        when(tarjetaRepo.save(any(Tarjeta.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        ImportTarjetasReportDTO report = service.importar(excelVacio(), "REPSOL");
+
+        verify(tarjetaRepo).save(any(Tarjeta.class));
+        assertThat(report.tarjetasCreadas()).isEqualTo(1);
+        assertThat(report.filasParaRevision()).hasSize(1);
+        assertThat(report.filasParaRevision().get(0)).contains("0007078833651679999");
     }
 
     private static MultipartFile excelVacio() throws Exception {
