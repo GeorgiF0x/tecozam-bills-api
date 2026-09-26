@@ -9,7 +9,8 @@ import org.apache.poi.ss.usermodel.Sheet;
  * implementación adecuada vía {@code ListadoTarjetasImporterFactory},
  * carga el workbook y delega aquí. Cada implementación conoce las cabeceras
  * particulares de su proveedor ({@code DES_PRODU} en Repsol, {@code CONCEPTOS}
- * en Cepsa) y decide tarjeta vs VIAT mediante {@link ConceptoClassifier}.
+ * en Cepsa); el tipo tarjeta vs VIAT lo declara el admin explícitamente al
+ * importar, ya no se adivina por el concepto.
  *
  * <p>El contrato es void y mutable: la implementación actualiza los contadores
  * y caches de {@code ctx} en vez de devolver un report parcial.

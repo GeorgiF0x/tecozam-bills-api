@@ -29,14 +29,17 @@ public class ListadoTarjetasImportController {
 
     @PostMapping(value = "/listado-tarjetas", consumes = "multipart/form-data")
     @PreAuthorize("hasRole('ADMIN')")
-    @Operation(summary = "Importa el listado de tarjetas de un proveedor (REPSOL, CEPSA, MOEVE, ...)")
+    @Operation(summary = "Importa el listado de tarjetas de un proveedor (REPSOL, CEPSA, MOEVE, ...)",
+            description = "El parámetro esViat lo declara el admin explícitamente: true si todo el "
+                    + "listado son dispositivos VIAT, false (por defecto) si son tarjetas de combustible.")
     public ResponseEntity<ImportTarjetasReportDTO> importar(
             @RequestPart("file") MultipartFile file,
-            @RequestParam("codigoProveedor") String codigoProveedor) {
+            @RequestParam("codigoProveedor") String codigoProveedor,
+            @RequestParam(defaultValue = "false") boolean esViat) {
         String filename = file.getOriginalFilename();
         if (filename == null || !filename.toLowerCase().endsWith(".xlsx")) {
             throw new BusinessException("El archivo debe ser un .xlsx");
         }
-        return ResponseEntity.ok(service.importar(file, codigoProveedor));
+        return ResponseEntity.ok(service.importar(file, codigoProveedor, esViat));
     }
 }

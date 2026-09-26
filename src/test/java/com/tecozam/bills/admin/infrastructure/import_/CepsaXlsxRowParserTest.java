@@ -31,12 +31,12 @@ class CepsaXlsxRowParserTest {
     }
 
     @Test
-    @DisplayName("Fila Cepsa GASOLEO se parsea como TARJETA con sus campos")
+    @DisplayName("Fila Cepsa GASOLEO toma el tipo del lote (TARJETA), con sus campos")
     void filaTarjetaCombustible() {
         try (Workbook wb = XlsxFixtureBuilder.cepsaMini()) {
             Sheet sheet = wb.getSheetAt(0);
             var headers = parser.leerCabeceras(sheet);
-            Optional<FilaImportada> fila = parser.parse(sheet.getRow(1), headers);
+            Optional<FilaImportada> fila = parser.parse(sheet.getRow(1), headers, TipoRecurso.TARJETA);
             assertThat(fila).isPresent();
             FilaImportada f = fila.get();
             assertThat(f.numero()).isEqualTo("708011008022409211");
@@ -52,14 +52,14 @@ class CepsaXlsxRowParserTest {
     }
 
     @Test
-    @DisplayName("Fila Cepsa PORTAGEM se parsea como VIAT")
-    void filaViatPortagem() {
+    @DisplayName("Fila Cepsa PORTAGEM toma TARJETA si el lote se declaró TARJETA (ya no se adivina VIAT por el concepto)")
+    void filaPortagemNoSeAdivinaComoViatSiLoteEsTarjeta() {
         try (Workbook wb = XlsxFixtureBuilder.cepsaMini()) {
             Sheet sheet = wb.getSheetAt(0);
             var headers = parser.leerCabeceras(sheet);
-            Optional<FilaImportada> fila = parser.parse(sheet.getRow(5), headers);
+            Optional<FilaImportada> fila = parser.parse(sheet.getRow(5), headers, TipoRecurso.TARJETA);
             assertThat(fila).isPresent();
-            assertThat(fila.get().tipo()).isEqualTo(TipoRecurso.VIAT);
+            assertThat(fila.get().tipo()).isEqualTo(TipoRecurso.TARJETA);
             assertThat(fila.get().numero()).isEqualTo("7076460769900077");
             assertThat(fila.get().concepto()).isEqualTo("PORTAGEM");
         } catch (Exception e) {
@@ -68,12 +68,26 @@ class CepsaXlsxRowParserTest {
     }
 
     @Test
-    @DisplayName("Fila con concepto desconocido se parsea como TARJETA con conceptoConocido=false")
-    void filaConceptoDesconocidoEsTarjetaPeroReportada() {
+    @DisplayName("La misma fila toma VIAT si el admin declaró el lote como VIAT")
+    void mismaFilaTomaViatSiLoteEsViat() {
         try (Workbook wb = XlsxFixtureBuilder.cepsaMini()) {
             Sheet sheet = wb.getSheetAt(0);
             var headers = parser.leerCabeceras(sheet);
-            Optional<FilaImportada> fila = parser.parse(sheet.getRow(6), headers);
+            Optional<FilaImportada> fila = parser.parse(sheet.getRow(5), headers, TipoRecurso.VIAT);
+            assertThat(fila).isPresent();
+            assertThat(fila.get().tipo()).isEqualTo(TipoRecurso.VIAT);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    @Test
+    @DisplayName("Fila con concepto desconocido toma el tipo del lote pero se reporta (conceptoConocido=false)")
+    void filaConceptoDesconocidoTomaTipoLotePeroSeReporta() {
+        try (Workbook wb = XlsxFixtureBuilder.cepsaMini()) {
+            Sheet sheet = wb.getSheetAt(0);
+            var headers = parser.leerCabeceras(sheet);
+            Optional<FilaImportada> fila = parser.parse(sheet.getRow(6), headers, TipoRecurso.TARJETA);
             assertThat(fila).isPresent();
             assertThat(fila.get().tipo()).isEqualTo(TipoRecurso.TARJETA);
             assertThat(fila.get().conceptoConocido()).isFalse();
@@ -91,7 +105,7 @@ class CepsaXlsxRowParserTest {
             // Añadir fila vacía
             var row = sheet.createRow(99);
             row.createCell(0).setCellValue("");
-            Optional<FilaImportada> fila = parser.parse(row, headers);
+            Optional<FilaImportada> fila = parser.parse(row, headers, TipoRecurso.TARJETA);
             assertThat(fila).isEmpty();
         } catch (Exception e) {
             throw new RuntimeException(e);

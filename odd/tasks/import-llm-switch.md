@@ -63,6 +63,21 @@ siendo informativos, no bloqueantes, como hoy.
 - [x] 5. Wiring: `FacturaParserFactory` y `ListadoTarjetasImportService` leen el switch y eligen parser (resuelto dentro de las tareas 2 y 3)
 - [x] 6. **Bug real de archivos reales, arreglado**: `LlmListadoTarjetasParser.parsearHoja` ahora trocea la hoja en lotes de `TAMANO_LOTE=30` filas (no una llamada por hoja completa), y compara los `numero` de tarjeta enviados vs devueltos por lote — cualquier fila que el LLM se salte se reporta en `ResultadoParseoLlm.numerosPerdidos()` (el llamador los añade a `filasParaRevision`, ya no se pierden en silencio) y queda logueada con `log.warn`. Validado con el Excel real de Moeve/Cepsa (347 filas): antes del fix solo llegaban 5 (1,4%), después llegan 343 (98,8%), con las 4 restantes correctamente identificadas por número en vez de desaparecer. También se corrigió la causa real de la alucinación de `periodoDesde`/`periodoHasta` en `LlmFacturaParser`: el schema JSON los marcaba como `string` no-nulo (a diferencia de `vencimiento`/`numCuenta`/etc.), así que bajo `strict:true` el modelo no podía devolver `null` aunque el prompt se lo pidiera — se corrigió el schema (ahora nullable, igual que los demás opcionales) y se reforzó el prompt de forma explícita contra inventar/derivar esos campos. 258/258 tests, 0 regresiones.
 
+## Cambio de alcance tras validar con datos reales (decisión del usuario)
+
+Tras validar el modo LLM con archivos reales, se decidió que **la clasificación semántica TARJETA/VIAT no compensa el riesgo/complejidad que introduce** (alucinaciones, truncamiento silencioso, coste, latencia) frente a una alternativa mucho más simple: que el ADMIN declare explícitamente, al importar, si ese lote son dispositivos VIAT o tarjetas normales — eliminando la necesidad de adivinar por palabras clave (regex o LLM) por completo para esa decisión.
+
+**El interruptor LLM se queda, pero su alcance se reduce**: solo afecta ya al pipeline de **facturas** (`LlmFacturaParser`, para formatos de factura nuevos que el regex no reconozca). El pipeline de **listado de tarjetas** deja de usar LLM del todo.
+
+- [x] 7. **Reemplazada la clasificación automática (regex y LLM) por un toggle explícito del admin** en el import de listado de tarjetas:
+  - Backend: `ListadoTarjetasImportController`/`ListadoTarjetasImportService.importar(file, codigoProveedor, esViat)` reciben el nuevo parámetro `esViat: boolean` (del admin, no inferido). Todas las filas del lote usan `tipoLote = esViat ? VIAT : TARJETA`.
+  - `ListadoTarjetasRowParser.parse(...)` cambia de firma para recibir `tipoLote`; `RepsolXlsxRowParser`/`CepsaXlsxRowParser` ya no llaman a ningún clasificador de conceptos para decidir tipo.
+  - **Eliminados por completo** (código muerto): `ConceptoClassifier.java`/`ConceptoClassifierTest.java`, `LlmListadoTarjetasParser.java`/`LlmListadoTarjetasParserTest.java`, la rama `importarConLlm`, el test `ListadoTarjetasImportServiceTest` (solo cubría esa rama), y el campo `filasParaRevision` de `ImportTarjetasReportDTO`.
+  - **Conservado y renombrado** (no era código de clasificación, sino de calidad de dato): `ConceptoClassifier.esConceptoConocido(...)` pasa a `ConceptoRecognizer.esConceptoConocido(...)` — sigue alimentando `filasIgnoradas` para que el admin detecte conceptos raros en el Excel, independientemente del tipo declarado.
+  - Frontend: checkbox "Este listado son dispositivos VIAT" en `ImportTarjetasDialog` (por defecto desmarcado); texto de `configuracion/import` corregido para dejar claro que el interruptor LLM ya solo afecta a facturas.
+  - `RepsolXlsxRowParserTest`/`CepsaXlsxRowParserTest` actualizados (el tipo viene del parámetro, ya no del concepto — incluye test explícito de que "AUTOPISTAS"/"PORTAGEM" ya no se adivinan como VIAT). `ListadoTarjetasImportServiceIT` actualizado a la nueva firma con casos `esViat=false`/`esViat=true`.
+  - Verificado: backend 249/249 tests, `BUILD SUCCESS`; frontend `tsc --noEmit` limpio.
+
 ## Verificación
 - Backend: `./mvnw.cmd test` (proyecto completo, confirmar 0 regresiones sobre los 239 tests actuales)
 - Frontend: `npx tsc --noEmit`

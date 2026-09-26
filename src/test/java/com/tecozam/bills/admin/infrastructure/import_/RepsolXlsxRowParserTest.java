@@ -31,12 +31,12 @@ class RepsolXlsxRowParserTest {
     }
 
     @Test
-    @DisplayName("Fila Repsol DIESEL E+ se parsea como TARJETA con número Excel (sin normalizar)")
+    @DisplayName("Fila Repsol DIESEL E+ toma el tipo del lote (TARJETA), con sus campos")
     void filaTarjetaCombustible() {
         try (Workbook wb = XlsxFixtureBuilder.repsolMini()) {
             Sheet sheet = wb.getSheetAt(0);
             var headers = parser.leerCabeceras(sheet);
-            Optional<FilaImportada> fila = parser.parse(sheet.getRow(1), headers);
+            Optional<FilaImportada> fila = parser.parse(sheet.getRow(1), headers, TipoRecurso.TARJETA);
             assertThat(fila).isPresent();
             FilaImportada f = fila.get();
             assertThat(f.numero()).isEqualTo("0007078833651671188");
@@ -52,14 +52,14 @@ class RepsolXlsxRowParserTest {
     }
 
     @Test
-    @DisplayName("Fila Repsol AUTOPISTAS se parsea como VIAT")
-    void filaViatAutopistas() {
+    @DisplayName("Fila Repsol AUTOPISTAS toma TARJETA si el lote se declaró TARJETA (ya no se adivina VIAT por el concepto — bug real corregido)")
+    void filaAutopistasNoSeAdivinaComoViatSiLoteEsTarjeta() {
         try (Workbook wb = XlsxFixtureBuilder.repsolMini()) {
             Sheet sheet = wb.getSheetAt(0);
             var headers = parser.leerCabeceras(sheet);
-            Optional<FilaImportada> fila = parser.parse(sheet.getRow(4), headers);
+            Optional<FilaImportada> fila = parser.parse(sheet.getRow(4), headers, TipoRecurso.TARJETA);
             assertThat(fila).isPresent();
-            assertThat(fila.get().tipo()).isEqualTo(TipoRecurso.VIAT);
+            assertThat(fila.get().tipo()).isEqualTo(TipoRecurso.TARJETA);
             assertThat(fila.get().concepto()).isEqualTo("AUTOPISTAS");
         } catch (Exception e) {
             throw new RuntimeException(e);
@@ -67,12 +67,26 @@ class RepsolXlsxRowParserTest {
     }
 
     @Test
-    @DisplayName("Fila con DES_PRODU desconocido → TARJETA + conceptoConocido=false")
-    void filaDesprodDesconocidoEsTarjetaPeroReportada() {
+    @DisplayName("La misma fila toma VIAT si el admin declaró el lote como VIAT")
+    void mismaFilaTomaViatSiLoteEsViat() {
         try (Workbook wb = XlsxFixtureBuilder.repsolMini()) {
             Sheet sheet = wb.getSheetAt(0);
             var headers = parser.leerCabeceras(sheet);
-            Optional<FilaImportada> fila = parser.parse(sheet.getRow(5), headers);
+            Optional<FilaImportada> fila = parser.parse(sheet.getRow(4), headers, TipoRecurso.VIAT);
+            assertThat(fila).isPresent();
+            assertThat(fila.get().tipo()).isEqualTo(TipoRecurso.VIAT);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    @Test
+    @DisplayName("Fila con DES_PRODU desconocido → tipo del lote + conceptoConocido=false")
+    void filaDesprodDesconocidoTomaTipoLotePeroSeReporta() {
+        try (Workbook wb = XlsxFixtureBuilder.repsolMini()) {
+            Sheet sheet = wb.getSheetAt(0);
+            var headers = parser.leerCabeceras(sheet);
+            Optional<FilaImportada> fila = parser.parse(sheet.getRow(5), headers, TipoRecurso.TARJETA);
             assertThat(fila).isPresent();
             assertThat(fila.get().tipo()).isEqualTo(TipoRecurso.TARJETA);
             assertThat(fila.get().conceptoConocido()).isFalse();

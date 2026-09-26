@@ -47,7 +47,7 @@ public final class RepsolXlsxRowParser implements ListadoTarjetasRowParser {
     }
 
     @Override
-    public Optional<FilaImportada> parse(Row row, Map<String, Integer> headers) {
+    public Optional<FilaImportada> parse(Row row, Map<String, Integer> headers, TipoRecurso tipoLote) {
         if (row == null) return Optional.empty();
         String numero = leerCelda(row, headers, KEY_NUMERO);
         if (numero.isBlank()) return Optional.empty();
@@ -57,10 +57,9 @@ public final class RepsolXlsxRowParser implements ListadoTarjetasRowParser {
         String centro = leerCelda(row, headers, KEY_CENTRO);
         String concepto = leerCelda(row, headers, KEY_DES_PRODU);
 
-        TipoRecurso tipo = ConceptoClassifier.clasificar(concepto);
-        boolean conocido = ConceptoClassifier.esConceptoConocido(concepto);
+        boolean conocido = ConceptoRecognizer.esConceptoConocido(concepto);
 
-        return Optional.of(new FilaImportada(numero, matricula, nombre, centro, concepto, tipo, conocido));
+        return Optional.of(new FilaImportada(numero, matricula, nombre, centro, concepto, tipoLote, conocido));
     }
 
     private String leerCelda(Row row, Map<String, Integer> headers, String key) {

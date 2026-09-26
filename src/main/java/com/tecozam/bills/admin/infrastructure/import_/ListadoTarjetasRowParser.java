@@ -23,6 +23,10 @@ public interface ListadoTarjetasRowParser {
     /**
      * Parsea una fila. Devuelve vacío si el número de tarjeta está en blanco
      * (fila vacía o de separación).
+     *
+     * @param tipoLote tipo declarado explícitamente por el admin para todo el
+     *                 lote importado (ver odd/tasks/import-llm-switch.md) —
+     *                 ya no se adivina por el texto del concepto.
      */
-    Optional<FilaImportada> parse(Row row, Map<String, Integer> headers);
+    Optional<FilaImportada> parse(Row row, Map<String, Integer> headers, TipoRecurso tipoLote);
 }
