@@ -136,11 +136,37 @@ evaluara partirla). Estrategia de cadena: `ask-on-risk` (por defecto).
       antes nunca se ejecutaban: `TicketLineaRepositoryIT` 2,
       `OperacionRepositoryIT` 1, `ListadoTarjetasImportServiceIT` 5,
       más 1 de un conteo previo ya incluido).
-- [ ] T2. Backend: `LlmTicketParser` nuevo (patron `LlmFacturaParser`):
-      recibe N imagenes (base64 o multipart), prompt reforzado, schema
-      `json_schema strict` devolviendo lista de operaciones. Sustituye
-      `TicketController.performOcr` (las dos copias duplicadas). Tests con
-      fixtures reales si estan disponibles, si no, con mocks del cliente HTTP.
+- [x] T2. Creado `ticket/infrastructure/parser/LlmTicketParser.java` (nuevo
+      `@Component` singleton — a diferencia de `LlmFacturaParser`, aqui no
+      hace falta factory porque no hay parametro por-llamada aparte de las
+      fotos), `LineaTicketExtraida.java` (record de salida: fotoIndice,
+      proveedor, estacion, direccion, fechaHora, numTarjeta4ultimos,
+      matricula, kms, producto, litros, precioLitro, importeTotal,
+      numRecibo, nifEstacion — mismos campos que ya extrae
+      `TicketController.performOcr` hoy, mas `fotoIndice`), `ImagenTicket.java`
+      (record `byte[] + mimeType` de entrada).
+      Diseño: UNA sola llamada a OpenAI Vision con TODAS las fotos en el
+      mismo mensaje `user` (bloques `image_url` repetidos), no N llamadas
+      sueltas — tal y como pidio el usuario, para mejor contexto cruzado
+      entre fotos del mismo ticket. Salida `json_schema` + `strict:true`
+      (`{"lineas": [...]}`), con TODOS los campos opcionales marcados
+      nullable en el schema (se evito a proposito el error ya corregido en
+      `LlmFacturaParser` de marcar un campo opcional como no-nulo, que
+      forzaba alucinacion bajo `strict:true`). Prompt explica a la IA que
+      las N fotos son partes del MISMO ticket (estacion/matricula/NIF
+      deberian repetirse entre fotos) y que puede haber varias lineas por
+      foto si el ticket detalla varios productos.
+      Deliberadamente AISLADO: no toca `TicketController.java` ni
+      `TicketService.java` ni los endpoints existentes — el OCR actual
+      (`performOcr`) sigue funcionando exactamente igual. Conectar esto a
+      los endpoints reales (sustituir `performOcr`, aceptar
+      `MultipartFile[]`, persistir fotos) es T3, siguiente turno.
+      TDD real: `LlmTicketParserTest` (3 casos: mapea varias lineas de
+      varias fotos, campos null se mapean a null sin excepcion, lista vacia
+      no lanza excepcion). RED confirmado rompiendo a mano el mapeo de
+      `fotoIndice` (test fallo como se esperaba), GREEN tras restaurarlo.
+      Suite completa `./mvnw.cmd test`: **261/261, BUILD SUCCESS** (258
+      previos + 3 nuevos), 0 regresiones.
 - [ ] T3. Backend: `/tickets/ocr-preview` y `/tickets/ocr-validado` aceptan
       `MultipartFile[]` en vez de un solo `imagen`; se persisten las N fotos
       (storage); `TicketService.createOcrValidado` crea 1 `Ticket` con sus N
