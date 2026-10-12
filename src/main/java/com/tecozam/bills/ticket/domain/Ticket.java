@@ -6,11 +6,13 @@ import com.tecozam.bills.shared.domain.BaseEntity;
 import com.tecozam.bills.tarjeta.domain.Tarjeta;
 import com.tecozam.bills.trabajador.domain.Trabajador;
 import com.tecozam.bills.vehiculo.domain.Vehiculo;
+import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
+import jakarta.persistence.OneToMany;
 import jakarta.persistence.Table;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -20,6 +22,8 @@ import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
 
 @Entity
 @Table(name = "tickets")
@@ -114,4 +118,16 @@ public class Ticket extends BaseEntity {
 
     @Column(name = "resuelto_en")
     private LocalDateTime resueltoEn;
+
+    /**
+     * Lineas (una por foto) que componen este ticket cuando viene de una
+     * captura multi-foto. Los campos escalares de arriba (estacion,
+     * importeTotal, litros...) se mantienen por ahora para no romper el
+     * flujo de 1-foto-1-ticket existente; T3 de
+     * odd/tasks/ticket-multi-foto.md migra la creacion a usar solo esta
+     * lista.
+     */
+    @OneToMany(mappedBy = "ticket", cascade = CascadeType.ALL, orphanRemoval = true)
+    @Builder.Default
+    private List<TicketLinea> lineas = new ArrayList<>();
 }
