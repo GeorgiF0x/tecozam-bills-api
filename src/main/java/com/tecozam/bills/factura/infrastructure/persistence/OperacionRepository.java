@@ -114,6 +114,13 @@ public interface OperacionRepository extends JpaRepository<Operacion, Long> {
      *                    existiera (bug real reportado por el cliente).
      * @param q          busca por establecimiento o concepto original (opcional),
      *                    en servidor en vez de solo sobre la pagina ya traida.
+     * @param soloDisponibles si es TRUE, excluye operaciones ya vinculadas a un
+     *                    ticket no eliminado (operacionCotejada). Usado solo por
+     *                    el buscador de "vincular operacion" — el listado general
+     *                    de Operaciones sigue mostrando todas (parametro NULL o
+     *                    FALSE). Bug real: sin esto, una operacion ya consumida
+     *                    por un ticket seguia apareciendo como candidata para
+     *                    vincular otro ticket, sin aviso.
      */
     @Query("SELECT o FROM Operacion o " +
             "LEFT JOIN FETCH o.tarjetaResumen tr " +
@@ -126,6 +133,8 @@ public interface OperacionRepository extends JpaRepository<Operacion, Long> {
             "AND (:numTarjeta IS NULL OR tr.numTarjeta LIKE %:numTarjeta) " +
             "AND (:q IS NULL OR LOWER(o.establecimiento) LIKE LOWER(CONCAT('%', :q, '%')) " +
             "     OR LOWER(o.conceptoOriginal) LIKE LOWER(CONCAT('%', :q, '%'))) " +
+            "AND ((:soloDisponibles) IS NULL OR (:soloDisponibles) = FALSE OR NOT EXISTS (" +
+            "     SELECT 1 FROM Ticket t WHERE t.operacionCotejada = o AND t.eliminadoEn IS NULL)) " +
             "ORDER BY o.fechaHora DESC")
     Page<Operacion> findWithFiltersEager(
             @Param("proveedorId") Long proveedorId,
@@ -134,6 +143,7 @@ public interface OperacionRepository extends JpaRepository<Operacion, Long> {
             @Param("fechaHasta") LocalDateTime fechaHasta,
             @Param("numTarjeta") String numTarjeta,
             @Param("q") String q,
+            @Param("soloDisponibles") Boolean soloDisponibles,
             Pageable pageable
     );
 }

@@ -34,6 +34,8 @@ public class OperacionController {
      * @param fechaHasta       filtro fecha hasta (ISO date, opcional)
      * @param numTarjeta       filtro por últimos dígitos de tarjeta (opcional)
      * @param q                busca por establecimiento o concepto original (opcional)
+     * @param soloDisponibles  si true, excluye operaciones ya vinculadas a un ticket
+     *                         (usado por el buscador de "vincular operacion")
      */
     @GetMapping
     public Page<OperacionDTO> findAll(
@@ -44,7 +46,8 @@ public class OperacionController {
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fechaDesde,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fechaHasta,
             @RequestParam(required = false) String numTarjeta,
-            @RequestParam(required = false) String q
+            @RequestParam(required = false) String q,
+            @RequestParam(required = false) Boolean soloDisponibles
     ) {
         Pageable pageable = PageRequest.of(page, size);
 
@@ -52,7 +55,7 @@ public class OperacionController {
         LocalDateTime hasta = fechaHasta != null ? fechaHasta.atTime(23, 59, 59) : null;
 
         return operacionRepository
-                .findWithFiltersEager(proveedorId, conceptoUnificado, desde, hasta, numTarjeta, q, pageable)
+                .findWithFiltersEager(proveedorId, conceptoUnificado, desde, hasta, numTarjeta, q, soloDisponibles, pageable)
                 .map(this::toDTO);
     }
 
