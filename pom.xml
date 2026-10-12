@@ -216,6 +216,18 @@
                     <!-- Java 25 todavía no es soportado oficialmente por Byte Buddy
                          (lo usa Mockito para mock de clases finales). Flag oficial. -->
                     <argLine>-Dnet.bytebuddy.experimental=true</argLine>
+                    <!-- Sin esto, Surefire solo coge *Test.java y ./mvnw.cmd test
+                         nunca ejecuta las clases *IT.java (Testcontainers/MSSQL
+                         real) — se descubrio que llevaban toda la sesion sin
+                         correr pese a reportarse como parte de la "suite
+                         completa". Failsafe no hace falta: se amplian los
+                         includes para que el mismo comando los cubra todos. -->
+                    <includes>
+                        <include>**/*Test.java</include>
+                        <include>**/*Tests.java</include>
+                        <include>**/*TestCase.java</include>
+                        <include>**/*IT.java</include>
+                    </includes>
                 </configuration>
             </plugin>
         </plugins>

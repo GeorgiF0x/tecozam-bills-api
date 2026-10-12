@@ -6,7 +6,7 @@ spring:
   datasource:
     url: jdbc:sqlserver://localhost:1433;databaseName=tecozam_bills;encrypt=true;trustServerCertificate=true
     username: sa
-    password: Tecozam_Dev_2026!
+    password: DevTest_2026!
   flyway:
     enabled: false
   jpa:

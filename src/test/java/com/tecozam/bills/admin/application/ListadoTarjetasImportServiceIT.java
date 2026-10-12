@@ -1,6 +1,8 @@
 package com.tecozam.bills.admin.application;
 
 import com.tecozam.bills.admin.dto.ImportTarjetasReportDTO;
+import com.tecozam.bills.proveedor.domain.Proveedor;
+import com.tecozam.bills.proveedor.infrastructure.persistence.ProveedorRepository;
 import com.tecozam.bills.shared.fixtures.XlsxFixtureBuilder;
 import com.tecozam.bills.tarjeta.infrastructure.persistence.TarjetaRepository;
 import com.tecozam.bills.viat.infrastructure.persistence.ViatRepository;
@@ -33,6 +35,24 @@ class ListadoTarjetasImportServiceIT {
 
     @Autowired
     private ViatRepository viatRepo;
+
+    @Autowired
+    private ProveedorRepository proveedorRepo;
+
+    @BeforeEach
+    void sembrarProveedoresSiFaltan() {
+        // El test no debe depender de que el proveedor ya exista en la BD
+        // compartida de dev (se vio romperse de verdad: "Proveedor no
+        // registrado: REPSOL" tras un reset de datos). @Transactional
+        // deshace esto al final de cada test.
+        java.util.List.of("REPSOL", "MOEVE_CEPSA").forEach(codigo ->
+                proveedorRepo.findByCodigo(codigo).orElseGet(() ->
+                        proveedorRepo.save(Proveedor.builder()
+                                .codigo(codigo)
+                                .nombre(codigo)
+                                .activo(true)
+                                .build())));
+    }
 
     @BeforeEach
     void limpiarRegistrosDeFixtures() {

@@ -118,6 +118,24 @@ evaluara partirla). Estrategia de cadena: `ask-on-risk` (por defecto).
       dedicada para arreglar esto (añadir failsafe, o ampliar los
       `<includes>` de surefire) antes de confiar en "mvn test" como
       verificacion completa de los tests de integracion existentes.
+
+      **Ambos hallazgos arreglados** (a peticion del usuario, antes de
+      seguir con T2): `pom.xml` — surefire gana `<includes>` explicito con
+      `**/*Test.java`, `**/*Tests.java`, `**/*TestCase.java` y `**/*IT.java`
+      (no se añadio failsafe, es mas simple ampliar surefire para que
+      `./mvnw.cmd test` siga siendo el unico comando). `application-test.yml`
+      — contraseña corregida a `DevTest_2026!` (la real del contenedor).
+      Al activarse por primera vez, `ListadoTarjetasImportServiceIT` fallo
+      de verdad (`BusinessException: Proveedor no registrado: REPSOL`): el
+      test asumia que los proveedores REPSOL/MOEVE_CEPSA ya existian en la
+      BD compartida de dev, sin sembrarlos el mismo — arreglado con un
+      nuevo `@BeforeEach` que los crea si faltan (idempotente,
+      `@Transactional` lo deshace al final de cada test, no contamina la
+      BD real). Suite completa final: `./mvnw.cmd test` → **258/258,
+      BUILD SUCCESS, 0 errores** (249 unitarios + 9 de integracion que
+      antes nunca se ejecutaban: `TicketLineaRepositoryIT` 2,
+      `OperacionRepositoryIT` 1, `ListadoTarjetasImportServiceIT` 5,
+      más 1 de un conteo previo ya incluido).
 - [ ] T2. Backend: `LlmTicketParser` nuevo (patron `LlmFacturaParser`):
       recibe N imagenes (base64 o multipart), prompt reforzado, schema
       `json_schema strict` devolviendo lista de operaciones. Sustituye
