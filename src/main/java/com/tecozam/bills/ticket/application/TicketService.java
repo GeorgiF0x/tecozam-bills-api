@@ -798,7 +798,23 @@ public class TicketService {
                 t.getNotasResolucion(),
                 t.getResueltoEn(),
                 t.getCreadoEn(),
-                t.isRequiereRevisionManual()
+                t.isRequiereRevisionManual(),
+                t.getLineas().stream().map(this::toLineaDTO).toList()
+        );
+    }
+
+    private TicketDTO.TicketLineaDTO toLineaDTO(TicketLinea l) {
+        return new TicketDTO.TicketLineaDTO(
+                l.getId(),
+                l.getFotoIndice(),
+                l.getEstacion(),
+                l.getFechaHora(),
+                l.getProducto(),
+                l.getLitros(),
+                l.getPrecioLitro(),
+                l.getImporteTotal(),
+                l.getNumRecibo(),
+                l.getMatricula()
         );
     }
 }

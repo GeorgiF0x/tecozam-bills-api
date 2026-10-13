@@ -346,9 +346,91 @@ evaluara partirla). Estrategia de cadena: `ask-on-risk` (por defecto).
       se limpiaron despues — no queda nada de esto en ningun repo.
       Commit `PWA/tecozam-fleet-pwa` (repo independiente, no listado en los
       commits de `api` de arriba): ver mensaje de commit en ese repo.
-- [ ] T8. Web admin: pantalla de tickets (`tickets/page.tsx`) adaptada para
-      mostrar/cotejar N operaciones por ticket en vez de 1. Verificacion:
-      `tsc --noEmit` + prueba manual.
+- [x] T8. **Decision**: NO se toca la logica de cotejo (T6 ya confirmo que 1
+      ticket = 1 operacion es correcto) — solo se AÑADE visibilidad de las N
+      lineas como dato de auditoria. Se descarto mostrar la foto en si
+      (imagen): no existe hoy ningun endpoint de descarga protegido para los
+      ficheros de `FileStorageService`, y crear uno solo para esto se salia
+      de alcance (ponytail) — mostrar los DATOS de cada linea (estacion,
+      fecha, producto, litros, importe, num. recibo) ya cumple el objetivo
+      de que un admin vea de que fotos viene un ticket cotejado. Añadir la
+      imagen en si queda anotado como mejora futura (ver abajo).
+      Backend: `TicketDTO` gana `lineas: List<TicketLineaDTO>` (record
+      anidado nuevo, mismo patron de mapeo manual que ya usa
+      `TicketService.toDTO`). Web admin: `TicketDetailDialog`
+      (`tickets/page.tsx`) añade seccion "Fotos del ticket (N)" entre
+      Financiero y Cotejo, SOLO visible cuando `lineas.length > 1` (si es 0
+      o 1, el detalle se ve exactamente igual que antes).
+      TDD real: ampliada la aserción existente en
+      `crea1TicketConVariasLineasYFotosPersistidas`
+      (`TicketServiceCreateOcrValidadoIT`) para comprobar que
+      `TicketDTO.lineas()` trae las 2 lineas reales con sus campos
+      correctos. RED confirmado (sustituyendo el mapeo real por `List.of()`
+      a mano, el test fallo con `Expected size: 2 but was: 0`), GREEN tras
+      restaurar el mapeo real.
+      Verificacion manual real en navegador (no solo tsc): backend (perfil
+      `dev`, con `MSSQL_PASSWORD`/`JWT_SECRET` validos pasados por JVM args
+      — el `JWT_SECRET` por defecto de `application.yml` es demasiado corto,
+      hallazgo ya anotado en T7, reproducido aqui tambien) + web admin
+      (`npm run dev`) en local. Sembrado un ticket real de 2 lineas via test
+      JUnit desechable no transaccional (datos+credenciales borrados
+      despues), login real por Playwright como usuario de oficina ADMIN
+      (tabla correcta: `usuarios_oficina`, NO `usuarios` — hay 3 tablas de
+      usuario distintas en este proyecto: `Usuario`/legacy,
+      `UsuarioCampo`/PWA, `UsuarioOficina`/admin web; el login de oficina
+      usa `AuthOficinaService` contra `usuarios_oficina` con
+      `estadoRegistro=ACTIVO` obligatorio), navegado a `/tickets`, abierto
+      el detalle del ticket creado: la seccion "Fotos del ticket (2)" se
+      renderiza correctamente con "Foto 0 · GASOLEO" (35,00€) y
+      "Foto 1 · GASOLEO" (17,50€). Entorno y datos de prueba completamente
+      limpiados despues (BD, ficheros, test desechable, servidores).
+      `npx tsc --noEmit` limpio.
+      Ficheros: `api/tecozam-bills-api/src/main/java/com/tecozam/bills/ticket/dto/TicketDTO.java`,
+      `api/tecozam-bills-api/src/main/java/com/tecozam/bills/ticket/application/TicketService.java`,
+      `api/tecozam-bills-api/src/test/java/com/tecozam/bills/ticket/application/TicketServiceCreateOcrValidadoIT.java`,
+      `web/tecozam-bills-web/src/app/(dashboard)/tickets/page.tsx`.
+      `./mvnw.cmd test`: **273/273, BUILD SUCCESS** (mismo numero que T6,
+      no se añadio ningun `@Test` nuevo, solo se amplio uno existente), 0
+      regresiones.
+
+## Feature completa (8/8 tareas)
+
+Las 8 tareas de "N fotos -> 1 ticket con M lineas" estan hechas y
+verificadas con evidencia real (no solo lectura de codigo) en los 3 repos:
+
+- **api** (`tecozam-bills-api`): commits `0283dc6` (T1), `46395f1` +
+  `4fbc1c0` (fix de testing descubierto en T1), `ba62270` (T2), `e649857`
+  (T3), `95c2bf5` (T4), `32d9b53` (T5), `9a5990d` (T6), y el de esta tarea
+  (T8, backend) — ver `git log` para el hash exacto del ultimo commit.
+- **PWA** (`tecozam-fleet-pwa`): commit `a9137ad` (T7).
+- **web** (`tecozam-bills-web`): commit de esta tarea (T8, frontend).
+
+Todo sin `push` — pendiente de que el usuario lo revise/despliegue.
+
+## Pendiente / fuera de alcance (hallazgos sueltos, no arreglados)
+
+Recogido de tareas anteriores para que no se pierda:
+
+1. **`JWT_SECRET` por defecto demasiado corto** (`application.yml`:
+   `${JWT_SECRET:change-me-in-production}`, 184 bits) — rompe CUALQUIER
+   login (oficina o campo) con `WeakKeyException` si no se sobreescribe por
+   variable de entorno con un secreto de >= 256 bits. Encontrado en T7 (PWA)
+   y reproducido de nuevo en T8 (admin web) al verificar manualmente. Deberia
+   arreglarse el valor por defecto de dev (o al menos documentarlo bien en
+   la guia de arranque), antes de que alguien lo sufra en un entorno real.
+2. **Mostrar la foto en si en el admin web** (no solo los datos de la linea):
+   requeriria un endpoint de descarga protegido para `FileStorageService`,
+   que hoy no existe. Mejora futura, no bloqueante.
+3. **Campos escalares de `Ticket` como agregado** (decision de T3, aceptada
+   explicitamente ahi): `estacion`/`importeTotal`/`litros`/etc. en `Ticket`
+   siguen siendo los que lee el resto de la app (listados, cotejo), ahora
+   calculados como agregado de las `lineas` en vez de venir de una sola
+   foto. Es una decision consciente, no una deuda — pero si en el futuro se
+   quiere limpiar esa duplicacion de datos (agregado cacheado vs. derivarlo
+   siempre de `lineas`), es un cambio a valorar aparte.
+4. **Confirmado, no arreglar**: el `pom.xml` no ejecutaba tests `*IT.java`
+   hasta que se arreglo dentro de T1 — ya resuelto, mencionado aqui solo
+   para que quede trazado en el resumen de la feature completa.
 
 ## Progreso
 (se actualiza tarea a tarea, con commit de work-unit y evidencia de

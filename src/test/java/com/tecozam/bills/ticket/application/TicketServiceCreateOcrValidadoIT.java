@@ -139,6 +139,15 @@ class TicketServiceCreateOcrValidadoIT {
         assertThat(resultado.litros()).isEqualByComparingTo("30.00");
         assertThat(resultado.fechaHora()).isEqualTo(fecha1);
 
+        // T8: el TicketDTO expone las N lineas (auditoria en el admin web),
+        // no solo los campos agregados.
+        assertThat(resultado.lineas()).hasSize(2);
+        assertThat(resultado.lineas())
+                .extracting(TicketDTO.TicketLineaDTO::fotoIndice, TicketDTO.TicketLineaDTO::importeTotal)
+                .containsExactlyInAnyOrder(
+                        org.assertj.core.api.Assertions.tuple(0, new BigDecimal("35.00")),
+                        org.assertj.core.api.Assertions.tuple(1, new BigDecimal("17.50")));
+
         var lineasGuardadas = ticketLineaRepository.findByTicketId(resultado.id());
         assertThat(lineasGuardadas).hasSize(2);
         assertThat(lineasGuardadas).allMatch(l -> l.getFotoUrl() != null && !l.getFotoUrl().isBlank());
