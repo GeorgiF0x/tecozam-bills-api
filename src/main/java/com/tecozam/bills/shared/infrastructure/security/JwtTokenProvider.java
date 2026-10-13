@@ -23,6 +23,17 @@ public class JwtTokenProvider {
 
     private final JwtConfig jwtConfig;
 
+    /**
+     * Claim que distingue un access token de un refresh token. Sin esto, un
+     * refresh token robado (vida larga, hasta 7 dias) se podia usar tal cual
+     * como access token contra cualquier endpoint protegido, sin pasar por
+     * /refresh — confirmado explotable en vivo. Un token sin este claim (los
+     * ya emitidos antes de este fix) se trata como no valido para autenticar.
+     */
+    private static final String TOKEN_USE_CLAIM = "token_use";
+    public static final String TOKEN_USE_ACCESS = "access";
+    private static final String TOKEN_USE_REFRESH = "refresh";
+
     public String generateAccessToken(UserDetails userDetails) {
         String role = userDetails.getAuthorities().stream()
                 .findFirst()
@@ -32,6 +43,7 @@ public class JwtTokenProvider {
         return Jwts.builder()
                 .subject(userDetails.getUsername())
                 .claim("rol", role)
+                .claim(TOKEN_USE_CLAIM, TOKEN_USE_ACCESS)
                 .issuedAt(new Date())
                 .expiration(new Date(System.currentTimeMillis() + jwtConfig.getExpiration()))
                 .signWith(getSigningKey())
@@ -48,6 +60,7 @@ public class JwtTokenProvider {
                 .subject(userDetails.getUsername())
                 .claim("rol", role)
                 .claim("tipo", tipo)
+                .claim(TOKEN_USE_CLAIM, TOKEN_USE_ACCESS)
                 .issuedAt(new Date())
                 .expiration(new Date(System.currentTimeMillis() + jwtConfig.getExpiration()))
                 .signWith(getSigningKey())
@@ -57,6 +70,7 @@ public class JwtTokenProvider {
     public String generateRefreshToken(UserDetails userDetails) {
         return Jwts.builder()
                 .subject(userDetails.getUsername())
+                .claim(TOKEN_USE_CLAIM, TOKEN_USE_REFRESH)
                 .issuedAt(new Date())
                 .expiration(new Date(System.currentTimeMillis() + jwtConfig.getRefreshExpiration()))
                 .signWith(getSigningKey())
@@ -67,6 +81,7 @@ public class JwtTokenProvider {
         return Jwts.builder()
                 .subject(userDetails.getUsername())
                 .claim("tipo", tipo)
+                .claim(TOKEN_USE_CLAIM, TOKEN_USE_REFRESH)
                 .issuedAt(new Date())
                 .expiration(new Date(System.currentTimeMillis() + jwtConfig.getRefreshExpiration()))
                 .signWith(getSigningKey())
@@ -83,6 +98,10 @@ public class JwtTokenProvider {
 
     public String getTipoFromToken(String token) {
         return extractClaims(token).get("tipo", String.class);
+    }
+
+    public String getTokenUseFromToken(String token) {
+        return extractClaims(token).get(TOKEN_USE_CLAIM, String.class);
     }
 
     public boolean validateToken(String token) {

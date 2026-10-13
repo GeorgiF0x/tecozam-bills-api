@@ -9,6 +9,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDate;
@@ -38,6 +39,7 @@ public class OperacionController {
      *                         (usado por el buscador de "vincular operacion")
      */
     @GetMapping
+    @PreAuthorize("hasAnyRole('ADMIN', 'GESTOR')")
     public Page<OperacionDTO> findAll(
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "50") int size,
@@ -63,6 +65,7 @@ public class OperacionController {
      * Lista todas las operaciones pertenecientes a una factura específica.
      */
     @GetMapping("/factura/{facturaId}")
+    @PreAuthorize("hasAnyRole('ADMIN', 'GESTOR')")
     public List<OperacionDTO> findByFactura(@PathVariable Long facturaId) {
         return operacionRepository.findByFacturaId(facturaId).stream()
                 .map(this::toDTO)

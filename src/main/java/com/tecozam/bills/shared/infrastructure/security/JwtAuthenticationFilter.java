@@ -55,7 +55,17 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         try {
             String token = extractTokenFromRequest(request);
 
-            if (StringUtils.hasText(token) && jwtTokenProvider.validateToken(token)) {
+            // Un refresh token es estructuralmente valido (firma+expiracion
+            // correctas) pero NO debe autenticar peticiones normales — solo
+            // /auth/*/refresh (fuera de este filtro, ver PUBLIC_PATHS) puede
+            // usarlo. Sin este chequeo, un refresh token filtrado (hasta 7
+            // dias de vida) servia como access token contra cualquier
+            // endpoint — confirmado explotable en vivo.
+            boolean esAccessToken = StringUtils.hasText(token)
+                    && jwtTokenProvider.validateToken(token)
+                    && JwtTokenProvider.TOKEN_USE_ACCESS.equals(jwtTokenProvider.getTokenUseFromToken(token));
+
+            if (esAccessToken) {
                 String username = jwtTokenProvider.getUsernameFromToken(token);
                 String tipo = jwtTokenProvider.getTipoFromToken(token);
 

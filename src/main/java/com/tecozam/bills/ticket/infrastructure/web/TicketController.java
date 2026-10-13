@@ -47,6 +47,7 @@ public class TicketController {
     private String n8nWebhookBaseUrl;
 
     @GetMapping
+    @PreAuthorize("hasAnyRole('ADMIN', 'GESTOR')")
     @Operation(summary = "Listar tickets", description = "Obtiene todos los tickets, opcionalmente filtrados por estado de cotejo")
     public ResponseEntity<List<TicketDTO>> findAll(
             @RequestParam(required = false) String estadoCotejo) {
@@ -61,6 +62,7 @@ public class TicketController {
     }
 
     @GetMapping("/{id:\\d+}")
+    @PreAuthorize("hasAnyRole('ADMIN', 'GESTOR')")
     @Operation(summary = "Obtener ticket", description = "Obtiene un ticket por su ID")
     public ResponseEntity<TicketDTO> findById(@PathVariable Long id) {
         return ResponseEntity.ok(ticketService.findById(id));
