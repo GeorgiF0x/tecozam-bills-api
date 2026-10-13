@@ -19,6 +19,8 @@ public interface VehiculoRepository extends JpaRepository<Vehiculo, Long> {
 
     boolean existsByMatricula(String matricula);
 
+    boolean existsByCodigoObra(String codigoObra);
+
     List<Vehiculo> findByEliminadoEnIsNull();
 
     List<Vehiculo> findByActivoTrueAndEliminadoEnIsNull();

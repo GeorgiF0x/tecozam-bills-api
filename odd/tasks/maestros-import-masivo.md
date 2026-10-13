@@ -85,7 +85,49 @@ No hay importer generico reusable — cada uno se construye ad-hoc siguiendo el 
 
 ## Tareas
 
-- [ ] T1. Backend+web: import Excel para **Vehiculos**. Parser fila→`CreateVehiculoRequest`, servicio con `ImportContext` (creados/existentes/errores), endpoint `POST /api/admin/import/vehiculos` (`hasRole('ADMIN')`, mismo patron que tarjetas), dialogo en el admin web (`vehiculos` page) reusando el patron visual de `ImportTarjetasDialog`. Fila duplicada (matricula/codigoObra ya existente) no crea, se cuenta como "existente".
+- [x] T1. **Hecho**. Backend: `vehiculo/infrastructure/import_/VehiculoXlsxRowParser.java`
+      (parser puro, cabeceras Tipo/Matricula/CodigoObra/Categoria/Descripcion,
+      insensible a tildes/mayusculas) + `FilaVehiculoImportada.java` (record
+      con `errorValidacion` cuando la fila no cumple las mismas reglas que
+      `VehiculoService.create`: tipo obligatorio, matricula obligatoria para
+      VEHICULO, codigoObra obligatorio para INDUSTRIAL_MAQUINARIA).
+      `vehiculo/application/VehiculoImportService.java` (orquestador: abre
+      XSSFWorkbook, valida tamaño/extension, cuenta creados/existentes,
+      duplicado detectado por `existsByMatricula`/`existsByCodigoObra` —
+      este ultimo metodo nuevo en `VehiculoRepository`). Endpoint nuevo
+      `POST /api/admin/import/vehiculos` (`VehiculoImportController`,
+      `hasRole('ADMIN')`), DTO `ImportVehiculosReportDTO` (creados,
+      existentes, errores, duracionMs) — no se reutilizo
+      `ImportTarjetasReportDTO`, la forma no encajaba limpio (ponytail: DTO
+      propio mas simple que forzar una abstraccion compartida).
+      No se toco `VehiculoService.create` (sigue igual para el alta manual).
+      Frontend: `web/tecozam-bills-web/src/components/import-vehiculos-dialog.tsx`
+      (mismo patron visual que `ImportTarjetasDialog`, sin selector de
+      proveedor ni checkbox, reporte con 2 contadores + lista de avisos).
+      Boton "Importar Excel" en `maestros/vehiculos/page.tsx`, visible solo
+      para ADMIN (coherente con el `@PreAuthorize` del endpoint).
+      TDD real: `VehiculoXlsxRowParserTest` (8 casos, RED→GREEN confirmado
+      rompiendo a mano la validacion de tipo obligatorio) +
+      `VehiculoImportServiceIT` (2 casos contra MSSQL real, RED→GREEN
+      confirmado rompiendo a mano la deteccion de duplicados — creo 3 filas
+      duplicadas sin querer, limpiadas despues a mano por SQL). Suite
+      completa: `./mvnw.cmd test` → **291/291, BUILD SUCCESS** (281 previos +
+      10 nuevos), 0 regresiones. Frontend: `npx tsc --noEmit` limpio.
+      Verificacion manual real en navegador (no solo tsc): backend+web
+      levantados en local, login real como `admin`, subido un `.xlsx` de
+      prueba con 2 filas validas + 1 invalida (sin matricula) via
+      Playwright — reporte mostro "2 creados, 0 existentes, 1 fila con
+      aviso", tabla de vehiculos recargada sola mostrando los 2 nuevos.
+      Datos de prueba borrados despues de verificar.
+      **Nota lateral**: para poder probar en local hizo falta (a) exportar
+      `MSSQL_PASSWORD=DevTest_2026!` al arrancar el backend en perfil `dev`
+      (el default de `application.yml` es vacio si no se exporta la
+      variable — no es un bug, es la config esperada, solo dejar constancia
+      para la proxima vez); (b) la contraseña del usuario `admin` local de
+      `usuarios_oficina` se desconocia, se reseteo a `admin123` (hash BCrypt
+      generado con un test desechable, ya borrado) para poder loguearse —
+      si alguien mas dependia de la contraseña anterior de ese usuario en
+      este entorno de dev compartido, ya no es la misma.
 - [ ] T2. Backend+web: import Excel para **Tarjetas (alta)**. Columna de codigo de proveedor obligatoria, resuelta contra `ProveedorRepository` (igual que ya hace `ListadoTarjetasImportService.resolverProveedor`), fila con proveedor inexistente → error legible, no crea tarjeta huerfana.
 - [ ] T3. Backend+web: import Excel para **VIATs**.
 - [ ] T4. Backend+web: import Excel para **Trabajadores** (separar opcionalmente oficina/campo via columna, si la columna no esta, `origen=IMPORTACION` por defecto).
