@@ -67,7 +67,8 @@ class TicketServiceTest {
     void setUp() {
         service = new TicketService(ticketRepository, operacionRepository, proveedorRepository,
                 trabajadorRepository, tarjetaRepository, tarjetaAsignacionRepository, vehiculoRepository,
-                usuarioRepository, usuarioCampoRepository, fileStorageService);
+                usuarioRepository, usuarioCampoRepository, fileStorageService,
+                new TicketLineaPlausibilidadValidator());
 
         trabajador = new Trabajador();
         trabajador.setId(2L);

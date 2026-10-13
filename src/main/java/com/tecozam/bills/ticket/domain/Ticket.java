@@ -120,6 +120,16 @@ public class Ticket extends BaseEntity {
     private LocalDateTime resueltoEn;
 
     /**
+     * true si las lineas de este ticket (varias fotos) no cuadran entre si
+     * (ver {@link com.tecozam.bills.ticket.application.TicketLineaPlausibilidadValidator}).
+     * No bloquea la creacion, solo marca para revision humana — mismo patron
+     * que {@link com.tecozam.bills.factura.domain.Factura#isRequiereRevisionManual()}.
+     */
+    @Column(name = "requiere_revision_manual", nullable = false)
+    @Builder.Default
+    private boolean requiereRevisionManual = false;
+
+    /**
      * Lineas (una por foto) que componen este ticket cuando viene de una
      * captura multi-foto. Los campos escalares de arriba (estacion,
      * importeTotal, litros...) se mantienen por ahora para no romper el

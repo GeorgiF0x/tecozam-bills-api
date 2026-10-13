@@ -63,6 +63,7 @@ public class TicketService {
     private final UsuarioRepository usuarioRepository;
     private final com.tecozam.bills.auth.infrastructure.persistence.UsuarioCampoRepository usuarioCampoRepository;
     private final FileStorageService fileStorageService;
+    private final TicketLineaPlausibilidadValidator plausibilidadValidator;
 
     @Transactional(readOnly = true)
     public List<TicketDTO> findAll(String estadoCotejo) {
@@ -654,6 +655,12 @@ public class TicketService {
         String observacionesTicket = "OCR validado con PIN"
                 + (numRecibo != null && !numRecibo.isBlank() ? " — Recibo: " + numRecibo : "");
 
+        List<String> avisosPlausibilidad = plausibilidadValidator.validar(lineas);
+        boolean requiereRevisionManual = !avisosPlausibilidad.isEmpty();
+        if (requiereRevisionManual) {
+            observacionesTicket += " | Revisar: " + String.join(" / ", avisosPlausibilidad);
+        }
+
         String ultimos4 = tarjeta.getNumeroTarjeta();
         if (ultimos4 != null && ultimos4.length() >= 4) {
             ultimos4 = ultimos4.substring(ultimos4.length() - 4);
@@ -676,6 +683,7 @@ public class TicketService {
                 .concepto(producto)
                 .observaciones(observacionesTicket)
                 .numTarjeta4ultimos(ultimos4)
+                .requiereRevisionManual(requiereRevisionManual)
                 .build();
 
         for (LineaOcrDTO l : lineas) {
@@ -786,7 +794,8 @@ public class TicketService {
                 t.getAsignadoA() != null ? t.getAsignadoA().getUsername() : null,
                 t.getNotasResolucion(),
                 t.getResueltoEn(),
-                t.getCreadoEn()
+                t.getCreadoEn(),
+                t.isRequiereRevisionManual()
         );
     }
 }

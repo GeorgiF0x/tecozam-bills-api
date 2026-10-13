@@ -252,9 +252,25 @@ evaluara partirla). Estrategia de cadena: `ask-on-risk` (por defecto).
       `tecozam-mssql-dev` estaba parado al empezar la sesión de hoy —
       arrancado con `docker start tecozam-mssql-dev` antes de poder correr
       los tests.)
-- [ ] T5. Backend: validacion de plausibilidad entre operaciones del mismo
-      ticket (patron `FacturaImportValidator`), marca `requiereRevisionManual`
-      si no cuadran. Tests.
+- [x] T5. Añadido `Ticket.requiereRevisionManual` (migracion `V30`, aplicada
+      a mano en el Docker de dev, Flyway off ahi) + expuesto en `TicketDTO`.
+      Nuevo `ticket/application/TicketLineaPlausibilidadValidator.java`
+      (patron `FacturaImportValidator`, pero NO copiado literal: un ticket
+      no tiene un total de cabecera separado de sus lineas como una
+      factura, asi que ese chequeo no aplica igual). Valida por linea:
+      litros x precioLitro vs importeTotal (tolerancia 15%), precioLitro
+      fuera de 0.50-3.50€, litros > 500. Y entre lineas del mismo ticket
+      (la señal especifica de esta feature): estacion o matricula distintas
+      entre fotos → aviso de posible mezcla de compras.
+      Enganchado en `TicketService.createOcrValidado`: no bloquea, solo
+      marca `requiereRevisionManual=true` y anexa los avisos a
+      `observaciones`.
+      TDD real: `TicketLineaPlausibilidadValidatorTest` (7 casos) + nuevo
+      test en `TicketServiceCreateOcrValidadoIT` (lineas con estaciones
+      distintas se crean igualmente, marcadas para revision). RED
+      confirmado deshabilitando a mano el chequeo entre lineas (2 tests
+      fallaron como se esperaba), GREEN tras restaurarlo. Suite completa:
+      **271/271, BUILD SUCCESS** (263 previos + 8 nuevos), 0 regresiones.
 - [ ] T6. Backend: adaptar `cotejarPendientes`/`detectarDiscrepancia` para
       matching contra N operaciones por ticket (hoy asume 1). Tests.
 - [ ] T7. PWA: `app/escanear/page.tsx` — estado `imageBlob` pasa a array de

@@ -221,4 +221,66 @@ class TicketServiceCreateOcrValidadoIT {
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("Ya existe un ticket con la misma tarjeta, fecha e importe");
     }
+
+    /**
+     * T5 (odd/tasks/ticket-multi-foto.md): lineas con estaciones distintas
+     * (posible mezcla de fotos de compras diferentes) no bloquean la
+     * creacion del ticket, pero lo marcan para revision manual.
+     */
+    @Test
+    @DisplayName("createOcrValidado con lineas de estaciones distintas se crea igualmente, marcado requiereRevisionManual")
+    void lineasInconsistentesSeCreanMarcadasParaRevision() throws Exception {
+        Proveedor proveedor = proveedorRepository.findByCodigo("REPSOL")
+                .orElseGet(() -> proveedorRepository.save(Proveedor.builder()
+                        .codigo("REPSOL").nombre("REPSOL").activo(true).build()));
+
+        Tarjeta tarjeta = tarjetaRepository.save(Tarjeta.builder()
+                .numeroTarjeta("9998887776665553")
+                .alias("TARJETA TEST REVISION")
+                .proveedor(proveedor)
+                .build());
+
+        Trabajador trabajador = trabajadorRepository.save(Trabajador.builder()
+                .nombre("Test").apellidos("Revision")
+                .email("test-revision-" + System.nanoTime() + "@tecozam.test")
+                .build());
+
+        usuarioCampoRepository.save(UsuarioCampo.builder()
+                .username("test-ocr-revision")
+                .password("irrelevante")
+                .trabajador(trabajador)
+                .build());
+
+        tarjetaAsignacionRepository.save(TarjetaAsignacion.builder()
+                .tarjeta(tarjeta)
+                .trabajador(trabajador)
+                .fechaDesde(LocalDate.now().minusDays(1))
+                .build());
+
+        Vehiculo vehiculo = vehiculoRepository.save(Vehiculo.builder()
+                .matricula("1234TRV")
+                .tipo("TURISMO")
+                .categoria(CategoriaRecurso.VEHICULO)
+                .build());
+
+        LocalDateTime fecha = LocalDateTime.now().minusHours(4);
+        List<LineaOcrDTO> lineas = List.of(
+                new LineaOcrDTO(0, "ESTACION A", fecha, "GASOLEO", "REC-R1", null, null,
+                        new BigDecimal("20.00"), new BigDecimal("1.750"), new BigDecimal("35.00")),
+                new LineaOcrDTO(1, "ESTACION B", fecha.plusMinutes(2), "GASOLEO", null, null, null,
+                        new BigDecimal("10.00"), new BigDecimal("1.750"), new BigDecimal("17.50")));
+
+        CreateTicketOcrValidadoRequest request = new CreateTicketOcrValidadoRequest(
+                tarjeta.getId(), null, CategoriaRecurso.VEHICULO, vehiculo.getId(), 1L, 12345, null);
+
+        List<MultipartFile> fotos = List.of(
+                new MockMultipartFile("imagenes", "foto0.jpg", "image/jpeg", "foto-rev-0".getBytes()),
+                new MockMultipartFile("imagenes", "foto1.jpg", "image/jpeg", "foto-rev-1".getBytes()));
+
+        TicketDTO resultado = ticketService.createOcrValidado("test-ocr-revision", request, lineas, fotos);
+        ticketLineaRepository.findByTicketId(resultado.id()).forEach(l -> ficherosEscritos.add(l.getFotoUrl()));
+
+        assertThat(resultado.requiereRevisionManual()).isTrue();
+        assertThat(resultado.observaciones()).contains("Revisar:").contains("estaciones distintas");
+    }
 }

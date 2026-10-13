@@ -34,5 +34,6 @@ public record TicketDTO(
         String asignadoANombre,
         String notasResolucion,
         LocalDateTime resueltoEn,
-        LocalDateTime creadoEn
+        LocalDateTime creadoEn,
+        boolean requiereRevisionManual
 ) {}
