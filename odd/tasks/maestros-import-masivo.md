@@ -50,9 +50,47 @@ la creacion manual de usuarios, no pide cambios ahi.
   antes de asumir que hace falta un cambio (podria ser un malentendido de
   UI, no un bug de permisos real).
 
-## Estado
-Sin empezar. Todavia no se ha explorado el codigo real para esta tarea
-(a diferencia de las otras features de esta sesion, que si se verificaron
-contra codigo antes de escribir el plan) — el alcance de arriba es solo lo
-que se desprende del video, pendiente de contrastar con el codigo real al
-empezar.
+## Investigacion real (hecha antes de empezar)
+
+**Punto 2 (acceso ampliado) — probablemente YA resuelto, no es un bug**:
+verificado endpoint por endpoint (`@PreAuthorize` real) en los 6
+controllers de maestros: ADMIN ya puede crear/editar/borrar (logico y
+permanente) Vehiculo/Tarjeta/Viat/Trabajador/CentroCoste/Proveedor hoy.
+El video es del 29-sep; el CRUD de maestros es deploy manual (no
+automatico) y es muy probable que su servidor aun no lo tuviera cuando
+grabo el video — version desactualizada, no fallo real. Unico hueco
+genuino encontrado: ningun `Usuario` (oficina/campo) tiene borrado
+permanente, solo desactivar (`PATCH .../desactivar`) — coherente con el
+patron de borrado logico del resto de la app, no necesariamente un bug a
+arreglar. No se monta ninguna tarea para esto; si el cliente insiste tras
+confirmar que ya tiene el CRUD desplegado, se revisa aparte.
+
+**Patron a replicar para el import** (`ListadoTarjetasImportService` +
+`ListadoTarjetasRowParser` + `ImportContext` + `import-tarjetas-dialog.tsx`):
+parseo DETERMINISTA fila a fila (sin LLM — aqui no aplica, son columnas de
+Excel ya estructuradas que el propio admin rellena siguiendo lo que la app
+le pida, no texto libre que interpretar), reporte de contadores
+creados/existentes + array de avisos legibles, filas invalidas no
+bloquean el resto del archivo.
+
+Campos reales confirmados por entidad (para la plantilla/columnas del Excel):
+- **Vehiculo**: `tipo` obligatorio; `matricula`/`codigoObra`/`categoria`/`descripcion` opcionales.
+- **Tarjeta (alta)**: `numeroTarjeta` obligatorio unico; `proveedorId` obligatorio (resolver por codigo de proveedor, no crearlo); `alias` opcional.
+- **Viat**: `codigo` obligatorio unico; `numeroSerie`/`descripcion` opcionales.
+- **Trabajador**: `nombre`/`apellidos` obligatorios; `email`/`dniNie` opcionales; origen se marca `IMPORTACION` (enum `OrigenTrabajador`, ya existe).
+- **UsuarioOficina**: `username`/`password`/`nombre`/`rol` obligatorios; `email`/`dni` opcionales.
+- **UsuarioCampo**: `username`/`password`/`nombre` obligatorios; `apellidos`/`dni`/`telefono` opcionales.
+
+No hay importer generico reusable — cada uno se construye ad-hoc siguiendo el mismo esqueleto (ya establecido asi deliberadamente en el codebase, ver `ListadoTarjetasParserFactory.java:9-15`).
+
+## Tareas
+
+- [ ] T1. Backend+web: import Excel para **Vehiculos**. Parser fila→`CreateVehiculoRequest`, servicio con `ImportContext` (creados/existentes/errores), endpoint `POST /api/admin/import/vehiculos` (`hasRole('ADMIN')`, mismo patron que tarjetas), dialogo en el admin web (`vehiculos` page) reusando el patron visual de `ImportTarjetasDialog`. Fila duplicada (matricula/codigoObra ya existente) no crea, se cuenta como "existente".
+- [ ] T2. Backend+web: import Excel para **Tarjetas (alta)**. Columna de codigo de proveedor obligatoria, resuelta contra `ProveedorRepository` (igual que ya hace `ListadoTarjetasImportService.resolverProveedor`), fila con proveedor inexistente → error legible, no crea tarjeta huerfana.
+- [ ] T3. Backend+web: import Excel para **VIATs**.
+- [ ] T4. Backend+web: import Excel para **Trabajadores** (separar opcionalmente oficina/campo via columna, si la columna no esta, `origen=IMPORTACION` por defecto).
+- [ ] T5. Backend+web: import Excel para **Usuarios** (oficina y campo en el mismo import, o dos pestañas/plantillas separadas — decidir al implementar segun cual formato de columnas sea mas simple de explicar al cliente).
+
+## Progreso
+(se actualiza tarea a tarea, con commit de work-unit y evidencia de
+verificacion por tarea)
