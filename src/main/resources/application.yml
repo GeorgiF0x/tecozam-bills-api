@@ -79,7 +79,7 @@ server:
 # ─── Application Custom Properties ───────────────────────────────
 app:
   jwt:
-    secret: ${JWT_SECRET:change-me-in-production}
+    secret: ${JWT_SECRET:2919ba62ab0d77fe3f2be07beb9b89d4651c1d9a78793a85260cb3656adc8602}
     expiration: ${JWT_EXPIRATION:900000}
     refresh-expiration: ${JWT_REFRESH_EXPIRATION:604800000}
   aes:
