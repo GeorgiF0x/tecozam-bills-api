@@ -271,8 +271,32 @@ evaluara partirla). Estrategia de cadena: `ask-on-risk` (por defecto).
       confirmado deshabilitando a mano el chequeo entre lineas (2 tests
       fallaron como se esperaba), GREEN tras restaurarlo. Suite completa:
       **271/271, BUILD SUCCESS** (263 previos + 8 nuevos), 0 regresiones.
-- [ ] T6. Backend: adaptar `cotejarPendientes`/`detectarDiscrepancia` para
-      matching contra N operaciones por ticket (hoy asume 1). Tests.
+- [x] T6. **Conclusion real (confirmada con tests, no asumida)**: NO hacia
+      falta adaptar nada. `cotejarPendientes`/`buscarCandidatas`/
+      `aplicarResultadoCotejo`/`detectarDiscrepancia` ya funcionan
+      correctamente para un ticket de varias `TicketLinea` SIN ningun cambio
+      de codigo, porque nunca leen `lineas` — leen los campos escalares
+      agregados de `Ticket` (importeTotal/fechaHora/litros), que T3 ya
+      calcula correctamente como "la compra completa". Un ticket de N fotos
+      sigue siendo UNA compra real = UNA Operacion de factura (no N), asi
+      que el matching 1:1 ya existente es el diseno correcto, no una
+      limitacion a arreglar.
+      Verificado con 2 tests de integracion nuevos en
+      `TicketServiceCreateOcrValidadoIT`: (a) ticket de 2 lineas (suma
+      35.00+17.50=52.50) cotejado automaticamente contra una Operacion real
+      de 52.50 → `COTEJADO`; (b) mismo ticket de 2 lineas contra una
+      Operacion de importe muy distinto (70.00, >5%) → `INCIDENCIA` /
+      `PRECIO_NO_CONCUERDA`, igual que ya pasaba con tickets de 1 sola
+      linea. Se corrigio ademas un comentario desactualizado en
+      `TicketService.createOcrValidado` que decia que T6/T8 migrarian el
+      cotejo a leer `lineas` directamente — ya no aplica.
+      Para T8 (pendiente): la UI de cotejo en el admin web puede seguir
+      asumiendo 1 operacion por ticket (es correcto), pero deberia poder
+      MOSTRAR las N `TicketLinea` del ticket (detalle de que vino de cada
+      foto) junto al resultado del cotejo, a efectos de auditoria — eso es
+      una cuestion de visualizacion, no de logica de cotejo.
+      `./mvnw.cmd test`: **273/273, BUILD SUCCESS** (271 previos + 2
+      nuevos), 0 regresiones.
 - [ ] T7. PWA: `app/escanear/page.tsx` — estado `imageBlob` pasa a array de
       blobs; UI para añadir mas fotos antes de avanzar a `ocr-edit`; envio de
       las N imagenes a los endpoints actualizados; `EditableOcrData` pasa a

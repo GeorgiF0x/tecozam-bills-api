@@ -615,12 +615,15 @@ public class TicketService {
         }
 
         // ── Agregados a nivel de Ticket, calculados a partir de las N lineas:
-        // un ticket compuesto por varias fotos sigue siendo UNA compra para el
-        // resto de la app (cotejo, listados), que todavia lee los campos
-        // escalares de Ticket (T6/T8 son quienes migran eso a leer `lineas`
-        // directamente). importeTotal/litros se SUMAN (son cantidades); el
-        // resto se toma de la primera linea (deberian repetirse entre fotos
-        // del mismo ticket).
+        // un ticket compuesto por varias fotos sigue siendo UNA compra real =
+        // UNA Operacion de factura (no N), asi que el cotejo (ver
+        // buscarCandidatas/aplicarResultadoCotejo mas abajo, y
+        // cotejarPendientes) sigue leyendo estos escalares agregados sin
+        // cambios — verificado con test real en T6
+        // (odd/tasks/ticket-multi-foto.md): NO hace falta migrar el cotejo a
+        // leer `lineas` directamente. importeTotal/litros se SUMAN (son
+        // cantidades); el resto se toma de la primera linea (deberian
+        // repetirse entre fotos del mismo ticket).
         String estacion = lineas.get(0).estacion();
         LocalDateTime fechaHora = lineas.stream()
                 .map(LineaOcrDTO::fechaHora)

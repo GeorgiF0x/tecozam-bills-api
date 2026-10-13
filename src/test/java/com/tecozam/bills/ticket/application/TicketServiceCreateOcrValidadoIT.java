@@ -2,6 +2,11 @@ package com.tecozam.bills.ticket.application;
 
 import com.tecozam.bills.auth.domain.UsuarioCampo;
 import com.tecozam.bills.auth.infrastructure.persistence.UsuarioCampoRepository;
+import com.tecozam.bills.factura.domain.Factura;
+import com.tecozam.bills.factura.domain.Operacion;
+import com.tecozam.bills.factura.domain.TarjetaResumen;
+import com.tecozam.bills.factura.infrastructure.persistence.FacturaRepository;
+import com.tecozam.bills.factura.infrastructure.persistence.TarjetaResumenRepository;
 import com.tecozam.bills.proveedor.domain.Proveedor;
 import com.tecozam.bills.proveedor.infrastructure.persistence.ProveedorRepository;
 import com.tecozam.bills.shared.infrastructure.exception.BusinessException;
@@ -58,6 +63,9 @@ class TicketServiceCreateOcrValidadoIT {
     @Autowired private TrabajadorRepository trabajadorRepository;
     @Autowired private UsuarioCampoRepository usuarioCampoRepository;
     @Autowired private VehiculoRepository vehiculoRepository;
+    @Autowired private FacturaRepository facturaRepository;
+    @Autowired private TarjetaResumenRepository tarjetaResumenRepository;
+    @Autowired private com.tecozam.bills.factura.infrastructure.persistence.OperacionRepository operacionRepository;
 
     private final List<String> ficherosEscritos = new ArrayList<>();
 
@@ -282,5 +290,182 @@ class TicketServiceCreateOcrValidadoIT {
 
         assertThat(resultado.requiereRevisionManual()).isTrue();
         assertThat(resultado.observaciones()).contains("Revisar:").contains("estaciones distintas");
+    }
+
+    /**
+     * T6 (odd/tasks/ticket-multi-foto.md): confirma que el cotejo automatico
+     * YA funciona correctamente para un ticket de varias lineas, SIN cambios
+     * de codigo. El cotejo (tanto el intento inmediato de createOcrValidado
+     * como el batch cotejarPendientes) solo lee los campos escalares
+     * agregados de Ticket (importeTotal/fechaHora/litros) contra UNA
+     * Operacion real — nunca lee `lineas`. Eso es correcto por diseno: N
+     * fotos de un ticket siguen siendo UNA compra real = UNA Operacion en la
+     * factura (p.ej. diesel repostado, partido en 2 fotos por ser un ticket
+     * largo), no N operaciones distintas. El importeTotal agregado (suma de
+     * lineas, ya calculado en T3) es exactamente el dato que hay que casar
+     * contra el importe de esa unica Operacion real.
+     */
+    @Test
+    @DisplayName("createOcrValidado con 2 lineas se cateja automaticamente contra la UNICA operacion real que corresponde a la compra completa")
+    void ticketDeVariasLineasSeCotejaContraLaOperacionRealDelImporteAgregado() throws Exception {
+        Proveedor proveedor = proveedorRepository.findByCodigo("REPSOL")
+                .orElseGet(() -> proveedorRepository.save(Proveedor.builder()
+                        .codigo("REPSOL").nombre("REPSOL").activo(true).build()));
+
+        Tarjeta tarjeta = tarjetaRepository.save(Tarjeta.builder()
+                .numeroTarjeta("9998887776665554")
+                .alias("TARJETA TEST COTEJO MULTIFOTO")
+                .proveedor(proveedor)
+                .build());
+
+        Trabajador trabajador = trabajadorRepository.save(Trabajador.builder()
+                .nombre("Test").apellidos("CotejoMultifoto")
+                .email("test-cotejo-multifoto-" + System.nanoTime() + "@tecozam.test")
+                .build());
+
+        usuarioCampoRepository.save(UsuarioCampo.builder()
+                .username("test-ocr-cotejo-multifoto")
+                .password("irrelevante")
+                .trabajador(trabajador)
+                .build());
+
+        tarjetaAsignacionRepository.save(TarjetaAsignacion.builder()
+                .tarjeta(tarjeta)
+                .trabajador(trabajador)
+                .fechaDesde(LocalDate.now().minusDays(1))
+                .build());
+
+        Vehiculo vehiculo = vehiculoRepository.save(Vehiculo.builder()
+                .matricula("1234TCM")
+                .tipo("TURISMO")
+                .categoria(CategoriaRecurso.VEHICULO)
+                .build());
+
+        LocalDateTime fecha1 = LocalDateTime.now().minusHours(2);
+        LocalDateTime fecha2 = LocalDateTime.now().minusHours(1).minusMinutes(50);
+        // 2 fotos del MISMO ticket (misma compra): la suma de sus importes
+        // (35.00 + 17.50 = 52.50) es lo que debe casar contra la operacion real.
+        List<LineaOcrDTO> lineas = List.of(
+                new LineaOcrDTO(0, "ESTACION TEST COTEJO", fecha1, "GASOLEO", "REC-C1", null, null,
+                        new BigDecimal("20.00"), new BigDecimal("1.750"), new BigDecimal("35.00")),
+                new LineaOcrDTO(1, "ESTACION TEST COTEJO", fecha2, "GASOLEO", null, null, null,
+                        new BigDecimal("10.00"), new BigDecimal("1.750"), new BigDecimal("17.50")));
+
+        // La Operacion real de la factura: UNA sola linea por la compra completa.
+        Factura factura = facturaRepository.save(Factura.builder()
+                .proveedor(proveedor)
+                .numFactura("TEST-COTEJO-MULTIFOTO")
+                .build());
+        TarjetaResumen resumen = tarjetaResumenRepository.save(TarjetaResumen.builder()
+                .factura(factura)
+                .numTarjeta(tarjeta.getNumeroTarjeta())
+                .build());
+        operacionRepository.save(Operacion.builder()
+                .tarjetaResumen(resumen)
+                .factura(factura)
+                .establecimiento("ESTACION TEST COTEJO")
+                .conceptoUnificado("Gasoleo A")
+                .fechaHora(fecha1)
+                .importeTotal(new BigDecimal("52.50"))
+                .cantidad(new BigDecimal("30.00"))
+                .build());
+
+        CreateTicketOcrValidadoRequest request = new CreateTicketOcrValidadoRequest(
+                tarjeta.getId(), null, CategoriaRecurso.VEHICULO, vehiculo.getId(), 1L, 12345, null);
+
+        List<MultipartFile> fotos = List.of(
+                new MockMultipartFile("imagenes", "foto0.jpg", "image/jpeg", "foto-cotejo-0".getBytes()),
+                new MockMultipartFile("imagenes", "foto1.jpg", "image/jpeg", "foto-cotejo-1".getBytes()));
+
+        TicketDTO resultado = ticketService.createOcrValidado("test-ocr-cotejo-multifoto", request, lineas, fotos);
+        ticketLineaRepository.findByTicketId(resultado.id()).forEach(l -> ficherosEscritos.add(l.getFotoUrl()));
+
+        assertThat(resultado.estadoCotejo()).isEqualTo("COTEJADO");
+        assertThat(resultado.operacionCotejadaId()).isNotNull();
+    }
+
+    /**
+     * T6: igual que el test anterior, pero la Operacion real difiere en
+     * importe mas de un 5% del agregado del ticket — debe seguir
+     * detectandose como discrepancia (INCIDENCIA), exactamente igual que ya
+     * pasaba antes de esta feature con un ticket de 1 sola linea. Prueba que
+     * `detectarDiscrepancia` sigue funcionando sin cambios sobre el agregado.
+     */
+    @Test
+    @DisplayName("createOcrValidado con 2 lineas detecta discrepancia de importe contra la operacion real, igual que con 1 linea")
+    void ticketDeVariasLineasDetectaDiscrepanciaDeImporteIgualQueConUnaLinea() throws Exception {
+        Proveedor proveedor = proveedorRepository.findByCodigo("REPSOL")
+                .orElseGet(() -> proveedorRepository.save(Proveedor.builder()
+                        .codigo("REPSOL").nombre("REPSOL").activo(true).build()));
+
+        Tarjeta tarjeta = tarjetaRepository.save(Tarjeta.builder()
+                .numeroTarjeta("9998887776665555")
+                .alias("TARJETA TEST DISCREPANCIA MULTIFOTO")
+                .proveedor(proveedor)
+                .build());
+
+        Trabajador trabajador = trabajadorRepository.save(Trabajador.builder()
+                .nombre("Test").apellidos("DiscrepanciaMultifoto")
+                .email("test-discrepancia-multifoto-" + System.nanoTime() + "@tecozam.test")
+                .build());
+
+        usuarioCampoRepository.save(UsuarioCampo.builder()
+                .username("test-ocr-discrepancia-multifoto")
+                .password("irrelevante")
+                .trabajador(trabajador)
+                .build());
+
+        tarjetaAsignacionRepository.save(TarjetaAsignacion.builder()
+                .tarjeta(tarjeta)
+                .trabajador(trabajador)
+                .fechaDesde(LocalDate.now().minusDays(1))
+                .build());
+
+        Vehiculo vehiculo = vehiculoRepository.save(Vehiculo.builder()
+                .matricula("1234TDM")
+                .tipo("TURISMO")
+                .categoria(CategoriaRecurso.VEHICULO)
+                .build());
+
+        LocalDateTime fecha1 = LocalDateTime.now().minusHours(2);
+        LocalDateTime fecha2 = LocalDateTime.now().minusHours(1).minusMinutes(50);
+        // Agregado: 35.00 + 17.50 = 52.50
+        List<LineaOcrDTO> lineas = List.of(
+                new LineaOcrDTO(0, "ESTACION TEST DISCREPANCIA", fecha1, "GASOLEO", "REC-DI1", null, null,
+                        new BigDecimal("20.00"), new BigDecimal("1.750"), new BigDecimal("35.00")),
+                new LineaOcrDTO(1, "ESTACION TEST DISCREPANCIA", fecha2, "GASOLEO", null, null, null,
+                        new BigDecimal("10.00"), new BigDecimal("1.750"), new BigDecimal("17.50")));
+
+        // Operacion real con importe MUY distinto del agregado (>5%): 70.00 vs 52.50.
+        Factura factura = facturaRepository.save(Factura.builder()
+                .proveedor(proveedor)
+                .numFactura("TEST-DISCREPANCIA-MULTIFOTO")
+                .build());
+        TarjetaResumen resumen = tarjetaResumenRepository.save(TarjetaResumen.builder()
+                .factura(factura)
+                .numTarjeta(tarjeta.getNumeroTarjeta())
+                .build());
+        operacionRepository.save(Operacion.builder()
+                .tarjetaResumen(resumen)
+                .factura(factura)
+                .establecimiento("ESTACION TEST DISCREPANCIA")
+                .conceptoUnificado("Gasoleo A")
+                .fechaHora(fecha1)
+                .importeTotal(new BigDecimal("70.00"))
+                .build());
+
+        CreateTicketOcrValidadoRequest request = new CreateTicketOcrValidadoRequest(
+                tarjeta.getId(), null, CategoriaRecurso.VEHICULO, vehiculo.getId(), 1L, 12345, null);
+
+        List<MultipartFile> fotos = List.of(
+                new MockMultipartFile("imagenes", "foto0.jpg", "image/jpeg", "foto-discrepancia-0".getBytes()),
+                new MockMultipartFile("imagenes", "foto1.jpg", "image/jpeg", "foto-discrepancia-1".getBytes()));
+
+        TicketDTO resultado = ticketService.createOcrValidado(
+                "test-ocr-discrepancia-multifoto", request, lineas, fotos);
+        ticketLineaRepository.findByTicketId(resultado.id()).forEach(l -> ficherosEscritos.add(l.getFotoUrl()));
+
+        assertThat(resultado.estadoCotejo()).isEqualTo("INCIDENCIA");
+        assertThat(resultado.tipoIncidencia()).isEqualTo("PRECIO_NO_CONCUERDA");
     }
 }
