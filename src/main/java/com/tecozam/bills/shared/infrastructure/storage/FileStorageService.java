@@ -34,6 +34,34 @@ public class FileStorageService {
     }
 
     /**
+     * Guarda una foto de ticket (T3 de odd/tasks/ticket-multi-foto.md — antes
+     * las fotos de ticket se descartaban tras el OCR). {@code indice} es el
+     * índice de la foto dentro del conjunto subido para ese ticket, solo para
+     * que el nombre de fichero sea legible.
+     */
+    public String saveTicketFoto(MultipartFile file, Long ticketId, int indice) throws IOException {
+        LocalDate now = LocalDate.now();
+        Path dir = Paths.get(storagePath, "tickets",
+                String.valueOf(now.getYear()),
+                String.format("%02d", now.getMonthValue()));
+        Files.createDirectories(dir);
+        String filename = "ticket_" + ticketId + "_" + indice + "_" + UUID.randomUUID() + extensionFromMime(file.getContentType());
+        Path target = dir.resolve(filename);
+        file.transferTo(target);
+        log.info("Foto de ticket guardada: {}", target);
+        return target.toString();
+    }
+
+    private String extensionFromMime(String mimeType) {
+        if (mimeType == null) return ".jpg";
+        return switch (mimeType) {
+            case "image/png" -> ".png";
+            case "image/webp" -> ".webp";
+            default -> ".jpg";
+        };
+    }
+
+    /**
      * Borra el PDF de una factura del disco (NEW-09). Es best-effort: si el path
      * no existe o no se puede borrar, se loggea como warn pero NO se lanza
      * excepción — la fuente de verdad es la BD.

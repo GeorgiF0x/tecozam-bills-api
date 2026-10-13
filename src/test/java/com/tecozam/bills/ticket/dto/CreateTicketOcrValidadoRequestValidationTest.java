@@ -41,7 +41,7 @@ class CreateTicketOcrValidadoRequestValidationTest {
                 CategoriaRecurso.VEHICULO,
                 1L,
                 1L,
-                null, null, null, null, null, null, null, null, null, null
+                null, null
         );
     }
 

@@ -167,10 +167,63 @@ evaluara partirla). Estrategia de cadena: `ask-on-risk` (por defecto).
       `fotoIndice` (test fallo como se esperaba), GREEN tras restaurarlo.
       Suite completa `./mvnw.cmd test`: **261/261, BUILD SUCCESS** (258
       previos + 3 nuevos), 0 regresiones.
-- [ ] T3. Backend: `/tickets/ocr-preview` y `/tickets/ocr-validado` aceptan
-      `MultipartFile[]` en vez de un solo `imagen`; se persisten las N fotos
-      (storage); `TicketService.createOcrValidado` crea 1 `Ticket` con sus N
-      `TicketOperacion`. Tests de integracion.
+- [x] T3. Conectado `LlmTicketParser` (T2) a los endpoints reales. Decisiones:
+      - **Endpoints**: `/tickets/ocr-preview` y `/tickets/ocr-validado` pasan
+        de `@RequestParam("imagen") MultipartFile` a
+        `@RequestParam("imagenes") MultipartFile[]`. Preview devuelve ahora
+        `{"lineas": [...]}` (lista editable) en vez de campos planos.
+      - **`CreateTicketOcrValidadoRequest`**: los campos OCR planos
+        (estacion/fechaHora/importeTotal/litros/precioLitro/producto/
+        numRecibo/ocrRaw) se sustituyen por `List<LineaOcrDTO> lineas`
+        (opcional: si viene vacia/null, fallback legacy = OCR ahora mismo
+        con las imagenes, igual que antes).
+      - **`TicketService.createOcrValidado`** cambia de firma a
+        `(username, request, List<LineaOcrDTO> lineas, List<MultipartFile> fotos)`.
+        Crea 1 `Ticket` con N `TicketLinea` reales (ya no construye solo
+        campos planos). **Los campos escalares de `Ticket` SE MANTIENEN,
+        pero ahora como agregado calculado a partir de las lineas**
+        (importeTotal/litros = SUMA de las lineas; estacion/producto/
+        numRecibo = de la primera linea no vacia; fechaHora = la mas
+        antigua) — decision explicita para no romper `cotejarPendientes`/
+        `detectarDiscrepancia`/`verificarNoEsDuplicado` (T4/T6, fuera de
+        alcance aqui) que siguen leyendo esos campos escalares de `Ticket`,
+        ni los listados de PWA/web admin (T7/T8, tampoco tocados aun).
+      - **Fotos**: ahora SI se persisten (antes se descartaban). Nuevo
+        `FileStorageService.saveTicketFoto(...)` (mismo patron que
+        `saveFactura`). Cada `TicketLinea` guarda su `foto_url` (columna
+        nueva, migracion `V29__ticket_lineas_foto_url.sql`, aplicada a mano
+        en el Docker de dev — Flyway desactivado ahi, igual que V28).
+        Mapeo foto->lineas por `fotoIndice`; si varias lineas vienen de la
+        misma foto, comparten la misma URL.
+      - **`verificarNoEsDuplicado`**: NO se rediseño (es T4), pero ahora se
+        llama con los agregados (fechaHora mas antigua, importeTotal
+        sumado) en vez de con los valores de una unica foto.
+      - **Endpoint legacy `/ocr`**: **eliminado por completo** (con
+        `performOcr`, `OcrExtraction` y los helpers `escapeJson`/
+        `getField*`/`getNumField`) — confirmado que el PWA no lo llama
+        (solo usa `/ocr-preview` y `/ocr-validado`), y duplicaba
+        exactamente la logica que sustituye `LlmTicketParser`.
+      **Bug real encontrado y arreglado de paso** (no estaba en el alcance
+      de T3, pero lo disparo esta tarea al ser la primera vez que un
+      `Ticket` real tiene `lineas` cargadas en memoria a la vez que se
+      imprime/compara): `TicketLinea` y `Ticket` usan `@Data` (Lombok)
+      y son bidireccionales (`Ticket.lineas` <-> `TicketLinea.ticket`) sin
+      excluir el lado de vuelta de `toString`/`equals`/`hashCode` ->
+      `StackOverflowError` real en cuanto se intentaba imprimir/comparar
+      cualquiera de las dos con la relacion poblada (confirmado con un
+      RED-check deliberado: deshabilitar el guardado de fotos hizo fallar
+      el test, pero con un `StackOverflowError` en vez de un fallo de
+      aserción limpio, por este motivo). Arreglado con
+      `@ToString.Exclude`/`@EqualsAndHashCode.Exclude` en
+      `TicketLinea.ticket`.
+      TDD real: nuevo `TicketServiceCreateOcrValidadoIT` (end-to-end con
+      MSSQL real + `FileStorageService` real escribiendo a disco,
+      limpiado en `@AfterEach`) — RED confirmado (deshabilitando el
+      guardado de fotos, fallo real por el bug de arriba), GREEN tras el
+      fix. 3 tests de `TicketServiceTest` adaptados a la nueva firma
+      (mismo comportamiento, ahora con 1 linea en vez de campos planos).
+      Suite completa `./mvnw.cmd test`: **262/262, BUILD SUCCESS**, 0
+      regresiones (261 previos + 1 IT nuevo).
 - [ ] T4. Backend: rediseñar `verificarNoEsDuplicado` para distinguir fotos
       de un ticket en composicion vs duplicado accidental real. Tests.
 - [ ] T5. Backend: validacion de plausibilidad entre operaciones del mismo

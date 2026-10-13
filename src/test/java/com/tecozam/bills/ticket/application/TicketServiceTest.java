@@ -6,6 +6,7 @@ import com.tecozam.bills.auth.infrastructure.persistence.UsuarioRepository;
 import com.tecozam.bills.factura.domain.Operacion;
 import com.tecozam.bills.factura.infrastructure.persistence.OperacionRepository;
 import com.tecozam.bills.proveedor.infrastructure.persistence.ProveedorRepository;
+import com.tecozam.bills.shared.infrastructure.storage.FileStorageService;
 import com.tecozam.bills.tarjeta.domain.Tarjeta;
 import com.tecozam.bills.tarjeta.domain.TarjetaAsignacion;
 import com.tecozam.bills.tarjeta.infrastructure.persistence.TarjetaAsignacionRepository;
@@ -13,6 +14,7 @@ import com.tecozam.bills.tarjeta.infrastructure.persistence.TarjetaRepository;
 import com.tecozam.bills.ticket.domain.Ticket;
 import com.tecozam.bills.ticket.dto.CreateTicketManualRequest;
 import com.tecozam.bills.ticket.dto.CreateTicketOcrValidadoRequest;
+import com.tecozam.bills.ticket.dto.LineaOcrDTO;
 import com.tecozam.bills.ticket.infrastructure.persistence.TicketRepository;
 import com.tecozam.bills.trabajador.domain.Trabajador;
 import com.tecozam.bills.trabajador.infrastructure.persistence.TrabajadorRepository;
@@ -53,6 +55,7 @@ class TicketServiceTest {
     @Mock VehiculoRepository vehiculoRepository;
     @Mock UsuarioRepository usuarioRepository;
     @Mock UsuarioCampoRepository usuarioCampoRepository;
+    @Mock FileStorageService fileStorageService;
 
     TicketService service;
 
@@ -64,7 +67,7 @@ class TicketServiceTest {
     void setUp() {
         service = new TicketService(ticketRepository, operacionRepository, proveedorRepository,
                 trabajadorRepository, tarjetaRepository, tarjetaAsignacionRepository, vehiculoRepository,
-                usuarioRepository, usuarioCampoRepository);
+                usuarioRepository, usuarioCampoRepository, fileStorageService);
 
         trabajador = new Trabajador();
         trabajador.setId(2L);
@@ -93,15 +96,11 @@ class TicketServiceTest {
 
         CreateTicketOcrValidadoRequest request = new CreateTicketOcrValidadoRequest(
                 200L, null, CategoriaRecurso.VEHICULO, 1L, 5L, null,
-                "P.A. MARCO CANAVESES SOALHÕES", LocalDateTime.of(2026, 6, 5, 16, 23),
-                new BigDecimal("52.30"), new BigDecimal("28.56"), new BigDecimal("1.961"),
-                "GASOLEO", null, null, null);
+                List.of(new LineaOcrDTO(0, "P.A. MARCO CANAVESES SOALHÕES",
+                        LocalDateTime.of(2026, 6, 5, 16, 23), "GASOLEO", null, null, null,
+                        new BigDecimal("28.56"), new BigDecimal("1.961"), new BigDecimal("52.30"))));
 
-        service.createOcrValidado(
-                "campo1", request,
-                "P.A. MARCO CANAVESES SOALHÕES", LocalDateTime.of(2026, 6, 5, 16, 23),
-                new BigDecimal("52.30"), new BigDecimal("28.56"), new BigDecimal("1.961"),
-                "GASOLEO", null);
+        service.createOcrValidado("campo1", request, request.lineas(), List.of());
 
         ArgumentCaptor<Ticket> captor = ArgumentCaptor.forClass(Ticket.class);
         verify(ticketRepository, org.mockito.Mockito.atLeastOnce()).save(captor.capture());
@@ -132,15 +131,11 @@ class TicketServiceTest {
 
         CreateTicketOcrValidadoRequest request = new CreateTicketOcrValidadoRequest(
                 200L, null, CategoriaRecurso.VEHICULO, 1L, 5L, null,
-                "P.A. MARCO CANAVESES SOALHÕES", LocalDateTime.of(2026, 6, 5, 16, 23),
-                new BigDecimal("52.30"), new BigDecimal("28.56"), new BigDecimal("1.961"),
-                "GASOLEO", null, null, null);
+                List.of(new LineaOcrDTO(0, "P.A. MARCO CANAVESES SOALHÕES",
+                        LocalDateTime.of(2026, 6, 5, 16, 23), "GASOLEO", null, null, null,
+                        new BigDecimal("28.56"), new BigDecimal("1.961"), new BigDecimal("52.30"))));
 
-        var resultado = service.createOcrValidado(
-                "campo1", request,
-                "P.A. MARCO CANAVESES SOALHÕES", LocalDateTime.of(2026, 6, 5, 16, 23),
-                new BigDecimal("52.30"), new BigDecimal("28.56"), new BigDecimal("1.961"),
-                "GASOLEO", null);
+        var resultado = service.createOcrValidado("campo1", request, request.lineas(), List.of());
 
         assertThat(resultado.estadoCotejo()).isEqualTo("INCIDENCIA");
         assertThat(resultado.tipoIncidencia()).isEqualTo("PRECIO_NO_CONCUERDA");
@@ -375,15 +370,11 @@ class TicketServiceTest {
 
         CreateTicketOcrValidadoRequest request = new CreateTicketOcrValidadoRequest(
                 200L, null, CategoriaRecurso.VEHICULO, 1L, 5L, null,
-                "P.A. MARCO CANAVESES SOALHÕES", LocalDateTime.of(2026, 6, 5, 16, 23),
-                new BigDecimal("52.30"), new BigDecimal("28.56"), new BigDecimal("1.961"),
-                "GASOLEO", null, null, null);
+                List.of(new LineaOcrDTO(0, "P.A. MARCO CANAVESES SOALHÕES",
+                        LocalDateTime.of(2026, 6, 5, 16, 23), "GASOLEO", null, null, null,
+                        new BigDecimal("28.56"), new BigDecimal("1.961"), new BigDecimal("52.30"))));
 
-        assertThatThrownBy(() -> service.createOcrValidado(
-                "campo1", request,
-                "P.A. MARCO CANAVESES SOALHÕES", LocalDateTime.of(2026, 6, 5, 16, 23),
-                new BigDecimal("52.30"), new BigDecimal("28.56"), new BigDecimal("1.961"),
-                "GASOLEO", null))
+        assertThatThrownBy(() -> service.createOcrValidado("campo1", request, request.lineas(), List.of()))
                 .isInstanceOf(com.tecozam.bills.shared.infrastructure.exception.BusinessException.class);
 
         verify(ticketRepository, never()).save(any(Ticket.class));

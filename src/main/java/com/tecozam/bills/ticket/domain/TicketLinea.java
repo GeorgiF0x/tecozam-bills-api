@@ -12,7 +12,9 @@ import jakarta.persistence.Table;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
+import lombok.EqualsAndHashCode;
 import lombok.NoArgsConstructor;
+import lombok.ToString;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -41,6 +43,16 @@ public class TicketLinea {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    /**
+     * Excluida de toString/equals/hashCode: Ticket.lineas apunta de vuelta a
+     * cada TicketLinea, y ambas clases usan @Data (toString/equals/hashCode
+     * generados) — sin excluir este lado se entra en recursion infinita
+     * (StackOverflowError real, visto en pruebas con T3) en cuanto Ticket
+     * tiene lineas cargadas Y se intenta imprimir/comparar cualquiera de
+     * las dos.
+     */
+    @ToString.Exclude
+    @EqualsAndHashCode.Exclude
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "ticket_id", nullable = false)
     private Ticket ticket;
@@ -79,4 +91,8 @@ public class TicketLinea {
      */
     @Column(name = "foto_indice")
     private Integer fotoIndice;
+
+    /** Ruta/URL de la foto de origen (T3: ya se persiste, antes se descartaba). */
+    @Column(name = "foto_url", length = 500)
+    private String fotoUrl;
 }

@@ -9,14 +9,17 @@ import com.tecozam.bills.proveedor.domain.Proveedor;
 import com.tecozam.bills.proveedor.infrastructure.persistence.ProveedorRepository;
 import com.tecozam.bills.shared.infrastructure.exception.BusinessException;
 import com.tecozam.bills.shared.infrastructure.exception.ResourceNotFoundException;
+import com.tecozam.bills.shared.infrastructure.storage.FileStorageService;
 import com.tecozam.bills.tarjeta.domain.Tarjeta;
 import com.tecozam.bills.tarjeta.domain.TarjetaAsignacion;
 import com.tecozam.bills.tarjeta.infrastructure.persistence.TarjetaAsignacionRepository;
 import com.tecozam.bills.tarjeta.infrastructure.persistence.TarjetaRepository;
 import com.tecozam.bills.ticket.domain.Ticket;
+import com.tecozam.bills.ticket.domain.TicketLinea;
 import com.tecozam.bills.ticket.dto.CotejoResultDTO;
 import com.tecozam.bills.ticket.dto.CreateTicketManualRequest;
 import com.tecozam.bills.ticket.dto.CreateTicketOcrValidadoRequest;
+import com.tecozam.bills.ticket.dto.LineaOcrDTO;
 import com.tecozam.bills.ticket.dto.TicketDTO;
 import com.tecozam.bills.ticket.infrastructure.persistence.TicketRepository;
 import com.tecozam.bills.trabajador.domain.Trabajador;
@@ -28,6 +31,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -58,6 +62,7 @@ public class TicketService {
     private final VehiculoRepository vehiculoRepository;
     private final UsuarioRepository usuarioRepository;
     private final com.tecozam.bills.auth.infrastructure.persistence.UsuarioCampoRepository usuarioCampoRepository;
+    private final FileStorageService fileStorageService;
 
     @Transactional(readOnly = true)
     public List<TicketDTO> findAll(String estadoCotejo) {
@@ -559,13 +564,12 @@ public class TicketService {
     public TicketDTO createOcrValidado(
             String username,
             CreateTicketOcrValidadoRequest request,
-            String estacion,
-            LocalDateTime fechaHora,
-            BigDecimal importeTotal,
-            BigDecimal litros,
-            BigDecimal precioLitro,
-            String producto,
-            String numRecibo) {
+            List<LineaOcrDTO> lineas,
+            List<MultipartFile> fotos) {
+
+        if (lineas == null || lineas.isEmpty()) {
+            throw new BusinessException("Se necesita al menos una línea de ticket", "lineas");
+        }
 
         // Resolve trabajador del usuario actual (busca primero en usuarios_campo, luego legacy)
         Trabajador trabajador = usuarioCampoRepository.findByUsername(username)
@@ -600,6 +604,43 @@ public class TicketService {
             }
         }
 
+        // ── Agregados a nivel de Ticket, calculados a partir de las N lineas:
+        // un ticket compuesto por varias fotos sigue siendo UNA compra para el
+        // resto de la app (cotejo, listados), que todavia lee los campos
+        // escalares de Ticket (T6/T8 son quienes migran eso a leer `lineas`
+        // directamente). importeTotal/litros se SUMAN (son cantidades); el
+        // resto se toma de la primera linea (deberian repetirse entre fotos
+        // del mismo ticket).
+        String estacion = lineas.get(0).estacion();
+        LocalDateTime fechaHora = lineas.stream()
+                .map(LineaOcrDTO::fechaHora)
+                .filter(java.util.Objects::nonNull)
+                .min(LocalDateTime::compareTo)
+                .orElseGet(LocalDateTime::now);
+        BigDecimal importeTotal = lineas.stream()
+                .map(LineaOcrDTO::importeTotal)
+                .filter(java.util.Objects::nonNull)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal litros = lineas.stream()
+                .map(LineaOcrDTO::litros)
+                .filter(java.util.Objects::nonNull)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        if (litros.compareTo(BigDecimal.ZERO) == 0 && lineas.stream().allMatch(l -> l.litros() == null)) {
+            litros = null;
+        }
+        BigDecimal precioLitro = lineas.stream()
+                .map(LineaOcrDTO::precioLitro)
+                .filter(java.util.Objects::nonNull)
+                .findFirst().orElse(null);
+        String producto = lineas.stream()
+                .map(LineaOcrDTO::producto)
+                .filter(p -> p != null && !p.isBlank())
+                .findFirst().orElse(null);
+        String numRecibo = lineas.stream()
+                .map(LineaOcrDTO::numRecibo)
+                .filter(r -> r != null && !r.isBlank())
+                .findFirst().orElse(null);
+
         // Build and save ticket
         String observacionesTicket = "OCR validado con PIN"
                 + (numRecibo != null && !numRecibo.isBlank() ? " — Recibo: " + numRecibo : "");
@@ -617,7 +658,7 @@ public class TicketService {
                 .trabajador(trabajador)
                 .tarjeta(tarjeta)
                 .vehiculo(vehiculo)
-                .estacion(estacion.isBlank() ? "OCR" : estacion)
+                .estacion(estacion == null || estacion.isBlank() ? "OCR" : estacion)
                 .fechaHora(fechaHora)
                 .importeTotal(importeTotal)
                 .litros(litros)
@@ -628,9 +669,28 @@ public class TicketService {
                 .numTarjeta4ultimos(ultimos4)
                 .build();
 
+        for (LineaOcrDTO l : lineas) {
+            TicketLinea linea = TicketLinea.builder()
+                    .ticket(ticket)
+                    .estacion(l.estacion())
+                    .fechaHora(l.fechaHora())
+                    .producto(l.producto())
+                    .numRecibo(l.numRecibo())
+                    .matricula(l.matricula())
+                    .kms(l.kms())
+                    .litros(l.litros())
+                    .precioLitro(l.precioLitro())
+                    .importeTotal(l.importeTotal() != null ? l.importeTotal() : BigDecimal.ZERO)
+                    .fotoIndice(l.fotoIndice())
+                    .build();
+            ticket.getLineas().add(linea);
+        }
+
         ticket = ticketRepository.save(ticket);
-        log.info("[OCR-VALIDADO] Ticket creado: id={} tarjeta={} trabajador={}", ticket.getId(),
-                request.tarjetaId(), trabajador.getId());
+        log.info("[OCR-VALIDADO] Ticket creado: id={} tarjeta={} trabajador={} lineas={}", ticket.getId(),
+                request.tarjetaId(), trabajador.getId(), ticket.getLineas().size());
+
+        guardarFotos(ticket, fotos);
 
         // Attempt auto-cotejo
         try {
@@ -651,6 +711,38 @@ public class TicketService {
         }
 
         return toDTO(ticket);
+    }
+
+    /**
+     * Persiste cada foto subida (antes se descartaban tras el OCR) y enlaza
+     * su ruta a TODAS las lineas que vinieron de esa foto (`fotoIndice`
+     * coincide con la posicion dentro de {@code fotos}). Best-effort: un
+     * fallo al guardar una foto concreta se loggea pero no aborta la
+     * creacion del ticket (ya se guardo, y la foto no es la fuente de verdad
+     * de los datos — ya estan en TicketLinea).
+     */
+    private void guardarFotos(Ticket ticket, List<MultipartFile> fotos) {
+        if (fotos == null || fotos.isEmpty()) {
+            return;
+        }
+        for (int i = 0; i < fotos.size(); i++) {
+            int indice = i;
+            boolean usada = ticket.getLineas().stream()
+                    .anyMatch(l -> l.getFotoIndice() != null && l.getFotoIndice() == indice);
+            if (!usada) {
+                continue;
+            }
+            try {
+                String url = fileStorageService.saveTicketFoto(fotos.get(indice), ticket.getId(), indice);
+                ticket.getLineas().stream()
+                        .filter(l -> l.getFotoIndice() != null && l.getFotoIndice() == indice)
+                        .forEach(l -> l.setFotoUrl(url));
+            } catch (Exception e) {
+                log.warn("[OCR-VALIDADO] No se pudo guardar la foto {} del ticket {}: {}",
+                        indice, ticket.getId(), e.getMessage());
+            }
+        }
+        ticketRepository.save(ticket);
     }
 
     private TicketDTO toDTO(Ticket t) {
