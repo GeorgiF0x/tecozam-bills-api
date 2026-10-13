@@ -224,8 +224,34 @@ evaluara partirla). Estrategia de cadena: `ask-on-risk` (por defecto).
       (mismo comportamiento, ahora con 1 linea en vez de campos planos).
       Suite completa `./mvnw.cmd test`: **262/262, BUILD SUCCESS**, 0
       regresiones (261 previos + 1 IT nuevo).
-- [ ] T4. Backend: rediseñar `verificarNoEsDuplicado` para distinguir fotos
-      de un ticket en composicion vs duplicado accidental real. Tests.
+- [x] T4. **Conclusión real (confirmada con tests, no supuesta)**: no hizo
+      falta rediseñar nada. El problema original que motivó T4 (fotos de un
+      mismo ticket disparandose duplicado entre si) ya quedó resuelto por
+      el diseño de T1-T3: antes, N fotos = N llamadas a
+      `createOcrValidado` (una por foto), cada una llamando a
+      `verificarNoEsDuplicado` por separado. Ahora las N fotos se validan
+      JUNTAS en UNA sola llamada con importe/fecha agregados — ya no hay
+      forma de que una foto del ticket se confunda con otra del mismo
+      ticket, porque no hay ya una llamada por foto.
+      Verificado con 2 tests reales contra el Docker MSSQL de dev (no
+      asumido): (1) el test ya existente de T3
+      (`crea1TicketConVariasLineasYFotosPersistidas`, 2 fotos en 1 llamada)
+      ya probaba implicitamente que no salta duplicado — se confirma aqui
+      explicitamente que sigue en verde; (2) nuevo test
+      `segundoEnvioDelMismoTicketEsRechazadoComoDuplicado`: crea un ticket
+      de 2 fotos, luego reenvia las MISMAS lineas (reenvio accidental del
+      ticket completo) y confirma que la 2a llamada SI lanza
+      `BusinessException` de duplicado — el comportamiento que importa de
+      verdad (bloquear el reenvio real) sigue intacto.
+      Unico cambio real: Javadoc de `verificarNoEsDuplicado` actualizado
+      para describir la arquitectura actual (1 llamada agregada por
+      ticket) en vez del comentario viejo que describia el mundo de antes
+      de T1-T3 (N llamadas, una por foto).
+      `./mvnw.cmd test`: **263/263, BUILD SUCCESS** (262 previos + 1 test
+      nuevo), 0 regresiones. (Nota de entorno, no de código: el contenedor
+      `tecozam-mssql-dev` estaba parado al empezar la sesión de hoy —
+      arrancado con `docker start tecozam-mssql-dev` antes de poder correr
+      los tests.)
 - [ ] T5. Backend: validacion de plausibilidad entre operaciones del mismo
       ticket (patron `FacturaImportValidator`), marca `requiereRevisionManual`
       si no cuadran. Tests.

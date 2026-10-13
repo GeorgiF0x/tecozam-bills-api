@@ -367,11 +367,20 @@ public class TicketService {
     }
 
     /**
-     * Evita crear un ticket duplicado de una compra ya subida antes. Pensado
-     * para el caso real de que un trabajador fotografia varios recibos de la
-     * MISMA compra (recibo cliente + comprobante fiscal + copia comercio) y
-     * cada foto se sube como ticket aparte: sin este control, los 2-3 tickets
-     * acaban cotejados contra la misma operacion de la factura.
+     * Evita crear un ticket duplicado de una compra ya subida antes: un
+     * reenvio accidental del MISMO ticket (p.ej. doble pulsacion de
+     * "Enviar", o re-subir el mismo recibo otro dia por error).
+     *
+     * Desde que un ticket puede componerse de varias fotos (ver
+     * odd/tasks/ticket-multi-foto.md, T1-T3), {@link #createOcrValidado}
+     * llama a este metodo UNA sola vez por ticket, con el importe y la
+     * fecha ya AGREGADOS de todas sus lineas — no una vez por foto. Esto ya
+     * evita por diseno el problema que motivo originalmente este check
+     * (varias fotos de UN MISMO ticket disparandose duplicado entre si): al
+     * no haber ya una llamada por foto, no hay forma de que eso ocurra.
+     * Verificado con test real en {@code TicketServiceCreateOcrValidadoIT}
+     * (T4): un ticket de 2 fotos se crea sin excepcion, y un reenvio
+     * completo del mismo ticket si se rechaza.
      *
      * Solo se activa si se conoce la tarjeta (sin tarjeta no hay señal fuerte
      * para distinguir un duplicado real de dos compras distintas parecidas).

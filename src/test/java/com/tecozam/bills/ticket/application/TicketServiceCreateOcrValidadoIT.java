@@ -4,6 +4,7 @@ import com.tecozam.bills.auth.domain.UsuarioCampo;
 import com.tecozam.bills.auth.infrastructure.persistence.UsuarioCampoRepository;
 import com.tecozam.bills.proveedor.domain.Proveedor;
 import com.tecozam.bills.proveedor.infrastructure.persistence.ProveedorRepository;
+import com.tecozam.bills.shared.infrastructure.exception.BusinessException;
 import com.tecozam.bills.tarjeta.domain.Tarjeta;
 import com.tecozam.bills.tarjeta.domain.TarjetaAsignacion;
 import com.tecozam.bills.tarjeta.infrastructure.persistence.TarjetaAsignacionRepository;
@@ -37,6 +38,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * Prueba end-to-end de T3 (odd/tasks/ticket-multi-foto.md): N fotos -> 1
@@ -139,5 +141,84 @@ class TicketServiceCreateOcrValidadoIT {
                     .as("La foto de la linea con indice %d debe existir en disco", linea.getFotoIndice())
                     .isTrue();
         }
+    }
+
+    /**
+     * T4 (odd/tasks/ticket-multi-foto.md): confirma que el rediseño de T1-T3
+     * no rompió el anti-duplicado real. Antes de esta feature, N fotos de UN
+     * ticket generaban N llamadas a createOcrValidado (una por foto), cada
+     * una disparando verificarNoEsDuplicado por separado — con el riesgo de
+     * que la 2a foto del MISMO ticket se confundiera con un duplicado. Ahora
+     * las N fotos se validan JUNTAS en una sola llamada con un importeTotal
+     * agregado, así que ya no hay forma de que eso ocurra (ver el otro test
+     * de esta clase, que ya crea un ticket de 2 fotos sin que salte la
+     * excepción). Lo que SÍ debe seguir bloqueado es el reenvío accidental
+     * del ticket COMPLETO ya creado: dos llamadas a createOcrValidado con
+     * los mismos datos agregados (misma tarjeta, misma fecha, mismo
+     * importe).
+     */
+    @Test
+    @DisplayName("createOcrValidado rechaza un segundo envío con los mismos datos agregados (reenvío accidental del mismo ticket)")
+    void segundoEnvioDelMismoTicketEsRechazadoComoDuplicado() throws Exception {
+        Proveedor proveedor = proveedorRepository.findByCodigo("REPSOL")
+                .orElseGet(() -> proveedorRepository.save(Proveedor.builder()
+                        .codigo("REPSOL").nombre("REPSOL").activo(true).build()));
+
+        Tarjeta tarjeta = tarjetaRepository.save(Tarjeta.builder()
+                .numeroTarjeta("9998887776665552")
+                .alias("TARJETA TEST DUPLICADO")
+                .proveedor(proveedor)
+                .build());
+
+        Trabajador trabajador = trabajadorRepository.save(Trabajador.builder()
+                .nombre("Test").apellidos("Duplicado")
+                .email("test-duplicado-" + System.nanoTime() + "@tecozam.test")
+                .build());
+
+        usuarioCampoRepository.save(UsuarioCampo.builder()
+                .username("test-ocr-duplicado")
+                .password("irrelevante")
+                .trabajador(trabajador)
+                .build());
+
+        tarjetaAsignacionRepository.save(TarjetaAsignacion.builder()
+                .tarjeta(tarjeta)
+                .trabajador(trabajador)
+                .fechaDesde(LocalDate.now().minusDays(1))
+                .build());
+
+        Vehiculo vehiculo = vehiculoRepository.save(Vehiculo.builder()
+                .matricula("1234TDU")
+                .tipo("TURISMO")
+                .categoria(CategoriaRecurso.VEHICULO)
+                .build());
+
+        LocalDateTime fecha = LocalDateTime.now().minusHours(3);
+        List<LineaOcrDTO> lineas = List.of(
+                new LineaOcrDTO(0, "ESTACION TEST DUPLICADO", fecha, "GASOLEO", "REC-D1", null, null,
+                        new BigDecimal("20.00"), new BigDecimal("1.750"), new BigDecimal("35.00")),
+                new LineaOcrDTO(1, "ESTACION TEST DUPLICADO", fecha.plusMinutes(2), "GASOLEO", null, null, null,
+                        new BigDecimal("10.00"), new BigDecimal("1.750"), new BigDecimal("17.50")));
+
+        CreateTicketOcrValidadoRequest request = new CreateTicketOcrValidadoRequest(
+                tarjeta.getId(), null, CategoriaRecurso.VEHICULO, vehiculo.getId(), 1L, 12345, null);
+
+        // Primer envío: debe crearse sin problema (igual que el otro test).
+        List<MultipartFile> fotos1 = List.of(
+                new MockMultipartFile("imagenes", "foto0.jpg", "image/jpeg", "foto-dup-0".getBytes()),
+                new MockMultipartFile("imagenes", "foto1.jpg", "image/jpeg", "foto-dup-1".getBytes()));
+        TicketDTO primero = ticketService.createOcrValidado("test-ocr-duplicado", request, lineas, fotos1);
+        var lineasGuardadas = ticketLineaRepository.findByTicketId(primero.id());
+        lineasGuardadas.forEach(l -> ficherosEscritos.add(l.getFotoUrl()));
+
+        // Segundo envío con los MISMOS datos agregados (misma tarjeta, fecha
+        // más temprana e importe total): debe rechazarse como duplicado.
+        List<MultipartFile> fotos2 = List.of(
+                new MockMultipartFile("imagenes", "foto0.jpg", "image/jpeg", "foto-dup-0-reenvio".getBytes()),
+                new MockMultipartFile("imagenes", "foto1.jpg", "image/jpeg", "foto-dup-1-reenvio".getBytes()));
+        assertThatThrownBy(() ->
+                ticketService.createOcrValidado("test-ocr-duplicado", request, lineas, fotos2))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("Ya existe un ticket con la misma tarjeta, fecha e importe");
     }
 }
