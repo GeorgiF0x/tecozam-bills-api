@@ -297,11 +297,55 @@ evaluara partirla). Estrategia de cadena: `ask-on-risk` (por defecto).
       una cuestion de visualizacion, no de logica de cotejo.
       `./mvnw.cmd test`: **273/273, BUILD SUCCESS** (271 previos + 2
       nuevos), 0 regresiones.
-- [ ] T7. PWA: `app/escanear/page.tsx` — estado `imageBlob` pasa a array de
-      blobs; UI para añadir mas fotos antes de avanzar a `ocr-edit`; envio de
-      las N imagenes a los endpoints actualizados; `EditableOcrData` pasa a
-      lista editable de operaciones. Verificacion: `tsc --noEmit` + prueba
-      manual en navegador.
+- [x] T7. **PWA** (`PWA/tecozam-fleet-pwa/app/escanear/page.tsx`): estado
+      `imageBlob: Blob | null` pasa a `images: CapturedImage[]`
+      (`{blob, preview}[]`). Nuevo `ImagePreviewStep` muestra una grid de
+      miniaturas con boton "Quitar foto N" por miniatura y "Añadir foto"
+      (vuelve a `camera`, que sigue capturando 1 foto por vez y el padre
+      la anade al array — no hizo falta tocar `CameraStep`). `OcrAndEditStep`
+      manda TODAS las fotos en `/ocr-preview`/`ocr-validado` bajo el mismo
+      nombre de parametro `imagenes` (confirmado leyendo
+      `TicketController.java` real, no asumido: `MultipartFile[] imagenes`).
+      `OcrPreviewData`/`EditableOcrData` (un solo conjunto de campos) pasan a
+      `OcrPreviewLinea[]`/`EditableLinea[]` (uno por `LineaOcrDTO`), con un
+      nuevo `LineaOcrCard` por linea editable (mismos campos que antes, sin
+      `nifEstacion`/`direccion`/`ocrRaw` — ya no existen en el DTO real).
+      `SuccessView` muestra resumen agregado (nº lineas + importe sumado) en
+      vez del detalle de una sola linea. `lib/api-client.ts` NO se toco —
+      `upload()` ya soporta `FormData` con el mismo campo repetido N veces.
+
+      Verificacion REAL, no solo `tsc` (que tambien sale limpio): se montaron
+      backend (perfil `dev`, con `MSSQL_PASSWORD`/`JWT_SECRET` validos — el
+      default de `JWT_SECRET` en `application.yml` es demasiado corto para
+      HMAC-SHA, hallazgo aparte sin arreglar, fuera de alcance aqui) y la PWA
+      (`NEXT_PUBLIC_API_URL=http://localhost:8080`) en local. Se sembro una
+      ficha de prueba real (trabajador/usuario_campo/vehiculo/centro/
+      tarjeta+asignacion, via un test JUnit desechable NO transaccional para
+      reusar los beans de Spring en vez de SQL a mano con riesgo de error —
+      borrado despues) y se hizo login real en la PWA con Playwright. Se
+      subieron 2 fotos reales (JPEG) via el selector de galeria (sin camara
+      en el navegador headless) — confirmado "2 fotos añadidas" con sus 2
+      miniaturas. Se completo Asignacion (vehiculo/centro/tarjeta reales) y
+      se llego a OCR: `/ocr-preview` respondio 500 real
+      (`Falta OPENAI_API_KEY para el OCR de tickets por IA` — no hay clave
+      configurada en este entorno de prueba, limitacion del entorno, no un
+      bug), y la UI mostro correctamente el estado de error con
+      "Reintentar"/"Volver". Para verificar el resto del flujo (edicion
+      multi-linea + envio real) sin necesitar una API key de pago, se
+      interceptó UNICAMENTE la respuesta de `/ocr-preview` (Playwright
+      `page.route`) devolviendo 2 lineas de ejemplo — el envio a
+      `/ocr-validado` NO se interceptó, fue 100% real contra el backend:
+      confirmado que las 2 lineas se renderizaron editables
+      ("Línea 1 · foto 1", "Línea 2 · foto 2"), el envio creo un ticket real
+      (`#20039`, pantalla de exito con "Líneas: 2", "Importe total: 60,00 €"
+      = 45+15 agregado correcto), y verificado por SQL directo contra
+      `tecozam-mssql-dev` que el `Ticket` 20039 tiene sus 2 `TicketLinea`
+      reales con `foto_url` distinta y persistida en disco para cada una
+      (`ticket_20039_0_*.jpg`, `ticket_20039_1_*.jpg`). Todo el entorno y
+      datos de prueba (BD, ficheros, test JUnit desechable, servidores)
+      se limpiaron despues — no queda nada de esto en ningun repo.
+      Commit `PWA/tecozam-fleet-pwa` (repo independiente, no listado en los
+      commits de `api` de arriba): ver mensaje de commit en ese repo.
 - [ ] T8. Web admin: pantalla de tickets (`tickets/page.tsx`) adaptada para
       mostrar/cotejar N operaciones por ticket en vez de 1. Verificacion:
       `tsc --noEmit` + prueba manual.
