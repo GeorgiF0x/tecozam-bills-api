@@ -80,7 +80,7 @@ public class Ticket extends BaseEntity {
     @Column(name = "concepto")
     private String concepto;
 
-    @Column(name = "observaciones")
+    @Column(name = "observaciones", columnDefinition = "NVARCHAR(MAX)")
     private String observaciones;
 
     @Column(name = "fecha_hora")
