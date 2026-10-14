@@ -128,10 +128,101 @@ No hay importer generico reusable — cada uno se construye ad-hoc siguiendo el 
       generado con un test desechable, ya borrado) para poder loguearse —
       si alguien mas dependia de la contraseña anterior de ese usuario en
       este entorno de dev compartido, ya no es la misma.
-- [ ] T2. Backend+web: import Excel para **Tarjetas (alta)**. Columna de codigo de proveedor obligatoria, resuelta contra `ProveedorRepository` (igual que ya hace `ListadoTarjetasImportService.resolverProveedor`), fila con proveedor inexistente → error legible, no crea tarjeta huerfana.
-- [ ] T3. Backend+web: import Excel para **VIATs**.
-- [ ] T4. Backend+web: import Excel para **Trabajadores** (separar opcionalmente oficina/campo via columna, si la columna no esta, `origen=IMPORTACION` por defecto).
-- [ ] T5. Backend+web: import Excel para **Usuarios** (oficina y campo en el mismo import, o dos pestañas/plantillas separadas — decidir al implementar segun cual formato de columnas sea mas simple de explicar al cliente).
+- [x] T2. Import Excel para **Tarjetas (alta)** ("Alta masiva", distinto del boton
+      "Importar Excel" ya existente de listado de movimientos). Columnas
+      `NUMERO TARJETA`/`ALIAS`/`PROVEEDOR`; resuelve proveedor con los
+      mismos alias SOLRED/CEPSA que `ListadoTarjetasImportService`; fila con
+      proveedor inexistente queda en avisos, no crea tarjeta huerfana;
+      numero duplicado cuenta como existente.
+      Lanzado en paralelo con T3-T5 (4 forks a la vez); este fork murio a
+      medio terminar por limite de sesion (no por fallo de codigo) justo
+      antes de typecheck+commit. El orquestador completo el cierre:
+      confirmo backend+frontend ya correctos (compilaban, sus tests
+      pasaban dentro de la suite completa), commiteo en su nombre, y
+      verifico manualmente en navegador con un Excel real (1 fila valida +
+      1 con proveedor inexistente): "1 creada, 0 existian, 1 fila con
+      aviso", tarjeta visible en la tabla. Limpiado despues.
+      Ficheros api: `tarjeta/application/TarjetaImportService.java`,
+      `tarjeta/dto/ImportTarjetasAltaReportDTO.java`,
+      `tarjeta/infrastructure/import_/{FilaTarjetaImportada,TarjetaXlsxRowParser}.java`,
+      `tarjeta/infrastructure/web/TarjetaImportController.java`, tests
+      `TarjetaImportServiceIT.java`/`TarjetaXlsxRowParserTest.java`.
+      Ficheros web: `components/import-tarjetas-alta-dialog.tsx`, boton
+      "Alta masiva" en `maestros/tarjetas/page.tsx`.
+      Commits: api `2f20236`, web `9822525` (hechos por el orquestador).
+- [x] T3. Import Excel para **VIATs**. Columnas `CODIGO`/`NUMERO SERIE`/`DESCRIPCION`;
+      codigo obligatorio unico, duplicado cuenta como existente.
+      Lanzado en paralelo (4 forks a la vez); no pudo completar su propia
+      verificacion manual por interferencia de un fork hermano en el
+      servidor de dev compartido (sesion expirada a medio probar, no quiso
+      matar procesos compartidos). Tests aislados 7/7 verde, `tsc` limpio.
+      Verificacion manual pendiente completada por el orquestador despues:
+      Excel real con 1 fila valida subido, "1 creado, 0 existian", VIAT
+      visible en la tabla. Limpiado despues.
+      Ficheros api: `viat/infrastructure/import_/{ViatXlsxRowParser,FilaViatImportada}.java`,
+      `viat/dto/ImportViatsReportDTO.java`, `viat/application/ViatImportService.java`,
+      `viat/infrastructure/web/ViatImportController.java`, tests
+      `ViatXlsxRowParserTest.java` (5 casos), `ViatImportServiceIT.java` (2 casos).
+      Ficheros web: `components/import-viats-dialog.tsx`, boton+dialogo en
+      `maestros/viats/page.tsx`.
+      Commits: api `7320ff0`, web `16d1c71`.
+- [x] T4. Import Excel para **Trabajadores**. Nombre/apellidos obligatorios;
+      columna `Origen` opcional (OFICINA/CAMPO/IMPORTACION), por defecto
+      IMPORTACION si falta o no se reconoce. Reutiliza `TrabajadorResolver`
+      ya existente para deduplicar (email o nombre+apellidos) en vez de
+      reinventar la logica.
+      Lanzado en paralelo; confirmo contencion real de `mvn test`
+      compartiendo `target/` entre los 4 forks (`NoClassDefFoundError`
+      transitorio, resuelto con reintento, no era bug) — validacion util
+      de que correr la suite completa una sola vez al final (hecho por el
+      orquestador) era lo correcto. 9/9 tests propios en verde (7 parser +
+      2 IT), `tsc` limpio.
+      Ficheros api: `trabajador/application/TrabajadorImportService.java`,
+      `trabajador/dto/ImportTrabajadoresReportDTO.java`,
+      `trabajador/infrastructure/import_/{FilaTrabajadorImportada,TrabajadorXlsxRowParser}.java`,
+      `trabajador/infrastructure/web/TrabajadorImportController.java`, tests
+      `TrabajadorImportServiceIT.java`/`TrabajadorXlsxRowParserTest.java`.
+      Ficheros web: `components/import-trabajadores-dialog.tsx`, boton en
+      `maestros/trabajadores/page.tsx`.
+      Commits: api `29236e7`, web `6e10858`.
+- [x] T5. Import Excel para **Usuarios** (oficina y campo). Decision: UN
+      SOLO Excel con columna `Tipo` (OFICINA/CAMPO) que determina que
+      columnas aplican (Rol obligatorio solo oficina; Apellidos/Telefono
+      solo campo) — mas simple de explicar al cliente que 2 plantillas
+      separadas. Reutiliza `UsuarioOficinaService.crear`/`UsuarioCampoService.crear`
+      existentes (password ya validado/encriptado por esos servicios, no
+      duplicado aqui). Username duplicado (en cualquiera de las 2 tablas)
+      cuenta como existente.
+      Lanzado en paralelo; tambien confirmo la misma contencion transitoria
+      de `target/` que T4, resuelta con reintento. 10/10 tests propios en
+      verde, `tsc` limpio, verificado E2E real en navegador por el propio
+      fork (subida de 3 filas → "2 creados, 0 existentes, 1 aviso", usuario
+      visible tras recargar, datos de prueba limpiados por SQL directo).
+      Ficheros api: `auth/infrastructure/import_/{FilaUsuarioImportada,UsuarioXlsxRowParser}.java`,
+      `auth/application/UsuarioImportService.java`,
+      `auth/infrastructure/web/UsuarioImportController.java`,
+      `auth/dto/ImportUsuariosReportDTO.java`, tests
+      `UsuarioXlsxRowParserTest.java` (8 casos)/`UsuarioImportServiceIT.java` (2 casos).
+      Ficheros web: `components/import-usuarios-dialog.tsx`, boton en
+      `configuracion/usuarios/page.tsx`.
+      Commits: api `5efa7ab`, web `8eefb5c`.
+
+## Feature completa (5/5)
+
+Las 5 tareas de import Excel masivo estan hechas y verificadas (backend
++ frontend, cada una con su propio commit). T2-T5 se ejecutaron en
+paralelo (4 forks a la vez, mismo repo) tras verificar que el riesgo de
+interferencia era bajo (cada dominio toca ficheros nuevos y distintos,
+sin importer compartido). Contratiempos reales encontrados y resueltos:
+contencion de `target/` de Maven entre builds concurrentes (mitigada
+corriendo la suite completa una sola vez al final, con los 4 ya
+terminados: **327/327, BUILD SUCCESS**), un fork (T2) murio a medio
+terminar por limite de sesion y el orquestador completo su cierre.
+
+El punto 2 original del feedback del cliente (acceso ampliado) se
+confirmo que probablemente ya esta resuelto por el CRUD de maestros ya
+existente — no se monto tarea para eso, ver seccion "Investigacion
+real" mas arriba.
 
 ## Progreso
 (se actualiza tarea a tarea, con commit de work-unit y evidencia de
