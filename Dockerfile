@@ -20,7 +20,13 @@ RUN addgroup -S appgroup && adduser -S appuser -G appgroup
 
 COPY --from=build /app/target/*.jar app.jar
 
-RUN chown appuser:appgroup app.jar
+# uploads/ debe existir y ser escribible por appuser ANTES del USER switch:
+# WORKDIR /app es propiedad de root por defecto, así que sin esto
+# Files.createDirectories("./uploads") falla en silencio (permiso denegado,
+# no bloqueante por diseño) y ni las fotos de ticket ni los PDF de factura
+# se guardan nunca.
+RUN chown appuser:appgroup app.jar && \
+    mkdir -p uploads && chown -R appuser:appgroup uploads
 
 USER appuser
 
