@@ -435,3 +435,51 @@ Recogido de tareas anteriores para que no se pierda:
 ## Progreso
 (se actualiza tarea a tarea, con commit de work-unit y evidencia de
 verificacion por tarea)
+
+## Fixes post-release encontrados probando en real (demo + PWA produccion)
+
+Tras entregar v1.0.10, se probo el flujo real en `fleet.z-innova.com` con
+fotos sinteticas con texto legible (no en blanco como las primeras pruebas,
+que causaban alucinacion real de la IA al no tener contenido que leer — eso
+NO es un bug de produccion, es una limitacion esperable de probar con
+imagenes vacias). Se encontraron y arreglaron 3 problemas reales:
+
+1. **Regresion de UX (Gentle AI review, PWA)**: "Atras" en la previsualizacion
+   descartaba las fotos en vez de volver a la camara (condicion invertida).
+   Commit PWA `5534cc4`.
+2. **Bug de infraestructura**: `/app/uploads` no existia y no era escribible
+   por el usuario no-root del contenedor — las fotos de ticket (y muy
+   probablemente los PDF de factura) nunca se guardaban de verdad en el
+   servidor de demo pese a lo que decia el release notes. Arreglado en el
+   Dockerfile (crear + chown antes del `USER appuser`). Commit api `ee4d507`.
+   **Pendiente real, no resuelto**: el contenedor sigue sin ningun volumen
+   persistente — lo guardado sobrevive mientras el contenedor viva, pero se
+   pierde en el siguiente redeploy. Hace falta configurar un volumen en
+   Dokploy.
+3. **Bug real de datos**: `tickets.observaciones` era `VARCHAR(255)`: un
+   ticket con 2+ lineas con avisos de plausibilidad generaba un texto que
+   superaba los 255 caracteres y el INSERT fallaba entero (HTTP 500, el
+   ticket no se guardaba). Ampliado a `NVARCHAR(MAX)` (mismo patron que
+   `Factura.avisosImport`). Migracion `V31`. Commit api `8da0134`.
+
+Verificado en real tras los 3 fixes, con 3 escenarios reales (texto legible
+de verdad, generado con PIL):
+- **Ticket largo partido en 2 fotos** (misma estacion/fecha): ticket creado
+  con 2 lineas correctas, agregado 59.34€. Se marco
+  `requiere_revision_manual=1` porque la linea del lavado (sin litros) dio
+  precio/litro=0, fuera de rango — es un falso positivo del validador de
+  plausibilidad para productos no-combustible (no bloqueante, pero a
+  valorar: el chequeo de precio/litro deberia saltarse cuando no hay
+  litros).
+- **2 fotos de tickets REALMENTE distintos** (estaciones y fechas distintas):
+  correctamente marcado `requiere_revision_manual=1` con el aviso explicito
+  "Las lineas traen estaciones distintas — posible mezcla de tickets
+  distintos". Esto es exactamente el caso que T5 estaba disenado para
+  detectar, confirmado funcionando en real.
+- **AdBlue**: producto reconocido correctamente como `ADBLUE`, litros y
+  precio/litro dentro de rango plausible, NO marcado para revision (correcto,
+  es un producto valido).
+
+Las 3 fotos de los 2 tickets probados tras el fix de Docker SI se guardaron
+de verdad en disco (confirmado por logs y `find` dentro del contenedor).
+Todos los datos y ficheros de prueba, limpiados despues.
