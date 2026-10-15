@@ -452,10 +452,24 @@ imagenes vacias). Se encontraron y arreglaron 3 problemas reales:
    probablemente los PDF de factura) nunca se guardaban de verdad en el
    servidor de demo pese a lo que decia el release notes. Arreglado en el
    Dockerfile (crear + chown antes del `USER appuser`). Commit api `ee4d507`.
-   **Pendiente real, no resuelto**: el contenedor sigue sin ningun volumen
-   persistente — lo guardado sobrevive mientras el contenedor viva, pero se
-   pierde en el siguiente redeploy. Hace falta configurar un volumen en
-   Dokploy.
+   **Resuelto aparte, a nivel de infraestructura** (no en el repo, en el
+   propio servidor): `docker service update --mount-add
+   type=bind,source=/etc/dokploy/applications/demostecozam-tecozambillsapi-4bcbbr/files/uploads,destination=/app/uploads
+   demostecozam-tecozambillsapi-4bcbbr` — bind mount real al disco del host,
+   verificado escribiendo un fichero desde dentro del contenedor y
+   confirmando que aparece en el host. Al ser parte de la definicion del
+   servicio de Docker Swarm (no de Dokploy), sobrevive a que Dokploy
+   recree el contenedor en cada deploy (un `docker service update` normal
+   con solo `--image` nuevo no toca el resto del spec). **Incertidumbre
+   honesta**: no se puede garantizar al 100% que Dokploy nunca reconstruya
+   el servicio entero desde su propia configuracion (lo que borraria este
+   mount manual) — se recomienda confirmar/replicar esto tambien desde el
+   panel de Dokploy si tiene una seccion de "Mounts"/volumenes por app.
+   **Tambien se descubrio**: las 18 facturas ya existentes en este entorno
+   tienen `ruta_pdf` a NULL — el mismo bug llevaba afectando a facturas
+   desde siempre (no es nuevo de esta sesion), esos PDFs originales no son
+   recuperables, solo quedan los datos ya extraidos. Las facturas que se
+   importen desde ahora en adelante si deberian guardar su PDF.
 3. **Bug real de datos**: `tickets.observaciones` era `VARCHAR(255)`: un
    ticket con 2+ lineas con avisos de plausibilidad generaba un texto que
    superaba los 255 caracteres y el INSERT fallaba entero (HTTP 500, el
