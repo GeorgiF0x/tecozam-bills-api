@@ -87,6 +87,8 @@ app:
   mail:
     from: ${MAIL_FROM:noreply@tecozam.com}
     alert-recipients: ${MAIL_ALERT_RECIPIENTS:admin@tecozam.com}
+  web:
+    base-url: ${APP_WEB_BASE_URL:http://localhost:3000}
   storage:
     path: ${STORAGE_PATH:./uploads}
   n8n:
