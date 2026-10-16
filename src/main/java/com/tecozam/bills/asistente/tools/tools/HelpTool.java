@@ -88,7 +88,7 @@ public class HelpTool implements Tool {
         items.add(item(
             "Gasto por centro de coste",
             "info",
-            "España · Portugal · Staff · Ferrallas",
+            "España · Portugal · Staff · Ferrallas — estimación: reparto a partes iguales, no es un dato medido por centro",
             "Reparto por centro de coste el último trimestre"
         ));
         items.add(item(
@@ -136,7 +136,7 @@ public class HelpTool implements Tool {
         items.add(item(
             "Tickets con incidencia",
             "danger",
-            "Tickets que no cuadran con la factura",
+            "Tickets en INCIDENCIA, SIN_COINCIDENCIA o MULTIPLE (coincidencia ambigua) que requieren revisión humana",
             "Tickets con incidencia abiertos"
         ));
 

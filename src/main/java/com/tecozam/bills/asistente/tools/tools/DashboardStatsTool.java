@@ -52,7 +52,7 @@ public class DashboardStatsTool implements Tool {
         double importeTotal = Optional.ofNullable(facturaRepository.sumTotalFactura())
             .orElse(BigDecimal.ZERO).doubleValue();
         long alertasPendientes = alertaRepository.countByLeidaFalse();
-        long anomalias = ticketRepository.countByEstadoCotejoIn(List.of("INCIDENCIA", "SIN_COINCIDENCIA"));
+        long anomalias = ticketRepository.countByEstadoCotejoIn(List.of("INCIDENCIA", "SIN_COINCIDENCIA", "MULTIPLE"));
         long prestamosActivos = prestamoRepository.countByEstado("ACTIVO");
         long totalTickets = ticketRepository.count();
         long ticketsCotejados = ticketRepository.findByEstadoCotejo("COTEJADO").size();

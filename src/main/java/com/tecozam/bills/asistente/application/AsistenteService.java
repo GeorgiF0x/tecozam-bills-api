@@ -303,7 +303,9 @@ public class AsistenteService {
                 long pen = tickets.stream().filter(t -> "PENDIENTE".equals(t.getEstadoCotejo().toString())).count();
                 long cot = tickets.stream().filter(t -> "COTEJADO".equals(t.getEstadoCotejo().toString())).count();
                 long inc = tickets.stream().filter(t -> "INCIDENCIA".equals(t.getEstadoCotejo().toString())).count();
-                sb.append(String.format("  Pendientes: %d | Cotejados: %d | Incidencias: %d\n\n", pen, cot, inc));
+                long mul = tickets.stream().filter(t -> "MULTIPLE".equals(t.getEstadoCotejo().toString())).count();
+                long sin = tickets.stream().filter(t -> "SIN_COINCIDENCIA".equals(t.getEstadoCotejo().toString())).count();
+                sb.append(String.format("  Pendientes: %d | Cotejados: %d | Incidencias: %d | Múltiples coincidencias: %d | Sin coincidencia: %d\n\n", pen, cot, inc, mul, sin));
             }
         } catch (Exception e) { log.warn("[Asistente] {}", e.getMessage()); }
 

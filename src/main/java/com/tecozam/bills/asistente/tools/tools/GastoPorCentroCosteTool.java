@@ -81,7 +81,7 @@ public class GastoPorCentroCosteTool implements Tool {
         ChartSpec chart = new ChartSpec(
             "bar",
             "Gasto por centro de coste",
-            "Del " + from + " al " + to,
+            "Del " + from + " al " + to + " — ESTIMACIÓN: reparto a partes iguales entre centros activos, no hay relación real factura/ticket↔centro de coste",
             data,
             Map.of("xKey", "centro", "yKey", "importe")
         );

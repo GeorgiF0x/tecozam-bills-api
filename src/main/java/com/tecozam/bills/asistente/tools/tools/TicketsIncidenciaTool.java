@@ -44,7 +44,7 @@ public class TicketsIncidenciaTool implements Tool {
         int limit = args.containsKey("limit") ? ((Number) args.get("limit")).intValue() : 20;
 
         List<Map<String, Object>> data = ticketRepository
-            .findByEstadoCotejoIn(List.of("INCIDENCIA", "SIN_COINCIDENCIA")).stream()
+            .findByEstadoCotejoIn(List.of("INCIDENCIA", "SIN_COINCIDENCIA", "MULTIPLE")).stream()
             .sorted((a, b) -> {
                 if (a.getFechaHora() == null && b.getFechaHora() == null) return 0;
                 if (a.getFechaHora() == null) return 1;
