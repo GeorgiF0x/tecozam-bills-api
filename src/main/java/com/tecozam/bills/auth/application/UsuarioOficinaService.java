@@ -305,6 +305,11 @@ public class UsuarioOficinaService {
         }
 
         UsuarioOficina usuario = invitacion.getUsuario();
+        // Defensa en profundidad: aunque los checks de arriba sean correctos,
+        // no aceptar si el usuario ya no esta PENDIENTE (p.ej. ya activo).
+        if (usuario.getEstadoRegistro() != EstadoRegistro.PENDIENTE) {
+            throw new BusinessException("Esta invitación ya no es válida");
+        }
         usuario.setPassword(passwordEncoder.encode(req.password()));
         usuario.setActivo(true);
         usuario.setEstadoRegistro(EstadoRegistro.ACTIVO);
@@ -321,10 +326,17 @@ public class UsuarioOficinaService {
      */
     public InvitacionPendienteDTO reenviarInvitacion(Long invitacionId) {
         InvitacionUsuario vieja = findInvitacionOrThrow(invitacionId);
+        UsuarioOficina usuario = vieja.getUsuario();
+
+        // No reenviar una invitacion ya aceptada/cancelada: emitiria un
+        // token nuevo capaz de reescribir la password de un usuario real.
+        if (vieja.getUsedAt() != null || usuario.getEstadoRegistro() != EstadoRegistro.PENDIENTE) {
+            throw new BusinessException("No se puede reenviar una invitación ya aceptada o cancelada");
+        }
+
         vieja.setUsedAt(LocalDateTime.now());
         invitacionUsuarioRepository.save(vieja);
 
-        UsuarioOficina usuario = vieja.getUsuario();
         InvitacionPendienteDTO resultado = crearYEnviarInvitacion(
                 usuario, vieja.getInvitadoPor(), usuario.getNombreCompleto(), usuario.getEmail());
         log.info("Invitación reenviada para usuario oficina id={}", usuario.getId());
@@ -341,7 +353,13 @@ public class UsuarioOficinaService {
         InvitacionUsuario invitacion = findInvitacionOrThrow(invitacionId);
         UsuarioOficina usuario = invitacion.getUsuario();
 
-        if (!usuario.isActivo()) {
+        // Una invitacion ya usada (aceptada) no se puede "cancelar": borrar
+        // su usuario aqui borraria una cuenta real ya activa.
+        if (invitacion.getUsedAt() != null) {
+            throw new BusinessException("No se puede cancelar una invitación ya utilizada");
+        }
+
+        if (usuario.getEstadoRegistro() == EstadoRegistro.PENDIENTE) {
             invitacionUsuarioRepository.deleteByUsuarioId(usuario.getId());
             usuarioOficinaRepository.delete(usuario);
             log.info("Invitación cancelada y usuario pendiente eliminado: id={}, usuarioId={}",

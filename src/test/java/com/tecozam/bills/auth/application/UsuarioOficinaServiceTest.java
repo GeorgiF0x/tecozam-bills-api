@@ -197,6 +197,32 @@ class UsuarioOficinaServiceTest {
     }
 
     @Test
+    @DisplayName("aceptarInvitacion rechaza si el usuario ya no esta PENDIENTE (defensa en profundidad)")
+    void aceptarInvitacion_usuarioYaNoPendiente_rechazado() {
+        String tokenEnClaro = "token-defensa";
+        String tokenHashEsperado = sha256(tokenEnClaro);
+
+        UsuarioOficina usuarioYaActivo = UsuarioOficina.builder()
+                .username("yaactivo@tecozam.com").rol(Rol.ADMIN)
+                .activo(true).estadoRegistro(EstadoRegistro.ACTIVO).build();
+        usuarioYaActivo.setId(99L);
+
+        InvitacionUsuario invitacion = InvitacionUsuario.builder()
+                .usuario(usuarioYaActivo)
+                .tokenHash(tokenHashEsperado)
+                .expiresAt(LocalDateTime.now().plusHours(1))
+                .build();
+
+        when(invitacionUsuarioRepository.findByTokenHash(tokenHashEsperado)).thenReturn(Optional.of(invitacion));
+
+        assertThatThrownBy(() -> service.aceptarInvitacion(tokenEnClaro, new AceptarInvitacionRequest("Password123")))
+                .isInstanceOf(BusinessException.class);
+
+        verify(usuarioOficinaRepository, never()).save(any());
+        verify(invitacionUsuarioRepository, never()).save(any());
+    }
+
+    @Test
     @DisplayName("aceptarInvitacion rechaza token desconocido sin revelar detalles")
     void aceptarInvitacion_tokenDesconocido_rechazado() {
         when(invitacionUsuarioRepository.findByTokenHash(anyString())).thenReturn(Optional.empty());
@@ -258,6 +284,32 @@ class UsuarioOficinaServiceTest {
     }
 
     @Test
+    @DisplayName("reenviarInvitacion rechaza una invitacion ya aceptada (evita toma de cuenta)")
+    void reenviarInvitacion_invitacionYaAceptada_rechazada() {
+        UsuarioOficina adminActivo = UsuarioOficina.builder()
+                .username("admin@tecozam.com").email("admin@tecozam.com")
+                .nombreCompleto("Admin Real").rol(Rol.ADMIN)
+                .activo(true).estadoRegistro(EstadoRegistro.ACTIVO).build();
+        adminActivo.setId(88L);
+
+        InvitacionUsuario viejaAceptada = InvitacionUsuario.builder()
+                .usuario(adminActivo)
+                .tokenHash("hash-aceptada")
+                .expiresAt(LocalDateTime.now().minusDays(5))
+                .usedAt(LocalDateTime.now().minusDays(4))
+                .build();
+        viejaAceptada.setId(601L);
+
+        when(invitacionUsuarioRepository.findById(601L)).thenReturn(Optional.of(viejaAceptada));
+
+        assertThatThrownBy(() -> service.reenviarInvitacion(601L))
+                .isInstanceOf(BusinessException.class);
+
+        verify(invitacionUsuarioRepository, never()).save(any());
+        verify(emailService, never()).enviarInvitacionAdmin(any(), any(), any());
+    }
+
+    @Test
     @DisplayName("reenviarInvitacion lanza ResourceNotFoundException si no existe")
     void reenviarInvitacion_noExiste() {
         when(invitacionUsuarioRepository.findById(999L)).thenReturn(Optional.empty());
@@ -305,7 +357,8 @@ class UsuarioOficinaServiceTest {
     @Test
     @DisplayName("cancelarInvitacion de un usuario ya activo solo invalida la invitacion (no borra el usuario)")
     void cancelarInvitacion_usuarioYaActivo_soloInvalidaInvitacion() {
-        UsuarioOficina usuarioActivo = UsuarioOficina.builder().activo(true).rol(Rol.ADMIN).build();
+        UsuarioOficina usuarioActivo = UsuarioOficina.builder()
+                .activo(true).estadoRegistro(EstadoRegistro.ACTIVO).rol(Rol.ADMIN).build();
         InvitacionUsuario invitacion = InvitacionUsuario.builder()
                 .usuario(usuarioActivo)
                 .tokenHash("hash-x")
@@ -321,6 +374,34 @@ class UsuarioOficinaServiceTest {
         verify(invitacionUsuarioRepository).save(invitacion);
         verify(usuarioOficinaRepository, never()).delete(any());
         verify(invitacionUsuarioRepository, never()).deleteByUsuarioId(any());
+    }
+
+    @Test
+    @DisplayName("cancelarInvitacion rechaza una invitacion ya usada y no borra ni toca nada")
+    void cancelarInvitacion_invitacionYaUsada_rechazaYNoBorraNada() {
+        UsuarioOficina adminDesactivado = UsuarioOficina.builder()
+                .username("exadmin@tecozam.com").rol(Rol.ADMIN)
+                .activo(false) // desactivado despues de haber sido admin real
+                .estadoRegistro(EstadoRegistro.ACTIVO)
+                .build();
+        adminDesactivado.setId(77L);
+
+        InvitacionUsuario invitacionVieja = InvitacionUsuario.builder()
+                .usuario(adminDesactivado)
+                .tokenHash("hash-vieja-usada")
+                .expiresAt(LocalDateTime.now().minusDays(10))
+                .usedAt(LocalDateTime.now().minusDays(9))
+                .build();
+        invitacionVieja.setId(701L);
+
+        when(invitacionUsuarioRepository.findById(701L)).thenReturn(Optional.of(invitacionVieja));
+
+        assertThatThrownBy(() -> service.cancelarInvitacion(701L))
+                .isInstanceOf(BusinessException.class);
+
+        verify(usuarioOficinaRepository, never()).delete(any());
+        verify(invitacionUsuarioRepository, never()).deleteByUsuarioId(any());
+        verify(invitacionUsuarioRepository, never()).save(any());
     }
 
     @Test
