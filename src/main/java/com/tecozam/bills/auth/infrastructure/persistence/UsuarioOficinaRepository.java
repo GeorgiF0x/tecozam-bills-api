@@ -18,6 +18,8 @@ public interface UsuarioOficinaRepository extends JpaRepository<UsuarioOficina, 
 
     boolean existsByUsername(String username);
 
+    boolean existsByEmailAndActivoTrue(String email);
+
     List<UsuarioOficina> findByEstadoRegistro(EstadoRegistro estadoRegistro);
 
     long countByRolAndActivoTrue(Rol rol);

@@ -4,6 +4,8 @@ import com.tecozam.bills.auth.application.UsuarioOficinaService;
 import com.tecozam.bills.auth.dto.CambiarRolRequest;
 import com.tecozam.bills.auth.dto.CrearUsuarioOficinaRequest;
 import com.tecozam.bills.auth.dto.EditarUsuarioOficinaRequest;
+import com.tecozam.bills.auth.dto.InvitacionPendienteDTO;
+import com.tecozam.bills.auth.dto.InvitarUsuarioRequest;
 import com.tecozam.bills.auth.dto.ResetPasswordRequest;
 import com.tecozam.bills.auth.dto.UsuarioOficinaDTO;
 import com.tecozam.bills.shared.domain.enums.Rol;
@@ -16,6 +18,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -113,5 +116,34 @@ public class UsuarioOficinaController {
         }
         return ResponseEntity.ok(usuarioOficinaService.cambiarRol(
                 id, nuevoRol, authentication.getName()));
+    }
+
+    @PostMapping("/invitaciones")
+    @Operation(summary = "Invitar a un nuevo administrador por email",
+            description = "Crea el usuario inactivo y envia un enlace de invitacion por email. Solo ADMIN.")
+    public ResponseEntity<InvitacionPendienteDTO> invitar(
+            @Valid @RequestBody InvitarUsuarioRequest request,
+            Authentication authentication) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(usuarioOficinaService.invitar(request, authentication.getName()));
+    }
+
+    @GetMapping("/invitaciones/pendientes")
+    @Operation(summary = "Listar invitaciones pendientes de aceptacion")
+    public ResponseEntity<List<InvitacionPendienteDTO>> findInvitacionesPendientes() {
+        return ResponseEntity.ok(usuarioOficinaService.findInvitacionesPendientes());
+    }
+
+    @PostMapping("/invitaciones/{id}/reenviar")
+    @Operation(summary = "Reenviar una invitacion con un nuevo enlace")
+    public ResponseEntity<InvitacionPendienteDTO> reenviarInvitacion(@PathVariable Long id) {
+        return ResponseEntity.ok(usuarioOficinaService.reenviarInvitacion(id));
+    }
+
+    @DeleteMapping("/invitaciones/{id}")
+    @Operation(summary = "Cancelar una invitacion pendiente")
+    public ResponseEntity<Void> cancelarInvitacion(@PathVariable Long id) {
+        usuarioOficinaService.cancelarInvitacion(id);
+        return ResponseEntity.noContent().build();
     }
 }

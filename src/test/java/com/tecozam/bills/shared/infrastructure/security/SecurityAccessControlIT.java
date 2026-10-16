@@ -59,10 +59,12 @@ class SecurityAccessControlIT {
 
     private Long adminId;
     private Long campoId;
+    private Long gestorId;
     private String adminAccessToken;
     private String adminRefreshToken;
     private String campoAccessToken;
     private String campoRefreshToken;
+    private String gestorAccessToken;
 
     @BeforeEach
     void seedUsersAndLogin() {
@@ -83,6 +85,15 @@ class SecurityAccessControlIT {
                 .build());
         campoId = campo.getId();
 
+        UsuarioOficina gestor = usuarioOficinaRepository.save(UsuarioOficina.builder()
+                .username("sectest_gestor_it")
+                .password(passwordEncoder.encode(PASSWORD))
+                .rol(Rol.GESTOR)
+                .activo(true)
+                .estadoRegistro(EstadoRegistro.ACTIVO)
+                .build());
+        gestorId = gestor.getId();
+
         Map<String, Object> adminTokens = login("/api/auth/oficina/login", "sectest_admin_it");
         adminAccessToken = (String) adminTokens.get("accessToken");
         adminRefreshToken = (String) adminTokens.get("refreshToken");
@@ -90,12 +101,40 @@ class SecurityAccessControlIT {
         Map<String, Object> campoTokens = login("/api/auth/campo/login", "sectest_campo_it");
         campoAccessToken = (String) campoTokens.get("accessToken");
         campoRefreshToken = (String) campoTokens.get("refreshToken");
+
+        Map<String, Object> gestorTokens = login("/api/auth/oficina/login", "sectest_gestor_it");
+        gestorAccessToken = (String) gestorTokens.get("accessToken");
     }
 
     @AfterEach
     void cleanup() {
         usuarioOficinaRepository.deleteById(adminId);
         usuarioCampoRepository.deleteById(campoId);
+        usuarioOficinaRepository.deleteById(gestorId);
+    }
+
+    @Test
+    void gestorNoPuedeCrearInvitaciones() {
+        ResponseEntity<String> res = postWithToken(
+                "/api/usuarios/oficina/invitaciones",
+                Map.of("nombre", "Intruso", "email", "intruso@tecozam.com"),
+                gestorAccessToken);
+        assertThat(res.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
+    }
+
+    @Test
+    void gestorNoPuedeListarInvitacionesPendientes() {
+        assertThat(getWithToken("/api/usuarios/oficina/invitaciones/pendientes", gestorAccessToken).getStatusCode())
+                .isEqualTo(HttpStatus.FORBIDDEN);
+    }
+
+    @Test
+    void campoNoPuedeCrearInvitaciones() {
+        ResponseEntity<String> res = postWithToken(
+                "/api/usuarios/oficina/invitaciones",
+                Map.of("nombre", "Intruso", "email", "intruso2@tecozam.com"),
+                campoAccessToken);
+        assertThat(res.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
     }
 
     @Test
@@ -166,5 +205,12 @@ class SecurityAccessControlIT {
         HttpHeaders headers = new HttpHeaders();
         headers.setBearerAuth(token);
         return restTemplate.exchange(path, HttpMethod.GET, new HttpEntity<>(headers), String.class);
+    }
+
+    private ResponseEntity<String> postWithToken(String path, Map<String, Object> body, String token) {
+        HttpHeaders headers = new HttpHeaders();
+        headers.setBearerAuth(token);
+        headers.setContentType(org.springframework.http.MediaType.APPLICATION_JSON);
+        return restTemplate.exchange(path, HttpMethod.POST, new HttpEntity<>(body, headers), String.class);
     }
 }
