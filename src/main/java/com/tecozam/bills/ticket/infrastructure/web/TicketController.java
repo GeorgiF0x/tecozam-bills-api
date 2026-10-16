@@ -61,6 +61,15 @@ public class TicketController {
         return ResponseEntity.ok(ticketService.findMisTickets(authentication.getName()));
     }
 
+    @GetMapping("/candidatos-vincular")
+    @PreAuthorize("hasAnyRole('ADMIN', 'GESTOR')")
+    @Operation(summary = "Candidatos para vincular a una operación",
+            description = "Tickets activos sin operación cotejada todavía (PENDIENTE, SIN_COINCIDENCIA, "
+                    + "MULTIPLE o INCIDENCIA sin vincular), independientemente de su estadoCotejo exacto.")
+    public ResponseEntity<List<TicketDTO>> candidatosParaVincular() {
+        return ResponseEntity.ok(ticketService.candidatosParaVincular());
+    }
+
     @GetMapping("/{id:\\d+}")
     @PreAuthorize("hasAnyRole('ADMIN', 'GESTOR')")
     @Operation(summary = "Obtener ticket", description = "Obtiene un ticket por su ID")

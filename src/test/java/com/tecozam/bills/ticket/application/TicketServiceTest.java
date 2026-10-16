@@ -170,6 +170,25 @@ class TicketServiceTest {
     }
 
     @Test
+    @DisplayName("candidatosParaVincular devuelve tickets sin operacion vinculada sin importar su estadoCotejo "
+            + "— bug real: el picker de \"Vincular a ticket\" solo pedia PENDIENTE y un ticket escalado a "
+            + "INCIDENCIA por llevar mas de un mes sin cotejar nunca aparecia en el buscador")
+    void candidatosParaVincular_incluyeIncidenciaSinOperacion() {
+        Ticket incidenciaSinVincular = Ticket.builder()
+                .estadoCotejo("INCIDENCIA")
+                .tipoIncidencia("SIN_COTEJAR_1_MES")
+                .importeTotal(new BigDecimal("60.95"))
+                .build();
+
+        when(ticketRepository.findSinOperacionVinculada()).thenReturn(List.of(incidenciaSinVincular));
+
+        var candidatos = service.candidatosParaVincular();
+
+        assertThat(candidatos).hasSize(1);
+        assertThat(candidatos.get(0).estadoCotejo()).isEqualTo("INCIDENCIA");
+    }
+
+    @Test
     @DisplayName("eliminar hace borrado logico (softDelete), no borra la fila")
     void eliminar_hacesBorradoLogico() {
         Ticket ticket = Ticket.builder()

@@ -74,6 +74,20 @@ public class TicketService {
     }
 
     /**
+     * Candidatos para "vincular a ticket" manual desde una operación: cualquier
+     * ticket activo que todavia no tiene operacionCotejada, sea cual sea su
+     * estadoCotejo (PENDIENTE, SIN_COINCIDENCIA, MULTIPLE o INCIDENCIA sin
+     * vincular — por ejemplo escalado por {@link #escalarTicketsAntiguos()}).
+     * Antes el picker solo pedia PENDIENTE, asi que un ticket ya escalado a
+     * INCIDENCIA por llevar mas de un mes sin cotejar (el caso justo donde mas
+     * falta hace poder vincularlo a mano) no aparecia nunca en el buscador.
+     */
+    @Transactional(readOnly = true)
+    public List<TicketDTO> candidatosParaVincular() {
+        return ticketRepository.findSinOperacionVinculada().stream().map(this::toDTO).toList();
+    }
+
+    /**
      * Borrado logico (no fisico): conserva el ticket para auditoria pero deja
      * de aparecer en los listados normales. Solo ADMIN (verificado en el
      * controller).

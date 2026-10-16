@@ -35,6 +35,15 @@ public interface TicketRepository extends JpaRepository<Ticket, Long> {
     @Query("SELECT t FROM Ticket t WHERE t.estadoCotejo IN :estados AND t.eliminadoEn IS NULL")
     List<Ticket> findByEstadoCotejoIn(@Param("estados") List<String> estados);
 
+    /**
+     * Candidatos para vincular manualmente a una operacion: da igual el
+     * estadoCotejo exacto (PENDIENTE, SIN_COINCIDENCIA, MULTIPLE o INCIDENCIA
+     * sin resolver), lo que importa es que todavia no tienen una operacion
+     * ya asignada.
+     */
+    @Query("SELECT t FROM Ticket t WHERE t.operacionCotejada IS NULL AND t.eliminadoEn IS NULL")
+    List<Ticket> findSinOperacionVinculada();
+
     @Query("SELECT t FROM Ticket t WHERE t.trabajador.id = :trabajadorId AND t.eliminadoEn IS NULL")
     List<Ticket> findByTrabajadorId(@Param("trabajadorId") Long trabajadorId);
 
