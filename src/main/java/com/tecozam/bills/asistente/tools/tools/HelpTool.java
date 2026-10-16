@@ -118,6 +118,12 @@ public class HelpTool implements Tool {
             "Facturas filtradas por estado de cotejo",
             "Facturas pendientes de cotejar"
         ));
+        items.add(item(
+            "Tickets pendientes de vincular",
+            "warning",
+            "Tickets sin operación de tarjeta vinculada — acceso directo al diálogo manual",
+            "Qué tickets están pendientes de vincular"
+        ));
 
         // ── Incidencias y anomalías ────────────────────────────────────────
         items.add(itemSection("Incidencias y anomalías"));
