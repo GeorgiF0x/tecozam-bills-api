@@ -41,6 +41,7 @@ public class SecurityConfig {
             "/api/auth/oficina/refresh",
             "/api/auth/campo/login",
             "/api/auth/campo/refresh",
+            "/api/invitaciones/*/aceptar",
             "/swagger-ui/**",
             "/swagger-ui.html",
             "/v3/api-docs/**",
