@@ -140,4 +140,42 @@ class LlmTicketParserTest {
         List<LineaTicketExtraida> lineas = parser.construirResultado(raiz);
         assertThat(lineas).isEmpty();
     }
+
+    @Test
+    @DisplayName("fecha vacia (string \"\", no null) en una linea no lanza DateTimeParseException")
+    void construirResultado_fechaVacia_seMapeaComoNull() throws Exception {
+        // El esquema JSON de OpenAI declara "fecha" como string no-nullable, asi
+        // que cuando una foto secundaria de un ticket largo no repite la fecha,
+        // el modelo devuelve "" en vez de null (bug real encontrado probando
+        // contra produccion: LocalDate.parse("") -> DateTimeParseException).
+        String json = """
+                {
+                  "lineas": [
+                    {
+                      "fotoIndice": 1,
+                      "proveedor": "MOEVE",
+                      "estacion": "E.S. EJEMPLO",
+                      "direccion": null,
+                      "fecha": "",
+                      "hora": "",
+                      "numTarjeta4ultimos": null,
+                      "matricula": null,
+                      "kms": null,
+                      "producto": "ADBLUE",
+                      "litros": 10.0,
+                      "precioLitro": 0.95,
+                      "importeTotal": 9.50,
+                      "numRecibo": null,
+                      "nifEstacion": null
+                    }
+                  ]
+                }
+                """;
+
+        JsonNode raiz = mapper.readTree(json);
+        List<LineaTicketExtraida> lineas = parser.construirResultado(raiz);
+
+        assertThat(lineas).hasSize(1);
+        assertThat(lineas.get(0).fechaHora()).isNull();
+    }
 }

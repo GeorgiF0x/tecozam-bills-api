@@ -250,7 +250,7 @@ public class LlmTicketParser {
     private LocalDateTime fechaHora(JsonNode node) {
         String fecha = text(node, "fecha");
         String hora = text(node, "hora");
-        if (fecha == null) {
+        if (fecha == null || fecha.isBlank()) {
             return null;
         }
         LocalDate d = LocalDate.parse(fecha);
