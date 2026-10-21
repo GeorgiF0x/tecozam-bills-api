@@ -156,7 +156,13 @@ se invoca en ningún punto de todo el código fuente (confirmado por grep).
       Evidencia final, suite completa: `./mvnw.cmd -o test` →
       `Tests run: 378, Failures: 0, Errors: 0, Skipped: 0` / `BUILD SUCCESS`
       (375 anteriores + 3 nuevos, 0 regresiones).
-- [ ] 10. Verificación con espera real (no solo el modal del import)
+- [x] 10. Verificación con espera real (no solo el modal del import)
+      Desplegado (merge+push a main, autodeploy). Repetido en vivo contra
+      bills.z-innova.com: borrar-todo → importar Repsol (119 "ya existían",
+      0 nuevas) → importar Cepsa (347 "ya existían", 0 nuevas). Comprobado
+      en navegación fresca justo después (466 tarjetas, 2 VIATs) Y de nuevo
+      tras ~5 minutos de espera con sesión aún activa (mismos 466 + 2,
+      sin caer). Esta vez sí persiste: el fix de restore() es correcto.
       Pendiente — lo hace el orquestador con Playwright contra los ficheros
       reales, no cubierto por este ciclo de implementación.
 
