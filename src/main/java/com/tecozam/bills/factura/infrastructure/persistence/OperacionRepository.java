@@ -19,6 +19,25 @@ public interface OperacionRepository extends JpaRepository<Operacion, Long> {
     @Query("SELECT MIN(o.fechaHora), MAX(o.fechaHora) FROM Operacion o WHERE o.fechaHora IS NOT NULL")
     Object[] findDateRange();
 
+    /**
+     * Total de operaciones históricas (todas las facturas, no solo la recién
+     * importada) de la tarjeta del maestro con id {@code tarjetaId}, vía
+     * {@code Operacion.tarjetaResumen.tarjeta}. Usado por la reclasificación
+     * automática TARJETA→VIAT de Cepsa/Moeve (ver
+     * odd/tasks/bugs-fecha-nan-y-reclasificacion-cepsa.md): el umbral de 3+
+     * operaciones se evalúa sobre el historial real, no sobre la factura
+     * actual en solitario.
+     */
+    long countByTarjetaResumen_Tarjeta_Id(Long tarjetaId);
+
+    /**
+     * Igual que {@link #countByTarjetaResumen_Tarjeta_Id} pero solo las
+     * operaciones cuyo {@code conceptoUnificado} NO coincide con el indicado
+     * (p. ej. {@code ConceptoUnificado.PEAJE.name()}). Un resultado de 0
+     * significa "100% de las operaciones son de ese concepto".
+     */
+    long countByTarjetaResumen_Tarjeta_IdAndConceptoUnificadoNot(Long tarjetaId, String conceptoUnificado);
+
     @Query("SELECT o FROM Operacion o " +
             "LEFT JOIN FETCH o.tarjetaResumen tr " +
             "LEFT JOIN FETCH tr.factura f " +

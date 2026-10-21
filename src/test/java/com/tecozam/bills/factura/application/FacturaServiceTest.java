@@ -1,6 +1,8 @@
 package com.tecozam.bills.factura.application;
 
 import com.tecozam.bills.admin.application.ConfiguracionImportService;
+import com.tecozam.bills.admin.application.ReclasificarTarjetasAViatResponse;
+import com.tecozam.bills.admin.application.ReclasificarTarjetasAViatService;
 import com.tecozam.bills.admin.dto.ConfiguracionImportDTO;
 import com.tecozam.bills.factura.domain.Factura;
 import com.tecozam.bills.factura.domain.Operacion;
@@ -35,8 +37,10 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -52,6 +56,7 @@ class FacturaServiceTest {
     @Mock TicketService ticketService;
     @Mock FacturaImportValidator facturaImportValidator;
     @Mock ConfiguracionImportService configuracionImportService;
+    @Mock ReclasificarTarjetasAViatService reclasificarTarjetasAViatService;
     @Mock FacturaParser facturaParser;
 
     FacturaService service;
@@ -61,7 +66,7 @@ class FacturaServiceTest {
     void setUp() {
         service = new FacturaService(facturaRepository, proveedorRepository, tarjetaRepository,
                 tarjetaAsignacionRepository, parserFactory, fileStorageService, ticketService,
-                facturaImportValidator, configuracionImportService);
+                facturaImportValidator, configuracionImportService, reclasificarTarjetasAViatService);
 
         proveedor = new Proveedor();
         proveedor.setId(1L);
@@ -165,6 +170,39 @@ class FacturaServiceTest {
         verify(facturaRepository, org.mockito.Mockito.times(1)).delete(f1);
     }
 
+    @Test
+    @DisplayName("tras importar una factura CEPSA/MOEVE, invoca la reclasificación automática TARJETA->VIAT con las tarjetas tocadas (dryRun=false)")
+    void importar_cepsaMoeve_invocaReclasificacionAutomatica() throws Exception {
+        Proveedor cepsa = new Proveedor();
+        cepsa.setId(2L);
+        cepsa.setCodigo("MOEVE_CEPSA");
+        cepsa.setNombre("Moeve/Cepsa");
+        when(proveedorRepository.findById(2L)).thenReturn(Optional.of(cepsa));
+
+        when(configuracionImportService.obtener()).thenReturn(new ConfiguracionImportDTO(false, null, null));
+        when(facturaParser.parse(any(), any())).thenReturn(facturaParseResultConUnaOperacion());
+        when(facturaImportValidator.validar(any(Factura.class))).thenReturn(List.of());
+        when(reclasificarTarjetasAViatService.reclasificarTarjetasTocadas(any(), anyBoolean(), anyString()))
+                .thenReturn(new ReclasificarTarjetasAViatResponse(false, 0, 0, 0, List.of(), List.of()));
+
+        service.importar(2L, pdfFile(), extractoFile());
+
+        org.mockito.Mockito.verify(reclasificarTarjetasAViatService)
+                .reclasificarTarjetasTocadas(any(), eq(false), anyString());
+    }
+
+    @Test
+    @DisplayName("tras importar una factura REPSOL, NO invoca la reclasificación TARJETA->VIAT (fuera de alcance, solo Cepsa/Moeve)")
+    void importar_repsol_noInvocaReclasificacionAutomatica() throws Exception {
+        when(configuracionImportService.obtener()).thenReturn(new ConfiguracionImportDTO(false, null, null));
+        when(facturaParser.parse(any(), any())).thenReturn(facturaParseResultConUnaOperacion());
+        when(facturaImportValidator.validar(any(Factura.class))).thenReturn(List.of());
+
+        service.importar(1L, pdfFile(), null);
+
+        org.mockito.Mockito.verifyNoInteractions(reclasificarTarjetasAViatService);
+    }
+
     private FacturaParseResult facturaParseResultConUnaOperacion() {
         Factura factura = Factura.builder()
                 .numFactura("FA-TEST-001")
@@ -191,5 +229,9 @@ class FacturaServiceTest {
 
     private MockMultipartFile pdfFile() {
         return new MockMultipartFile("facturaPdf", "factura.pdf", "application/pdf", "contenido".getBytes());
+    }
+
+    private MockMultipartFile extractoFile() {
+        return new MockMultipartFile("extractoPdf", "extracto.pdf", "application/pdf", "contenido".getBytes());
     }
 }

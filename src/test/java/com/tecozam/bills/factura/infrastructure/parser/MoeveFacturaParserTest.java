@@ -763,6 +763,28 @@ class MoeveFacturaParserTest {
     }
 
     @Test
+    @DisplayName("parseExtracto reconoce una operación de peaje cuyo concepto se parte en 2 líneas y el importe cae en una TERCERA línea aislada (bug real: factura AF8350000000062431, tarjeta 903338001814200008, importeTotal se perdía/NaN)")
+    void parseExtractoPeajeConceptoPartidoEnTresLineasConImporteAislado() throws IOException {
+        List<String> lines = loadFixture("familyA_extracto_peaje_concepto_partido_tres_lineas.txt");
+        List<TarjetaResumen> tarjetaResumenes = new ArrayList<>();
+
+        parser.parseExtracto(lines, tarjetaResumenes);
+
+        assertThat(tarjetaResumenes).hasSize(1);
+        TarjetaResumen tarjeta = tarjetaResumenes.get(0);
+        assertThat(tarjeta.getNumTarjeta()).isEqualTo("903338001814200008");
+        assertThat(tarjeta.getOperaciones()).hasSize(1);
+
+        Operacion op = tarjeta.getOperaciones().get(0);
+        assertThat(op.getConceptoOriginal()).isEqualTo("GESTION SERV.AUTOPISTAS PORTUG");
+        assertThat(op.getFechaHora()).isEqualTo(LocalDateTime.of(2026, 1, 31, 19, 43));
+        assertThat(op.getImporteTotal()).isNotNull();
+        assertThat(op.getImporteTotal()).isEqualByComparingTo(new BigDecimal("135.95"));
+        // PEAJE no tiene litros reales.
+        assertThat(op.getCantidad()).isNull();
+    }
+
+    @Test
     @DisplayName("parseExtracto: importeTotal siempre es el último token numérico de la línea, sea cual sea el número de campos intermedios")
     void parseExtractoImporteTotalEsUltimoTokenNumerico() {
         List<String> lines = List.of(

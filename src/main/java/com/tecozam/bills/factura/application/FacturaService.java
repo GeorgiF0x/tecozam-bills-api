@@ -1,6 +1,7 @@
 package com.tecozam.bills.factura.application;
 
 import com.tecozam.bills.admin.application.ConfiguracionImportService;
+import com.tecozam.bills.admin.application.ReclasificarTarjetasAViatService;
 import com.tecozam.bills.factura.domain.Factura;
 import com.tecozam.bills.factura.domain.TarjetaResumen;
 import com.tecozam.bills.factura.dto.FacturaDTO;
@@ -45,6 +46,7 @@ public class FacturaService {
     private final TicketService ticketService;
     private final FacturaImportValidator facturaImportValidator;
     private final ConfiguracionImportService configuracionImportService;
+    private final ReclasificarTarjetasAViatService reclasificarTarjetasAViatService;
 
     /**
      * Importa una factura PDF (y opcionalmente un extracto) para un proveedor dado.
@@ -73,7 +75,8 @@ public class FacturaService {
 
         // 3. Validacion previa de extracto obligatorio para MOEVE/CEPSA
         String codigoUpper = proveedor.getCodigo() == null ? "" : proveedor.getCodigo().toUpperCase();
-        boolean requiereExtracto = codigoUpper.contains("MOEVE") || codigoUpper.contains("CEPSA");
+        boolean esCepsaMoeve = codigoUpper.contains("MOEVE") || codigoUpper.contains("CEPSA");
+        boolean requiereExtracto = esCepsaMoeve;
         boolean tieneExtracto = extractoPdf != null && !extractoPdf.isEmpty();
         if (requiereExtracto && !tieneExtracto) {
             throw new BusinessException(
@@ -133,6 +136,7 @@ public class FacturaService {
         // Aplicamos TarjetaNumeroNormalizer para que el numero canonico sea el mismo
         // entre import de Excel y factura PDF (resuelve BILLS-11: duplicados por
         // normalizacion divergente).
+        List<Tarjeta> tarjetasTocadas = new java.util.ArrayList<>();
         for (TarjetaResumen tr : factura.getTarjetaResumenes()) {
             if (tr.getNumTarjeta() != null) {
                 String canonico = TarjetaNumeroNormalizer.canonical(tr.getNumTarjeta(), proveedor.getCodigo());
@@ -140,6 +144,7 @@ public class FacturaService {
                 Tarjeta tarjeta = tarjetaRepository.findByNumeroTarjeta(canonico)
                         .orElseGet(() -> crearTarjetaEnMaestro(canonico, tr.getAlias(), proveedor));
                 tr.setTarjeta(tarjeta);
+                tarjetasTocadas.add(tarjeta);
 
                 // NEW-12: si la tarjeta tiene una asignación activa en el maestro,
                 // copiamos el nombre del trabajador como conductor del resumen para
@@ -194,6 +199,21 @@ public class FacturaService {
 
         log.info("[FacturaService] Factura {} importada: {} tarjetas, {} operaciones, {} avisos",
                 factura.getNumFactura(), numTarjetas, numOperaciones, avisos.size());
+
+        // 7b. Reclasificación automática TARJETA->VIAT para Cepsa/Moeve, por
+        // historial real de operaciones (3+ operaciones y 100% peaje — ver
+        // odd/tasks/bugs-fecha-nan-y-reclasificacion-cepsa.md). Limitado a las
+        // tarjetas tocadas por ESTA factura; se evalúa después de guardar
+        // (paso 7) para que las operaciones recién importadas cuenten en el
+        // historial. No bloquea el import si falla.
+        if (esCepsaMoeve && !tarjetasTocadas.isEmpty()) {
+            try {
+                reclasificarTarjetasAViatService.reclasificarTarjetasTocadas(
+                        tarjetasTocadas, false, "sistema (import automatico)");
+            } catch (Exception e) {
+                log.warn("[FacturaService] Error en reclasificación automática TARJETA->VIAT: {}", e.getMessage(), e);
+            }
+        }
 
         // 8. Re-cotejo asíncrono de tickets pendientes
         cotejarPendientesAsync();

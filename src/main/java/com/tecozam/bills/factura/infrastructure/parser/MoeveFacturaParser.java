@@ -575,6 +575,7 @@ public class MoeveFacturaParser implements FacturaParser {
         LocalDate currentFechaOp = null;
         String currentHora = null;
         String currentEstablecimiento = null;
+        PendingPeaje pendingPeaje = null;
 
         for (int i = 0; i < lines.size(); i++) {
             String line = lines.get(i);
@@ -614,6 +615,7 @@ public class MoeveFacturaParser implements FacturaParser {
                 currentFechaOp = null;
                 currentHora = null;
                 currentEstablecimiento = null;
+                pendingPeaje = null;
                 continue;
             }
 
@@ -628,10 +630,43 @@ public class MoeveFacturaParser implements FacturaParser {
                 currentFechaOp = null;
                 currentHora = null;
                 currentEstablecimiento = null;
+                pendingPeaje = null;
                 continue;
             }
 
             if (currentTarjeta == null) continue;
+
+            // Resolución de una operación de peaje pendiente (ver PendingPeaje):
+            // esta línea es, bien más texto de concepto partido, bien el
+            // importe aislado que cierra la operación.
+            if (pendingPeaje != null) {
+                if (isAllNumericTokensLine(line)) {
+                    try {
+                        List<String> numTokens = collectNumericTokens(line.split("\\s+"), 0);
+                        Operacion op = buildOperacionFromNumericTail(pendingPeaje.referencia(),
+                                pendingPeaje.concepto().toString(), pendingPeaje.fechaHora(),
+                                pendingPeaje.establecimiento(), null, numTokens);
+                        op.setTarjetaResumen(currentTarjeta);
+                        currentTarjeta.getOperaciones().add(op);
+                    } catch (Exception e) {
+                        log.warn("[Moeve] Error cerrando operación de peaje pendiente con importe '{}': {}",
+                                line, e.getMessage());
+                    }
+                    pendingPeaje = null;
+                    continue;
+                }
+                if (!containsDigit(line)) {
+                    pendingPeaje.concepto().append(" ").append(line);
+                    continue;
+                }
+                // Línea inesperada (ni importe aislado ni texto puro): se
+                // abandona la operación pendiente sin importe en vez de
+                // arrastrarla indefinidamente, y se deja que esta línea se
+                // procese con el resto de detectores.
+                log.warn("[Moeve] Operación de peaje pendiente sin importe, abandonada por línea inesperada: '{}'",
+                        line);
+                pendingPeaje = null;
+            }
 
             // Detectar línea de operación Family A (empieza con número largo
             // seguido de concepto)
@@ -693,9 +728,33 @@ public class MoeveFacturaParser implements FacturaParser {
             Matcher opPeajeM = P_OP_LINE_PEAJE.matcher(line);
             if (opPeajeM.matches()) {
                 try {
-                    Operacion op = parseLineaOperacionPeaje(opPeajeM);
-                    op.setTarjetaResumen(currentTarjeta);
-                    currentTarjeta.getOperaciones().add(op);
+                    String establecimientoPeaje = opPeajeM.group(1).strip();
+                    String fechaRaw = opPeajeM.group(2);
+                    LocalDate fechaPeaje = fechaRaw.contains(".")
+                            ? LocalDate.parse(fechaRaw, FMT_DD_MM_YYYY_DOT)
+                            : LocalDate.parse(fechaRaw, FMT_YYYY_MM_DD);
+                    LocalDateTime fechaHoraPeaje = fechaPeaje.atTime(parseHoraOpcionalSegundos(opPeajeM.group(3)));
+                    String referenciaPeaje = opPeajeM.group(4);
+
+                    String[] tokens = opPeajeM.group(5).strip().split("\\s+");
+                    ConceptoSplit split = splitConceptoNumerico(tokens, 0);
+                    List<String> numTokens = collectNumericTokens(tokens, split.nextIndex());
+
+                    if (numTokens.isEmpty()) {
+                        // El importe no cabe en la misma línea que la fecha/hora/
+                        // concepto (concepto largo, p. ej. "GESTION
+                        // SERV.AUTOPISTAS PORTUG" partido en 2 líneas de texto):
+                        // se deja pendiente hasta la línea que lo cierre (ver
+                        // PendingPeaje). Bug real corregido: antes se creaba la
+                        // operación aquí mismo con importeTotal null/NaN.
+                        pendingPeaje = new PendingPeaje(referenciaPeaje, new StringBuilder(split.concepto()),
+                                fechaHoraPeaje, establecimientoPeaje);
+                    } else {
+                        Operacion op = buildOperacionFromNumericTail(referenciaPeaje, split.concepto(),
+                                fechaHoraPeaje, establecimientoPeaje, null, numTokens);
+                        op.setTarjetaResumen(currentTarjeta);
+                        currentTarjeta.getOperaciones().add(op);
+                    }
                 } catch (Exception e) {
                     log.warn("[Moeve] Error parseando operación de peaje '{}': {}", line, e.getMessage());
                 }
@@ -757,6 +816,26 @@ public class MoeveFacturaParser implements FacturaParser {
 
     /** Resultado de separar el concepto de los tokens numéricos que le siguen en una línea de operación. */
     private record ConceptoSplit(String concepto, int nextIndex) {
+    }
+
+    /**
+     * Operación de peaje Family A cuyo concepto venía partido en varias líneas
+     * de texto y cuyo importe aún no ha aparecido (bug real corregido: factura
+     * AF8350000000062431, tarjeta 903338001814200008, concepto "GESTION
+     * SERV.AUTOPISTAS" + "PORTUG" en dos líneas de texto separadas, seguido de
+     * una TERCERA línea que trae únicamente el importe "135,95" — sin este
+     * seguimiento, el importe caía fuera de cualquier patrón reconocido y la
+     * operación se guardaba con importeTotal null/NaN). Se resuelve en cuanto
+     * aparece una línea compuesta solo por tokens numéricos.
+     */
+    private record PendingPeaje(String referencia, StringBuilder concepto, LocalDateTime fechaHora,
+            String establecimiento) {
+    }
+
+    /** Línea compuesta únicamente por uno o más tokens numéricos (el importe de un {@link PendingPeaje}). */
+    private static boolean isAllNumericTokensLine(String line) {
+        String[] tokens = line.split("\\s+");
+        return tokens.length > 0 && Arrays.stream(tokens).allMatch(MoeveFacturaParser::isNumericToken);
     }
 
     /**
@@ -921,32 +1000,6 @@ public class MoeveFacturaParser implements FacturaParser {
 
         return buildOperacionFromNumericTail(null, split.concepto(), fechaHora,
                 trimEstablecimiento(establecimiento), null, numTokens);
-    }
-
-    /**
-     * Parsea una línea de operación MOEVE de peaje/red Family A del extracto
-     * (establecimiento genérico, fecha yyyy-MM-dd y hora HH:mm en la propia
-     * línea, seguidas del número de operación; sin palabra clave de
-     * combustible, p. ej. peajes "USO RED PORTUGAL").
-     *
-     * Formato: {establecimiento} {yyyy-MM-dd} {HH:mm} {numOperacion} {concepto} {importe}
-     * Ejemplo: "OPERACIONES GESTION SERVICIOS 2026-03-31 16:07 06401064194 USO RED PORTUGAL 1,21"
-     */
-    private Operacion parseLineaOperacionPeaje(Matcher m) {
-        String establecimiento = m.group(1).strip();
-        String fechaRaw = m.group(2);
-        LocalDate fecha = fechaRaw.contains(".")
-                ? LocalDate.parse(fechaRaw, FMT_DD_MM_YYYY_DOT)
-                : LocalDate.parse(fechaRaw, FMT_YYYY_MM_DD);
-        LocalDateTime fechaHora = fecha.atTime(parseHoraOpcionalSegundos(m.group(3)));
-        String referencia = m.group(4);
-
-        String[] tokens = m.group(5).strip().split("\\s+");
-        ConceptoSplit split = splitConceptoNumerico(tokens, 0);
-        List<String> numTokens = collectNumericTokens(tokens, split.nextIndex());
-
-        return buildOperacionFromNumericTail(referencia, split.concepto(), fechaHora, establecimiento, null,
-                numTokens);
     }
 
     /** Parsea "HH:mm" o "HH:mm:ss" (segundos opcionales) a {@link java.time.LocalTime}. */
