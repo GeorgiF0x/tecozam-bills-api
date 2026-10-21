@@ -60,4 +60,22 @@ public final class TarjetaNumeroNormalizer {
         }
         throw new IllegalArgumentException("Proveedor no reconocido para normalización: " + codigoProveedor);
     }
+
+    /**
+     * Indica si el número (tras quitar espacios) lleva el prefijo Repsol
+     * conocido ({@code 0007}). Señal estructural usada para reclasificar
+     * automáticamente a VIAT las filas de un listado Repsol declarado como
+     * TARJETA cuyo concepto es desconocido y cuyo número no encaja con el
+     * prefijo de tarjeta — ver odd/tasks/clasificacion-viat-por-numero.md.
+     *
+     * @param raw número tal como llega desde Excel. {@code null} o en blanco
+     *            devuelve {@code false} sin lanzar excepción (es un predicado,
+     *            no una validación de entrada).
+     */
+    public static boolean esNumeroTarjetaRepsol(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return false;
+        }
+        return raw.replaceAll("\\s+", "").startsWith(PREFIJO_REPSOL);
+    }
 }

@@ -90,6 +90,29 @@ public final class XlsxFixtureBuilder {
         return wb;
     }
 
+    /**
+     * Workbook Repsol con 2 filas del mismo conductor (M.VICENTE), reproduce el
+     * escenario real investigado en sesión con {@code LISTADO TARJETAS REPSOL.xlsx}:
+     * <ul>
+     *   <li>fila 1: tarjeta normal con prefijo {@code 0007} y concepto vacío →
+     *       sigue como TARJETA, no se reclasifica.</li>
+     *   <li>fila 2: mismo conductor, número SIN prefijo {@code 0007} y concepto
+     *       vacío → dispositivo ViaT real metido en el listado de tarjetas;
+     *       debe reclasificarse automáticamente a VIAT.</li>
+     * </ul>
+     */
+    public static Workbook repsolConViatPorNumero() {
+        Workbook wb = new XSSFWorkbook();
+        var sheet = wb.createSheet("Hoja1");
+        writeRow(sheet.createRow(0),
+                "NUMERO TARJETA", "MATRICULA", "NOMBRE", "CENTRO COSTE", "DES_PRODU");
+        writeRow(sheet.createRow(1),
+                "0007078833651673937", "", "MANUEL VICENTE PAZ", "ESPAÑA", "");
+        writeRow(sheet.createRow(2),
+                "0972401002002270964", "", "MANUEL VICENTE PAZ", "ESPAÑA", "");
+        return wb;
+    }
+
     private static void writeRow(Row row, String... values) {
         for (int i = 0; i < values.length; i++) {
             row.createCell(i).setCellValue(values[i]);

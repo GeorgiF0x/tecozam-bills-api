@@ -59,16 +59,17 @@ class ListadoTarjetasImportServiceIT {
         // Tarjetas que las fixtures meten (canonical + posible variante no-canónica de smoke tests previos)
         java.util.List.of(
                 "078833651671188", "078833651671246", "078833651671295",
-                "078833651670503", "078833651671402",
+                "078833651670503", "078833651671402", "078833651673937",
                 "0007078833651671188", "0007078833651671246", "0007078833651671295",
-                "0007078833651670503", "0007078833651671402",
+                "0007078833651670503", "0007078833651671402", "0007078833651673937",
                 "708011008022409211", "708011008022416612", "708011008022414419",
-                "708011008022414013"
+                "708011008022414013", "0972401002002270964"
         ).forEach(num -> tarjetaRepo.findByNumeroTarjeta(num).ifPresent(tarjetaRepo::delete));
         java.util.List.of(
                 "0007078833651670503",
                 "7076460769901026", "7076460769900077",
-                "708011008022409211", "708011008022416612", "708011008022414419"
+                "708011008022409211", "708011008022416612", "708011008022414419",
+                "0972401002002270964"
         ).forEach(cod -> viatRepo.findByCodigo(cod).ifPresent(viatRepo::delete));
     }
 
@@ -152,6 +153,63 @@ class ListadoTarjetasImportServiceIT {
         assertThat(segundo.tarjetasExistentes()).isPositive();
         assertThat(tarjetaRepo.count()).isEqualTo(tarjetasTrasPrimero);
         assertThat(viatRepo.count()).isEqualTo(viatsTrasPrimero);
+    }
+
+    @Test
+    @DisplayName("Repsol: concepto vacío y número SIN prefijo 0007 se reclasifica automáticamente a VIAT")
+    void repsolConceptoVacioYNumeroSinPrefijoSeReclasificaAViat() throws Exception {
+        MultipartFile file = toMultipart(XlsxFixtureBuilder.repsolConViatPorNumero(), "repsol-viat.xlsx");
+
+        ImportTarjetasReportDTO report = importService.importar(file, "REPSOL", false);
+
+        assertThat(report.reclasificadosPorNumero())
+                .as("Solo la fila sin prefijo 0007 se reclasifica")
+                .isEqualTo(1);
+        assertThat(report.tarjetasCreadas())
+                .as("La fila con prefijo 0007 sigue como tarjeta normal")
+                .isEqualTo(1);
+        assertThat(report.viatsCreados())
+                .as("La fila sin prefijo 0007 se crea como VIAT, no como tarjeta")
+                .isEqualTo(1);
+        assertThat(tarjetaRepo.findByNumeroTarjeta("078833651673937")).isPresent();
+        assertThat(tarjetaRepo.findByNumeroTarjeta("0972401002002270964")).isEmpty();
+        assertThat(viatRepo.findByCodigo("0972401002002270964")).isPresent();
+        assertThat(report.errores())
+                .anyMatch(e -> e.contains("0972401002002270964")
+                        && e.contains("reclasificado automáticamente como VIAT")
+                        && e.contains("número fuera del prefijo Repsol conocido (0007)"));
+    }
+
+    @Test
+    @DisplayName("Repsol: concepto vacío pero número SÍ tiene prefijo 0007 → no se reclasifica, mensaje solo se enriquece con la serie")
+    void repsolConceptoVacioYNumeroConPrefijoNoSeReclasifica() throws Exception {
+        MultipartFile file = toMultipart(XlsxFixtureBuilder.repsolMini(), "repsol-mini.xlsx");
+
+        ImportTarjetasReportDTO report = importService.importar(file, "REPSOL", false);
+
+        assertThat(report.reclasificadosPorNumero())
+                .as("Ninguna fila de repsolMini carece del prefijo 0007")
+                .isZero();
+        assertThat(report.viatsCreados()).isZero();
+        assertThat(report.filasIgnoradas()).isEqualTo(1);
+        assertThat(report.errores())
+                .as("Fila CONCEPTO-NO-CONOCIDO mantiene el motivo y suma la serie, sin mensaje de reclasificación")
+                .anyMatch(e -> e.contains("CONCEPTO-NO-CONOCIDO") && e.contains("serie 0007078833")
+                        && !e.contains("reclasificado"));
+    }
+
+    @Test
+    @DisplayName("Cepsa: la fila con concepto desconocido enriquece el mensaje con la serie del número, sin reclasificar (sin señal fiable)")
+    void cepsaConceptoDesconocidoEnriqueceMensajeConSerieSinReclasificar() throws Exception {
+        MultipartFile file = toMultipart(XlsxFixtureBuilder.cepsaMini(), "cepsa-mini.xlsx");
+
+        ImportTarjetasReportDTO report = importService.importar(file, "CEPSA", false);
+
+        assertThat(report.reclasificadosPorNumero())
+                .as("Cepsa/Moeve nunca se reclasifica por número (sin señal fiable)")
+                .isZero();
+        assertThat(report.errores())
+                .anyMatch(e -> e.contains("708011008022414013") && e.contains("serie 7080110080"));
     }
 
     @Test

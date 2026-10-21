@@ -126,8 +126,8 @@ public class ListadoTarjetasImportService {
     }
 
     private void materializar(FilaImportada fila, ImportContext ctx) {
+        TipoRecurso tipoEfectivo = fila.tipo();
         if (!fila.conceptoConocido()) {
-            ctx.filasIgnoradas++;
             // NEW-13: mensaje claro con motivo concreto en lugar del contador
             // genérico. El admin puede entender qué falla y arreglar el Excel.
             String concepto = fila.concepto();
@@ -137,16 +137,46 @@ public class ListadoTarjetasImportService {
             } else {
                 motivo = "Concepto '" + concepto + "' no reconocido";
             }
-            ctx.errores.add("Tarjeta " + fila.numero() + " — " + motivo
-                    + " · procesado como TARJETA por defecto");
+            // odd/tasks/clasificacion-viat-por-numero.md: señal estructural (no
+            // semántica) — todo número de tarjeta Repsol lleva el prefijo 0007
+            // (TarjetaNumeroNormalizer). Si el lote se declaró TARJETA pero el
+            // concepto es desconocido y el número no encaja con ese prefijo, es
+            // casi con certeza un dispositivo ViaT real metido en el listado de
+            // tarjetas (evidencia real de sesión). Cepsa/Moeve no tiene señal
+            // fiable por número (ver plan) y nunca se reclasifica.
+            boolean reclasificaAViat = fila.tipo() == TipoRecurso.TARJETA
+                    && esProveedorRepsol(ctx)
+                    && !TarjetaNumeroNormalizer.esNumeroTarjetaRepsol(fila.numero());
+            if (reclasificaAViat) {
+                tipoEfectivo = TipoRecurso.VIAT;
+                ctx.reclasificadosPorNumero++;
+                ctx.errores.add("Tarjeta " + fila.numero()
+                        + " — reclasificado automáticamente como VIAT"
+                        + " · número fuera del prefijo Repsol conocido (0007)");
+            } else {
+                ctx.filasIgnoradas++;
+                ctx.errores.add("Tarjeta " + fila.numero() + " — " + motivo
+                        + " · procesado como TARJETA por defecto"
+                        + " · serie " + serieDe(fila.numero()));
+            }
         }
         materializarCentroCoste(fila, ctx);
         Trabajador trabajador = materializarTrabajador(fila, ctx);
-        if (fila.tipo() == TipoRecurso.VIAT) {
+        if (tipoEfectivo == TipoRecurso.VIAT) {
             materializarViat(fila, trabajador, ctx);
         } else {
             materializarTarjeta(fila, ctx);
         }
+    }
+
+    private boolean esProveedorRepsol(ImportContext ctx) {
+        // resolverProveedor ya normaliza el alias SOLRED → REPSOL.
+        return "REPSOL".equals(ctx.getCodigoProveedor());
+    }
+
+    private static String serieDe(String numero) {
+        String limpio = numero == null ? "" : numero.replaceAll("\\s+", "");
+        return limpio.substring(0, Math.min(10, limpio.length()));
     }
 
     private void materializarCentroCoste(FilaImportada fila, ImportContext ctx) {
@@ -253,6 +283,7 @@ public class ListadoTarjetasImportService {
                 ctx.viatsCreados,
                 ctx.viatsExistentes,
                 ctx.filasIgnoradas,
+                ctx.reclasificadosPorNumero,
                 ctx.errores,
                 duracion);
     }

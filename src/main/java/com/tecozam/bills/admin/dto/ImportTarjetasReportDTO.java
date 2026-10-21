@@ -12,6 +12,7 @@ public record ImportTarjetasReportDTO(
         int viatsCreados,
         int viatsExistentes,
         int filasIgnoradas,
+        int reclasificadosPorNumero,
         List<String> errores,
         long duracionMs
 ) {

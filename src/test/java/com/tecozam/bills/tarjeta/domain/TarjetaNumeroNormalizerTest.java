@@ -96,4 +96,29 @@ class TarjetaNumeroNormalizerTest {
         String canonical = TarjetaNumeroNormalizer.canonical("0007078833651671188", "repsol");
         assertThat(canonical).isEqualTo("078833651671188");
     }
+
+    @Test
+    @DisplayName("esNumeroTarjetaRepsol: número con prefijo 0007 → true")
+    void esNumeroTarjetaRepsolConPrefijoEsTrue() {
+        assertThat(TarjetaNumeroNormalizer.esNumeroTarjetaRepsol("0007078833651673937")).isTrue();
+    }
+
+    @Test
+    @DisplayName("esNumeroTarjetaRepsol: número sin prefijo 0007 (dispositivo ViaT real) → false")
+    void esNumeroTarjetaRepsolSinPrefijoEsFalse() {
+        assertThat(TarjetaNumeroNormalizer.esNumeroTarjetaRepsol("0972401002002270964")).isFalse();
+    }
+
+    @Test
+    @DisplayName("esNumeroTarjetaRepsol: elimina espacios antes de comprobar el prefijo")
+    void esNumeroTarjetaRepsolEliminaEspacios() {
+        assertThat(TarjetaNumeroNormalizer.esNumeroTarjetaRepsol("  0007 078 833 651 673 937  ")).isTrue();
+    }
+
+    @Test
+    @DisplayName("esNumeroTarjetaRepsol: null o en blanco → false (no lanza excepción)")
+    void esNumeroTarjetaRepsolNullOBlancoEsFalse() {
+        assertThat(TarjetaNumeroNormalizer.esNumeroTarjetaRepsol(null)).isFalse();
+        assertThat(TarjetaNumeroNormalizer.esNumeroTarjetaRepsol("   ")).isFalse();
+    }
 }

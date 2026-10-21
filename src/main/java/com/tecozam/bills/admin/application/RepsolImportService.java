@@ -336,6 +336,7 @@ public class RepsolImportService {
                 counters.viatsCreados,
                 counters.viatsExistentes,
                 counters.filasIgnoradas,
+                0, // reclasificadosPorNumero: ruta legacy, no aplica la reclasificación por número
                 errores,
                 duracionMs
         );

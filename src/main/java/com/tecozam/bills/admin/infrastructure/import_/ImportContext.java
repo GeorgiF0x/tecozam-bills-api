@@ -38,6 +38,7 @@ public final class ImportContext {
     public int viatsCreados;
     public int viatsExistentes;
     public int filasIgnoradas;
+    public int reclasificadosPorNumero;
     public final List<String> errores = new ArrayList<>();
 
     public final Map<String, CentroCoste> centrosCache = new HashMap<>();
