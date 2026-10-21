@@ -62,12 +62,17 @@ public class FacturaController {
     @PostMapping(value = "/importar-lote", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @PreAuthorize("hasAnyRole('ADMIN','GESTOR')")
     public ResponseEntity<List<ImportarFacturaLoteResultadoDTO>> importarLote(
-            @RequestPart("items") MultipartFile itemsPart,
+            @RequestParam("items") String itemsJson,
             MultipartHttpServletRequest request
     ) {
+        // "items" se manda como campo de texto (FormData.append con un String,
+        // sin filename), no como parte-archivo: Spring/Tomcat solo exponen como
+        // MultipartFile las partes que SI traen filename en el
+        // Content-Disposition, así que @RequestPart MultipartFile nunca
+        // encontraba esta parte ("Required part 'items' is not present").
         List<ImportarFacturaLoteItemDTO> items;
         try {
-            items = objectMapper.readValue(itemsPart.getInputStream(),
+            items = objectMapper.readValue(itemsJson,
                     new TypeReference<List<ImportarFacturaLoteItemDTO>>() {});
         } catch (IOException e) {
             throw new BusinessException("El manifiesto 'items' no es un JSON valido: " + e.getMessage());
