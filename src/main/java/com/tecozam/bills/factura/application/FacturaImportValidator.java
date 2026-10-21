@@ -148,10 +148,18 @@ public class FacturaImportValidator {
         }
 
         // 3. importeTotal no cuadra con cantidad x precioUnitario — indica que
-        // alguno de los tres campos se leyo de la columna equivocada.
+        // alguno de los tres campos se leyo de la columna equivocada. Cuando
+        // el parser identifico un descuento real (dtoTotal != null, forma
+        // confirmada via la identidad importe-dtoTotal==importeTotal), se
+        // descuenta antes de comparar: un descuento real no es un error de
+        // parseo, y contarlo como discrepancia disparaba un aviso falso en
+        // cada operacion con descuento de una factura real.
         if (op.getImporteTotal() != null && op.getCantidad() != null && precio != null
                 && op.getCantidad().signum() > 0 && precio.signum() > 0) {
             BigDecimal calculado = op.getCantidad().multiply(precio);
+            if (op.getDtoTotal() != null) {
+                calculado = calculado.subtract(op.getDtoTotal());
+            }
             double diffPct = calculado.signum() != 0
                     ? Math.abs(op.getImporteTotal().doubleValue() - calculado.doubleValue()) / calculado.doubleValue()
                     : 0;
