@@ -152,6 +152,19 @@ class FacturaServiceTest {
                 .isInstanceOf(ResourceNotFoundException.class);
     }
 
+    @Test
+    @DisplayName("eliminarMasivo con un id duplicado en el lote lo procesa una sola vez")
+    void eliminarMasivo_idDuplicado_procesaUnaSolaVez() {
+        Factura f1 = Factura.builder().id(10L).numFactura("FA-001").build();
+
+        when(facturaRepository.findById(10L)).thenReturn(Optional.of(f1));
+        when(ticketService.desvincularPorFactura(anyLong())).thenReturn(0);
+
+        service.eliminarMasivo(List.of(10L, 10L));
+
+        verify(facturaRepository, org.mockito.Mockito.times(1)).delete(f1);
+    }
+
     private FacturaParseResult facturaParseResultConUnaOperacion() {
         Factura factura = Factura.builder()
                 .numFactura("FA-TEST-001")
