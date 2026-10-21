@@ -239,7 +239,7 @@ class RepsolFacturaParserTest {
 
         assertThat(tarjetas).hasSize(1);
         List<Operacion> ops = tarjetas.get(0).getOperaciones();
-        assertThat(ops).hasSize(6);
+        assertThat(ops).hasSize(8);
 
         // Fila con 7 valores numericos en la tirada: cantidad, precioNeto,
         // precioIvaInc, importe, dto%, dtoTotal, importeTotal. Solo los 3
@@ -274,7 +274,7 @@ class RepsolFacturaParserTest {
         parser.parseOperaciones(lines, tarjetas, 2026);
 
         List<Operacion> ops = tarjetas.get(0).getOperaciones();
-        assertThat(ops).hasSize(6);
+        assertThat(ops).hasSize(8);
 
         Operacion adblue = ops.get(4);
         assertThat(adblue.getImporte()).isEqualByComparingTo(new BigDecimal("15.89"));
@@ -289,6 +289,30 @@ class RepsolFacturaParserTest {
     }
 
     @Test
+    @DisplayName("parseOperaciones no confunde un punto kilometrico con coma decimal embebido en el establecimiento "
+            + "('ESVERINSA CR N-525, 132,1') con un campo numerico real cuando la fila no trae columna de Kms que actue "
+            + "de freno (bug real factura A260638472: cantidad se leia como 132,1 en vez de 25,92/8,27, disparando "
+            + "'importe no cuadra' con un calculado disparatado de 220,47€ y 112,29€)")
+    void parseOperacionesNoConfundePuntoKilometricoDeEstablecimientoConCampoNumerico() throws IOException {
+        List<String> lines = loadFixture("operaciones_campos_parciales.txt");
+        List<TarjetaResumen> tarjetas = new ArrayList<>();
+
+        parser.parseOperaciones(lines, tarjetas, 2026);
+
+        List<Operacion> ops = tarjetas.get(0).getOperaciones();
+        Operacion diesel = ops.get(6);
+        assertThat(diesel.getEstablecimiento()).isEqualTo("ESVERINSA CR N-525, 132,1");
+        assertThat(diesel.getCantidad()).isEqualByComparingTo(new BigDecimal("25.92"));
+        assertThat(diesel.getPrecioIvaInc()).isEqualByComparingTo(new BigDecimal("1.669"));
+        assertThat(diesel.getImporteTotal()).isEqualByComparingTo(new BigDecimal("43.26"));
+
+        Operacion adbluePuntoKm = ops.get(7);
+        assertThat(adbluePuntoKm.getCantidad()).isEqualByComparingTo(new BigDecimal("8.27"));
+        assertThat(adbluePuntoKm.getPrecioIvaInc()).isEqualByComparingTo(new BigDecimal("0.85"));
+        assertThat(adbluePuntoKm.getImporteTotal()).isEqualByComparingTo(new BigDecimal("5.38"));
+    }
+
+    @Test
     @DisplayName("FacturaImportValidator ya no marca precio/litro fuera de rango, NI 'importe no cuadra', para estas "
             + "operaciones reales con descuento (regresion directa del bug de 1192 avisos falsos: antes precioUnitario "
             + "quedaba en ~81,91€ y el descuento real se interpretaba como una discrepancia de parser)")
@@ -298,7 +322,7 @@ class RepsolFacturaParserTest {
         parser.parseOperaciones(lines, tarjetas, 2026);
 
         Factura factura = Factura.builder()
-                .totalFactura(new BigDecimal("357.76"))
+                .totalFactura(new BigDecimal("406.40"))
                 .tarjetaResumenes(tarjetas)
                 .build();
         tarjetas.forEach(tr -> tr.setFactura(factura));
