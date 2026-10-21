@@ -13,6 +13,7 @@ import com.tecozam.bills.factura.infrastructure.persistence.FacturaRepository;
 import com.tecozam.bills.proveedor.domain.Proveedor;
 import com.tecozam.bills.proveedor.infrastructure.persistence.ProveedorRepository;
 import com.tecozam.bills.shared.domain.enums.ConceptoUnificado;
+import com.tecozam.bills.shared.infrastructure.exception.ResourceNotFoundException;
 import com.tecozam.bills.shared.infrastructure.storage.FileStorageService;
 import com.tecozam.bills.tarjeta.infrastructure.persistence.TarjetaAsignacionRepository;
 import com.tecozam.bills.tarjeta.infrastructure.persistence.TarjetaRepository;
@@ -32,8 +33,11 @@ import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -64,11 +68,11 @@ class FacturaServiceTest {
         proveedor.setCodigo("REPSOL");
         proveedor.setNombre("Repsol");
 
-        when(proveedorRepository.findById(1L)).thenReturn(Optional.of(proveedor));
-        when(parserFactory.getParser(anyString(), any(Boolean.class))).thenReturn(facturaParser);
-        when(facturaRepository.save(any(Factura.class))).thenAnswer(inv -> inv.getArgument(0));
-        when(tarjetaRepository.findByNumeroTarjeta(anyString())).thenReturn(Optional.empty());
-        when(tarjetaRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        org.mockito.Mockito.lenient().when(proveedorRepository.findById(1L)).thenReturn(Optional.of(proveedor));
+        org.mockito.Mockito.lenient().when(parserFactory.getParser(anyString(), any(Boolean.class))).thenReturn(facturaParser);
+        org.mockito.Mockito.lenient().when(facturaRepository.save(any(Factura.class))).thenAnswer(inv -> inv.getArgument(0));
+        org.mockito.Mockito.lenient().when(tarjetaRepository.findByNumeroTarjeta(anyString())).thenReturn(Optional.empty());
+        org.mockito.Mockito.lenient().when(tarjetaRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
     }
 
     @Test
@@ -117,6 +121,48 @@ class FacturaServiceTest {
         ArgumentCaptor<Factura> captor = ArgumentCaptor.forClass(Factura.class);
         org.mockito.Mockito.verify(facturaRepository).save(captor.capture());
         assertThat(captor.getValue().isRequiereRevisionManual()).isFalse();
+    }
+
+    @Test
+    @DisplayName("eliminarMasivo elimina todas las facturas indicadas")
+    void eliminarMasivo_eliminaVariasFacturas() {
+        Factura f1 = Factura.builder().id(10L).numFactura("FA-001").build();
+        Factura f2 = Factura.builder().id(20L).numFactura("FA-002").build();
+
+        when(facturaRepository.findById(10L)).thenReturn(Optional.of(f1));
+        when(facturaRepository.findById(20L)).thenReturn(Optional.of(f2));
+        when(ticketService.desvincularPorFactura(anyLong())).thenReturn(0);
+
+        service.eliminarMasivo(List.of(10L, 20L));
+
+        verify(facturaRepository).delete(f1);
+        verify(facturaRepository).delete(f2);
+    }
+
+    @Test
+    @DisplayName("eliminarMasivo con un id inexistente lanza ResourceNotFoundException (no hace catch silencioso, la transaccion de clase revierte el lote)")
+    void eliminarMasivo_idInexistente_lanzaExcepcion() {
+        Factura f1 = Factura.builder().id(10L).numFactura("FA-001").build();
+
+        when(facturaRepository.findById(10L)).thenReturn(Optional.of(f1));
+        when(facturaRepository.findById(999L)).thenReturn(Optional.empty());
+        when(ticketService.desvincularPorFactura(anyLong())).thenReturn(0);
+
+        assertThatThrownBy(() -> service.eliminarMasivo(List.of(10L, 999L)))
+                .isInstanceOf(ResourceNotFoundException.class);
+    }
+
+    @Test
+    @DisplayName("eliminarMasivo con un id duplicado en el lote lo procesa una sola vez")
+    void eliminarMasivo_idDuplicado_procesaUnaSolaVez() {
+        Factura f1 = Factura.builder().id(10L).numFactura("FA-001").build();
+
+        when(facturaRepository.findById(10L)).thenReturn(Optional.of(f1));
+        when(ticketService.desvincularPorFactura(anyLong())).thenReturn(0);
+
+        service.eliminarMasivo(List.of(10L, 10L));
+
+        verify(facturaRepository, org.mockito.Mockito.times(1)).delete(f1);
     }
 
     private FacturaParseResult facturaParseResultConUnaOperacion() {
