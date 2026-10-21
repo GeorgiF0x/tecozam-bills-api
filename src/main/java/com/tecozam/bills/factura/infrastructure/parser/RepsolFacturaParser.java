@@ -93,6 +93,10 @@ public class RepsolFacturaParser implements FacturaParser {
     // ── Línea de operación ────────────────────────────────────────────────────
     private static final Pattern P_OP_LINE = Pattern.compile(
             "^(\\d{6,8})\\s+(\\d{2}/\\d{2})\\s+(\\d{2}:\\d{2})\\s+(.+)$");
+    // Código de carretera (letra-guion-dígitos-coma, ej. "N-525," o "A-52,")
+    // que precede a un punto kilométrico con coma decimal embebido en el
+    // establecimiento — ver uso en parseLineaOperacion.
+    private static final Pattern P_CODIGO_CARRETERA = Pattern.compile(".*[A-Za-z]-\\d+,$");
 
     private static final DateTimeFormatter FMT_DATE = DateTimeFormatter.ofPattern("dd/MM/yyyy");
 
@@ -556,10 +560,28 @@ public class RepsolFacturaParser implements FacturaParser {
             i--;
         }
 
-        // Recoger hasta 10 valores numéricos desde el final
+        // Recoger hasta 10 valores numéricos desde el final.
+        //
+        // Un establecimiento puede traer un punto kilométrico con coma
+        // decimal pegado a un código de carretera, ej. "CR N-525, 132,1"
+        // (carretera N-525, km 132,1): el token "132,1" por sí solo cumple
+        // el mismo patrón numérico que un campo real, y cuando la fila no
+        // trae columna de Kms que actúe de freno (el freno habitual, un
+        // número con PUNTO en vez de coma, p.ej. "144.510"), el escaneo
+        // seguía tirando hacia atrás y lo colaba como si fuera "cantidad",
+        // desplazando todos los campos reales una posición (bug real:
+        // cantidad 25,92 leída como 132,1, disparando un aviso falso de
+        // "importe no cuadra" con un calculado de 220,47€). La señal que SI
+        // distingue esto de forma fiable es el código de carretera en sí
+        // (letra-guion-dígitos-coma, ej. "N-525," o "A-52,") justo antes del
+        // número — un campo numérico real de la tabla nunca viene precedido
+        // por ese patrón. No basta con "el token anterior termina en coma":
+        // un número de PK sin código de carretera (ej. "PK 118," antes de un
+        // importe real duplicado "12,02 12,02") SI debe seguir leyéndose.
         while (i >= 0 && nums.size() < 10) {
             String tok = tokens[i];
-            if (tok.matches("-?[\\d.]+,[\\d]+")) {
+            boolean precedidoPorCodigoCarretera = i > 0 && P_CODIGO_CARRETERA.matcher(tokens[i - 1]).matches();
+            if (tok.matches("-?[\\d.]+,[\\d]+") && !precedidoPorCodigoCarretera) {
                 nums.add(0, parseAmount(tok));
                 i--;
             } else {
