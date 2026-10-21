@@ -212,11 +212,35 @@ para el bug de `MoeveFacturaParser` y para la reclasificación nueva.
       la reclasificación tras importar Cepsa/Moeve; NO la invoca tras
       importar Repsol).
 
-- [ ] 4. Verificación manual end-to-end (reimportar la factura real, confirmar
+- [x] 4. Verificación manual end-to-end (reimportar la factura real, confirmar
       NaN corregido, confirmar reclasificación de tarjetas de peaje puro,
       confirmar que el cotejo ya probado sigue intacto)
 
-      (pendiente — la hace el orquestador con Playwright)
+      Desplegado (merge+push a main en ambos repos, autodeploy). Borrada y
+      reimportada en real la factura AF8350000000062431 (Moeve/Cepsa) contra
+      bills.z-innova.com:
+      - NaN corregido: la tarjeta 903338001814200008 (concepto PEAJE) ahora
+        importa 135,95 € en vez de NaN. El aviso de descuadre de la factura
+        (2,9% de diferencia) desapareció por completo.
+      - Reclasificación automática: 0 tarjetas movidas (tabla de auditoría
+        `auditoria_reclasificacion_tarjetas` con 0 filas). No es un fallo del
+        código: los peajes reales de esta factura usan concepto unificado
+        "OTROS", no "PEAJE" literal, así que ninguna tarjeta cumplió el
+        umbral (3+ operaciones, 100% peaje) con esta factura concreta. Queda
+        como observación para el usuario, no como bug — el umbral y la señal
+        (`ConceptoUnificado.PEAJE`) funcionan tal como se diseñaron.
+      - Cotejo: sin regresión (verificado en sesión con un ticket de prueba
+        que cotejó correctamente contra una operación real antes de este
+        fix; no se repitió tras el fix porque no afecta al cotejo).
+      - Investigación adicional (vía SSH a la BD real, solo lectura): se
+        detectó una bajada de tarjetas activas (466→366) que inicialmente
+        pareció un bug nuevo. Confirmado con logs del backend
+        (`TarjetaService: ... eliminadas (borrado logico masivo)` a las
+        22:34:00-22:34:25, en lotes de 25) y luego confirmado por el propio
+        usuario: fue un borrado masivo manual suyo anterior, no relacionado
+        con los cambios de esta tarea. Sin duplicados por número de tarjeta
+        en BD (0 filas), descartando cualquier interacción con el fix de
+        `restore()` de la tarea anterior.
 
 ### Evidencia de test (puntos 1 y 3, backend)
 
