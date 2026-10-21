@@ -239,7 +239,7 @@ class RepsolFacturaParserTest {
 
         assertThat(tarjetas).hasSize(1);
         List<Operacion> ops = tarjetas.get(0).getOperaciones();
-        assertThat(ops).hasSize(8);
+        assertThat(ops).hasSize(9);
 
         // Fila con 7 valores numericos en la tirada: cantidad, precioNeto,
         // precioIvaInc, importe, dto%, dtoTotal, importeTotal. Solo los 3
@@ -274,7 +274,7 @@ class RepsolFacturaParserTest {
         parser.parseOperaciones(lines, tarjetas, 2026);
 
         List<Operacion> ops = tarjetas.get(0).getOperaciones();
-        assertThat(ops).hasSize(8);
+        assertThat(ops).hasSize(9);
 
         Operacion adblue = ops.get(4);
         assertThat(adblue.getImporte()).isEqualByComparingTo(new BigDecimal("15.89"));
@@ -301,7 +301,10 @@ class RepsolFacturaParserTest {
 
         List<Operacion> ops = tarjetas.get(0).getOperaciones();
         Operacion diesel = ops.get(6);
-        assertThat(diesel.getEstablecimiento()).isEqualTo("ESVERINSA CR N-525, 132,1");
+        // El punto kilometrico "132,1" se reconoce ahora como el valor numerico
+        // sobrante que es (via la identidad aritmetica) y se descarta del todo,
+        // en vez de quedar colgado como texto dentro del establecimiento.
+        assertThat(diesel.getEstablecimiento()).isEqualTo("ESVERINSA CR N-525,");
         assertThat(diesel.getCantidad()).isEqualByComparingTo(new BigDecimal("25.92"));
         assertThat(diesel.getPrecioIvaInc()).isEqualByComparingTo(new BigDecimal("1.669"));
         assertThat(diesel.getImporteTotal()).isEqualByComparingTo(new BigDecimal("43.26"));
@@ -310,6 +313,25 @@ class RepsolFacturaParserTest {
         assertThat(adbluePuntoKm.getCantidad()).isEqualByComparingTo(new BigDecimal("8.27"));
         assertThat(adbluePuntoKm.getPrecioIvaInc()).isEqualByComparingTo(new BigDecimal("0.85"));
         assertThat(adbluePuntoKm.getImporteTotal()).isEqualByComparingTo(new BigDecimal("5.38"));
+    }
+
+    @Test
+    @DisplayName("parseOperaciones NO descarta la cantidad real cuando un codigo de carretera SIN punto kilometrico "
+            + "detras precede directamente al campo numerico real ('CTR N-634, 36,85 ...' — bug real de una correccion "
+            + "anterior demasiado agresiva: bloqueaba por texto cualquier numero tras un codigo de carretera, incluida "
+            + "la cantidad legitima, en vez de verificar la identidad aritmetica)")
+    void parseOperacionesNoDescartaCantidadRealTrasCodigoCarreteraSinPuntoKilometrico() throws IOException {
+        List<String> lines = loadFixture("operaciones_campos_parciales.txt");
+        List<TarjetaResumen> tarjetas = new ArrayList<>();
+
+        parser.parseOperaciones(lines, tarjetas, 2026);
+
+        List<Operacion> ops = tarjetas.get(0).getOperaciones();
+        Operacion diesel = ops.get(8);
+        assertThat(diesel.getEstablecimiento()).isEqualTo("A.S. LA RETAMA CTR N-634,");
+        assertThat(diesel.getCantidad()).isEqualByComparingTo(new BigDecimal("36.85"));
+        assertThat(diesel.getPrecioIvaInc()).isEqualByComparingTo(new BigDecimal("1.729"));
+        assertThat(diesel.getImporteTotal()).isEqualByComparingTo(new BigDecimal("63.71"));
     }
 
     @Test
@@ -322,7 +344,7 @@ class RepsolFacturaParserTest {
         parser.parseOperaciones(lines, tarjetas, 2026);
 
         Factura factura = Factura.builder()
-                .totalFactura(new BigDecimal("406.40"))
+                .totalFactura(new BigDecimal("470.11"))
                 .tarjetaResumenes(tarjetas)
                 .build();
         tarjetas.forEach(tr -> tr.setFactura(factura));
