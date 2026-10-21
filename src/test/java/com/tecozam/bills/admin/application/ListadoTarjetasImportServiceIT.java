@@ -1,10 +1,15 @@
 package com.tecozam.bills.admin.application;
 
 import com.tecozam.bills.admin.dto.ImportTarjetasReportDTO;
+import com.tecozam.bills.centrocoste.domain.CentroCoste;
+import com.tecozam.bills.centrocoste.infrastructure.persistence.CentroCosteRepository;
 import com.tecozam.bills.proveedor.domain.Proveedor;
 import com.tecozam.bills.proveedor.infrastructure.persistence.ProveedorRepository;
+import com.tecozam.bills.shared.domain.enums.EstadoRecurso;
 import com.tecozam.bills.shared.fixtures.XlsxFixtureBuilder;
+import com.tecozam.bills.tarjeta.domain.Tarjeta;
 import com.tecozam.bills.tarjeta.infrastructure.persistence.TarjetaRepository;
+import com.tecozam.bills.viat.domain.Viat;
 import com.tecozam.bills.viat.infrastructure.persistence.ViatRepository;
 import org.apache.poi.ss.usermodel.Workbook;
 import org.junit.jupiter.api.BeforeEach;
@@ -38,6 +43,9 @@ class ListadoTarjetasImportServiceIT {
 
     @Autowired
     private ProveedorRepository proveedorRepo;
+
+    @Autowired
+    private CentroCosteRepository centroCosteRepo;
 
     @BeforeEach
     void sembrarProveedoresSiFaltan() {
@@ -210,6 +218,89 @@ class ListadoTarjetasImportServiceIT {
                 .isZero();
         assertThat(report.errores())
                 .anyMatch(e -> e.contains("708011008022414013") && e.contains("serie 7080110080"));
+    }
+
+    @Test
+    @DisplayName("Repsol: tarjeta existente pero soft-deleted se restaura (eliminado_en vuelve a null) al reimportar, no solo se cuenta como existente")
+    void repsolTarjetaSoftDeletedSeRestauraAlReimportar() throws Exception {
+        Proveedor repsol = proveedorRepo.findByCodigo("REPSOL").orElseThrow();
+        Tarjeta softDeleted = Tarjeta.builder()
+                .numeroTarjeta("078833651671188")
+                .alias("DUMITRU")
+                .proveedor(repsol)
+                .estado(EstadoRecurso.DISPONIBLE)
+                .activa(true)
+                .build();
+        softDeleted.softDelete();
+        tarjetaRepo.save(softDeleted);
+        assertThat(tarjetaRepo.findByNumeroTarjeta("078833651671188").orElseThrow().isEliminado()).isTrue();
+
+        MultipartFile file = toMultipart(XlsxFixtureBuilder.repsolMini(), "repsol-mini.xlsx");
+        ImportTarjetasReportDTO report = importService.importar(file, "REPSOL", false);
+
+        assertThat(report.tarjetasExistentes())
+                .as("Se sigue contando como existente, igual que antes")
+                .isPositive();
+        Tarjeta restaurada = tarjetaRepo.findByNumeroTarjeta("078833651671188").orElseThrow();
+        assertThat(restaurada.isEliminado())
+                .as("odd/tasks/clasificacion-viat-por-numero.md punto 8/9: debe restaurarse, no quedar invisible para siempre")
+                .isFalse();
+        assertThat(tarjetaRepo.findByEliminadoEnIsNull())
+                .as("Visible de verdad en el listado real, no solo contada en el reporte del modal")
+                .anyMatch(t -> t.getNumeroTarjeta().equals("078833651671188"));
+    }
+
+    @Test
+    @DisplayName("Cepsa (esViat=true): VIAT existente pero soft-deleted se restaura al reimportar")
+    void cepsaViatSoftDeletedSeRestauraAlReimportar() throws Exception {
+        Viat softDeleted = Viat.builder()
+                .codigo("708011008022409211")
+                .numeroSerie("0034MFB")
+                .descripcion("DAVID CASTUERA")
+                .estado(EstadoRecurso.DISPONIBLE)
+                .activo(true)
+                .build();
+        softDeleted.softDelete();
+        viatRepo.save(softDeleted);
+        assertThat(viatRepo.findByCodigo("708011008022409211").orElseThrow().isEliminado()).isTrue();
+
+        MultipartFile file = toMultipart(XlsxFixtureBuilder.cepsaMini(), "cepsa-mini.xlsx");
+        ImportTarjetasReportDTO report = importService.importar(file, "CEPSA", true);
+
+        assertThat(report.viatsExistentes())
+                .as("Se sigue contando como existente, igual que antes")
+                .isPositive();
+        Viat restaurado = viatRepo.findByCodigo("708011008022409211").orElseThrow();
+        assertThat(restaurado.isEliminado())
+                .as("odd/tasks/clasificacion-viat-por-numero.md punto 8/9: debe restaurarse, no quedar invisible para siempre")
+                .isFalse();
+        assertThat(viatRepo.findByEliminadoEnIsNull())
+                .as("Visible de verdad en el listado real, no solo contado en el reporte del modal")
+                .anyMatch(v -> v.getCodigo().equals("708011008022409211"));
+    }
+
+    @Test
+    @DisplayName("Repsol: centro de coste existente pero soft-deleted se restaura al reimportar")
+    void centroCosteSoftDeletedSeRestauraAlReimportar() throws Exception {
+        CentroCoste softDeleted = CentroCoste.builder()
+                .codigo("CC-SOFT-DELETE-TEST")
+                .nombre("CC-SOFT-DELETE-TEST")
+                .activo(true)
+                .build();
+        softDeleted.softDelete();
+        centroCosteRepo.save(softDeleted);
+        assertThat(centroCosteRepo.findByCodigo("CC-SOFT-DELETE-TEST").orElseThrow().isEliminado()).isTrue();
+
+        MultipartFile file = toMultipart(XlsxFixtureBuilder.repsolConCentroCosteSoftDeleted(), "repsol-cc.xlsx");
+        importService.importar(file, "REPSOL", false);
+
+        CentroCoste restaurado = centroCosteRepo.findByCodigo("CC-SOFT-DELETE-TEST").orElseThrow();
+        assertThat(restaurado.isEliminado())
+                .as("odd/tasks/clasificacion-viat-por-numero.md punto 8/9: debe restaurarse, no quedar invisible para siempre")
+                .isFalse();
+        assertThat(centroCosteRepo.findByEliminadoEnIsNull())
+                .as("Visible de verdad en el listado real, no solo contado en el reporte del modal")
+                .anyMatch(c -> c.getCodigo().equals("CC-SOFT-DELETE-TEST"));
     }
 
     @Test

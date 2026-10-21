@@ -113,6 +113,25 @@ public final class XlsxFixtureBuilder {
         return wb;
     }
 
+    /**
+     * Workbook Repsol de 1 fila cuyo centro de coste es un código exclusivo de
+     * fixture ({@code CC-SOFT-DELETE-TEST}), nunca usado por datos reales ni
+     * por otros tests, para el escenario de
+     * odd/tasks/clasificacion-viat-por-numero.md (punto 9): el centro de
+     * coste ya existe en BD pero estaba soft-deleted (p.ej. tras un borrado
+     * masivo) justo antes de reimportar.
+     */
+    public static Workbook repsolConCentroCosteSoftDeleted() {
+        Workbook wb = new XSSFWorkbook();
+        var sheet = wb.createSheet("Hoja1");
+        writeRow(sheet.createRow(0),
+                "NUMERO TARJETA", "MATRICULA", "NOMBRE", "CENTRO COSTE", "DES_PRODU");
+        writeRow(sheet.createRow(1),
+                "0007078833651670503", "8197-CYB", "ANTONIO FERNANDO RIBEIRO DE ALMEIDA",
+                "CC-SOFT-DELETE-TEST", "AUTOPISTAS");
+        return wb;
+    }
+
     private static void writeRow(Row row, String... values) {
         for (int i = 0; i < values.length; i++) {
             row.createCell(i).setCellValue(values[i]);

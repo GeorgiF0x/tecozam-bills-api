@@ -185,7 +185,17 @@ public class ListadoTarjetasImportService {
         if (ctx.centrosCache.containsKey(codigo)) return;
         Optional<CentroCoste> existente = centroCosteRepo.findByCodigo(codigo);
         if (existente.isPresent()) {
-            ctx.centrosCache.put(codigo, existente.get());
+            CentroCoste centro = existente.get();
+            if (centro.isEliminado()) {
+                // odd/tasks/clasificacion-viat-por-numero.md (punto 8): el
+                // registro encontrado puede venir soft-deleted (p.ej. tras un
+                // borrado masivo); sin restore()+save() se cuenta como
+                // "existente" pero queda invisible para siempre en los
+                // listados reales (filtran eliminadoEn IS NULL).
+                centro.restore();
+                centro = centroCosteRepo.save(centro);
+            }
+            ctx.centrosCache.put(codigo, centro);
             ctx.centrosExistentes++;
         } else {
             CentroCoste nuevo = CentroCoste.builder()
@@ -227,7 +237,14 @@ public class ListadoTarjetasImportService {
         }
         Optional<Tarjeta> existente = tarjetaRepo.findByNumeroTarjeta(canonico);
         if (existente.isPresent()) {
-            ctx.tarjetasCache.put(canonico, existente.get());
+            Tarjeta tarjeta = existente.get();
+            if (tarjeta.isEliminado()) {
+                // odd/tasks/clasificacion-viat-por-numero.md (punto 8): ver
+                // comentario análogo en materializarCentroCoste.
+                tarjeta.restore();
+                tarjeta = tarjetaRepo.save(tarjeta);
+            }
+            ctx.tarjetasCache.put(canonico, tarjeta);
             ctx.tarjetasExistentes++;
             return;
         }
@@ -252,7 +269,14 @@ public class ListadoTarjetasImportService {
         }
         Optional<Viat> existente = viatRepo.findByCodigo(codigo);
         if (existente.isPresent()) {
-            ctx.viatsCache.put(codigo, existente.get());
+            Viat viat = existente.get();
+            if (viat.isEliminado()) {
+                // odd/tasks/clasificacion-viat-por-numero.md (punto 8): ver
+                // comentario análogo en materializarCentroCoste.
+                viat.restore();
+                viat = viatRepo.save(viat);
+            }
+            ctx.viatsCache.put(codigo, viat);
             ctx.viatsExistentes++;
             return;
         }

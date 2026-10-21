@@ -91,6 +91,75 @@ Modo: activo para este repo según convención existente (tests unitarios por
 componente, happy+error, sin mocks en parsers, Mockito en service/IT). Seguir
 RED→GREEN para los casos nuevos de clasificación por prefijo.
 
+## Bug adicional encontrado al verificar en real (autorizado por el usuario)
+
+Al verificar el fix en vivo, tras borrar-todas-e-reimportar, las tarjetas
+"reactivadas" (encontradas por número pero previamente soft-deleted)
+desaparecieron del listado real ~30 min después / en el siguiente login
+limpio, aunque el modal de import las contaba como "ya existían". Investigado
+y confirmado por código (no fue un reset del entorno, descartado con el
+usuario): `materializarTarjeta`/`materializarViat`/`materializarCentroCoste`
+en `ListadoTarjetasImportService.java` encuentran el registro existente por
+`findByNumeroTarjeta`/`findByCodigo`/`findByCodigo` (sin filtrar
+`eliminadoEn`), lo cachean y cuentan como "existente", pero **nunca llaman
+`.restore()` ni hacen `save()`** — si el registro encontrado estaba
+soft-deleted (`eliminadoEn` con fecha, como pasa justo después de un borrado
+masivo), se queda invisible para siempre en el listado real
+(`findByEliminadoEnIsNull`/`findByActivaTrueAndEliminadoEnIsNull`), aunque el
+import lo cuente como recuperado. `restore()` existe en `BaseEntity` pero no
+se invoca en ningún punto de todo el código fuente (confirmado por grep).
+
+### Alcance del arreglo
+8. En las tres ramas "ya existía" de `materializarTarjeta`, `materializarViat`
+   y `materializarCentroCoste` (`ListadoTarjetasImportService.java`): si la
+   entidad encontrada tiene `isEliminado()==true`, llamar `.restore()` y
+   persistir (`save()`) antes de cachear/contar, para que vuelva a ser visible
+   de verdad en el listado real. Si no estaba eliminada, comportamiento sin
+   cambios (no hacer `save()` innecesario).
+9. Test nuevo (TDD): fixture con una tarjeta/viat/centro de coste
+   soft-deleted (`eliminadoEn` seteado) cuyo número/código coincide con una
+   fila del Excel — verificar que tras importar, `eliminadoEn` queda `null` y
+   el registro aparece en `findByEliminadoEnIsNull()` (o el método de listado
+   real correspondiente), no solo en el contador del reporte.
+10. Verificar con los dos ficheros reales (ciclo borrar-todo → importar →
+    **esperar unos minutos y volver a consultar el listado en una sesión
+    nueva** antes de dar por buena la verificación, para no repetir el mismo
+    error de validar solo con el modal del import) que las tarjetas/ViaTs
+    quedan visibles de forma persistente.
+
+### Progreso (bug adicional)
+- [x] 8. `restore()` + `save()` en las tres ramas "ya existía"
+      `ListadoTarjetasImportService.java`: en `materializarCentroCoste` (~línea
+      186), `materializarTarjeta` (~línea 228) y `materializarViat` (~línea
+      253), la rama "ya existía" ahora comprueba `existente.isEliminado()`;
+      si es `true` llama `.restore()` y hace `save()` de esa misma entidad
+      (reutilizando el repo ya inyectado en cada método) ANTES de
+      cachearla/contarla. Si no estaba eliminada, cero cambios de
+      comportamiento (no se añade ningún `save()` extra en ese camino).
+- [x] 9. Test nuevo cubriendo reactivación real (TDD RED→GREEN)
+      Tres tests nuevos en `ListadoTarjetasImportServiceIT.java`
+      (`repsolTarjetaSoftDeletedSeRestauraAlReimportar`,
+      `cepsaViatSoftDeletedSeRestauraAlReimportar`,
+      `centroCosteSoftDeletedSeRestauraAlReimportar`): cada uno crea el
+      registro ya en BD con `softDelete()` en el setup, reimporta un Excel
+      cuya fila coincide por número/código, y verifica que tras importar
+      `isEliminado()==false` y el registro aparece en
+      `findByEliminadoEnIsNull()` (no solo que el contador "existente" del
+      reporte lo cuente). Nueva fixture
+      `XlsxFixtureBuilder.repsolConCentroCosteSoftDeleted()` (centro de coste
+      con código exclusivo de test `CC-SOFT-DELETE-TEST`, para no chocar con
+      datos reales de BD). RED confirmado revirtiendo temporalmente el fix de
+      la tarea 8 (`git stash` del fichero de servicio) y ejecutando solo los
+      3 tests nuevos: `Tests run: 3, Failures: 3, Errors: 0` (los 3 fallan
+      con `Expecting value to be false but was true` sobre `isEliminado()`).
+      Restaurado el fix (`git stash pop`) → GREEN.
+      Evidencia final, suite completa: `./mvnw.cmd -o test` →
+      `Tests run: 378, Failures: 0, Errors: 0, Skipped: 0` / `BUILD SUCCESS`
+      (375 anteriores + 3 nuevos, 0 regresiones).
+- [ ] 10. Verificación con espera real (no solo el modal del import)
+      Pendiente — lo hace el orquestador con Playwright contra los ficheros
+      reales, no cubierto por este ciclo de implementación.
+
 ## Progreso
 - [x] 1. `TarjetaNumeroNormalizer.esNumeroTarjetaRepsol`
       Nuevo método público `esNumeroTarjetaRepsol(String raw)`: quita espacios
