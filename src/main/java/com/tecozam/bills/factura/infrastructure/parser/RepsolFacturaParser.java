@@ -647,6 +647,22 @@ public class RepsolFacturaParser implements FacturaParser {
             dtoPorcentaje  = nums.get(6);
             dtoTotal       = nums.get(7);
             bonificacion   = nums.get(8);
+        } else if (nums.size() == 7) {
+            // Forma CONFIRMADA (no adivinada) cuando se aplica un descuento
+            // real: [cantidad, precioNeto, precioIvaInc, importe, dto%,
+            // dtoTotal, importeTotal]. Verificada con la identidad
+            // importe - dtoTotal == importeTotal, exacta en dos operaciones
+            // reales distintas de la factura A260638472 (15,89-2,52=13,37 y
+            // 81,91-6,71=75,20) — si la resta no cuadrase, esta no seria la
+            // forma correcta para esos 7 valores.
+            importe       = nums.get(3);
+            dtoPorcentaje = nums.get(4);
+            dtoTotal      = nums.get(5);
+        } else if (nums.size() == 5) {
+            // Forma CONFIRMADA sin descuento: [cantidad, precioNeto,
+            // precioIvaInc, importe, importeTotal], con importe == importeTotal
+            // (0% de descuento, verificado igualmente en una operacion real).
+            importe = nums.get(3);
         }
 
         // El importe realmente cobrado es siempre el ÚLTIMO número de la línea,

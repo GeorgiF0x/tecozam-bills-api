@@ -239,7 +239,7 @@ class RepsolFacturaParserTest {
 
         assertThat(tarjetas).hasSize(1);
         List<Operacion> ops = tarjetas.get(0).getOperaciones();
-        assertThat(ops).hasSize(5);
+        assertThat(ops).hasSize(6);
 
         // Fila con 7 valores numericos en la tirada: cantidad, precioNeto,
         // precioIvaInc, importe, dto%, dtoTotal, importeTotal. Solo los 3
@@ -263,16 +263,42 @@ class RepsolFacturaParserTest {
     }
 
     @Test
-    @DisplayName("FacturaImportValidator ya no marca precio/litro fuera de rango para estas operaciones reales "
-            + "(regresion directa del bug de 1192 avisos falsos: antes precioUnitario quedaba en ~81,91€, "
-            + "ahora cae al fallback precioIvaInc ~1,71€/L, dentro del rango plausible 0,50-3,50€)")
-    void operacionesConCamposParciales_noDisparanAvisoDePrecioFueraDeRango() throws IOException {
+    @DisplayName("parseOperaciones SI reparte importe/dto%/dtoTotal cuando la tirada trae exactamente 7 valores "
+            + "(forma verificada con descuento real: la resta importe-dtoTotal cuadra EXACTAMENTE con importeTotal "
+            + "en dos operaciones reales distintas, 15,89-2,52=13,37 y 81,91-6,71=75,20 — no es una posicion adivinada) "
+            + "y el campo importe cuando trae exactamente 5 (forma sin descuento, importe==importeTotal)")
+    void parseOperacionesRepartePorcentajeDeDescuentoCuandoLaFormaEsInambigua() throws IOException {
+        List<String> lines = loadFixture("operaciones_campos_parciales.txt");
+        List<TarjetaResumen> tarjetas = new ArrayList<>();
+
+        parser.parseOperaciones(lines, tarjetas, 2026);
+
+        List<Operacion> ops = tarjetas.get(0).getOperaciones();
+        assertThat(ops).hasSize(6);
+
+        Operacion adblue = ops.get(4);
+        assertThat(adblue.getImporte()).isEqualByComparingTo(new BigDecimal("15.89"));
+        assertThat(adblue.getDtoPorcentaje()).isEqualByComparingTo(new BigDecimal("20.00"));
+        assertThat(adblue.getDtoTotal()).isEqualByComparingTo(new BigDecimal("2.52"));
+
+        Operacion dieselSinDescuento = ops.get(5);
+        assertThat(dieselSinDescuento.getCantidad()).isEqualByComparingTo(new BigDecimal("48.25"));
+        assertThat(dieselSinDescuento.getImporte()).isEqualByComparingTo(new BigDecimal("73.29"));
+        assertThat(dieselSinDescuento.getDtoTotal()).isNull();
+        assertThat(dieselSinDescuento.getImporteTotal()).isEqualByComparingTo(new BigDecimal("73.29"));
+    }
+
+    @Test
+    @DisplayName("FacturaImportValidator ya no marca precio/litro fuera de rango, NI 'importe no cuadra', para estas "
+            + "operaciones reales con descuento (regresion directa del bug de 1192 avisos falsos: antes precioUnitario "
+            + "quedaba en ~81,91€ y el descuento real se interpretaba como una discrepancia de parser)")
+    void operacionesConCamposParciales_noDisparanAvisosFalsos() throws IOException {
         List<String> lines = loadFixture("operaciones_campos_parciales.txt");
         List<TarjetaResumen> tarjetas = new ArrayList<>();
         parser.parseOperaciones(lines, tarjetas, 2026);
 
         Factura factura = Factura.builder()
-                .totalFactura(new BigDecimal("284.47"))
+                .totalFactura(new BigDecimal("357.76"))
                 .tarjetaResumenes(tarjetas)
                 .build();
         tarjetas.forEach(tr -> tr.setFactura(factura));
@@ -281,5 +307,6 @@ class RepsolFacturaParserTest {
         List<String> avisos = validator.validar(factura);
 
         assertThat(avisos).noneMatch(a -> a.contains("fuera de rango plausible"));
+        assertThat(avisos).noneMatch(a -> a.contains("no cuadra con cantidad x precio"));
     }
 }
