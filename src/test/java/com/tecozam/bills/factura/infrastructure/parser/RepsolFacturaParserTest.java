@@ -1,5 +1,6 @@
 package com.tecozam.bills.factura.infrastructure.parser;
 
+import com.tecozam.bills.factura.application.FacturaImportValidator;
 import com.tecozam.bills.factura.domain.Factura;
 import com.tecozam.bills.factura.domain.FacturaConceptoResumen;
 import com.tecozam.bills.factura.domain.Operacion;
@@ -223,5 +224,62 @@ class RepsolFacturaParserTest {
         assertThat(espinosa.getEstablecimiento()).isEqualTo("ESPINOSA N-VI PK 118,");
         assertThat(espinosa.getCantidad()).isNull();
         assertThat(espinosa.getImporteTotal()).isEqualByComparingTo(new BigDecimal("12.02"));
+    }
+
+    @Test
+    @DisplayName("parseOperaciones no asigna precioUnitario a un campo de la tirada numerica cuando faltan columnas intermedias "
+            + "(bug real factura A260638472: pdftotext/PDFBox elimina celdas vacias y desplaza los indices, "
+            + "haciendo que precioUnitario tomara el valor de 'importe' (ej. 81,91) en vez de un precio/litro plausible, "
+            + "disparando 1192 avisos falsos de 'precio fuera de rango' en una sola factura real)")
+    void parseOperacionesNoAsignaPrecioUnitarioConCamposIntermediosAmbiguos() throws IOException {
+        List<String> lines = loadFixture("operaciones_campos_parciales.txt");
+        List<TarjetaResumen> tarjetas = new ArrayList<>();
+
+        parser.parseOperaciones(lines, tarjetas, 2026);
+
+        assertThat(tarjetas).hasSize(1);
+        List<Operacion> ops = tarjetas.get(0).getOperaciones();
+        assertThat(ops).hasSize(5);
+
+        // Fila con 7 valores numericos en la tirada: cantidad, precioNeto,
+        // precioIvaInc, importe, dto%, dtoTotal, importeTotal. Solo los 3
+        // primeros (ancla por delante) y el ultimo (ancla por detras) son
+        // posicionalmente inambiguos; el resto no se puede repartir con
+        // certeza entre precioUnitario/precioAplicado/importe/dto%/dtoTotal/
+        // bonificacion sin saber cual columna intermedia quedo vacia.
+        Operacion diesel1 = ops.get(0);
+        assertThat(diesel1.getCantidad()).isEqualByComparingTo(new BigDecimal("47.93"));
+        assertThat(diesel1.getPrecioNeto()).isEqualByComparingTo(new BigDecimal("1.709"));
+        assertThat(diesel1.getPrecioIvaInc()).isEqualByComparingTo(new BigDecimal("1.709"));
+        assertThat(diesel1.getPrecioUnitario()).isNull();
+        assertThat(diesel1.getImporteTotal()).isEqualByComparingTo(new BigDecimal("75.20"));
+
+        Operacion adblue = ops.get(4);
+        assertThat(adblue.getConceptoUnificado()).isEqualTo(com.tecozam.bills.shared.domain.enums.ConceptoUnificado.ADBLUE.name());
+        assertThat(adblue.getCantidad()).isEqualByComparingTo(new BigDecimal("12.62"));
+        assertThat(adblue.getPrecioIvaInc()).isEqualByComparingTo(new BigDecimal("1.259"));
+        assertThat(adblue.getPrecioUnitario()).isNull();
+        assertThat(adblue.getImporteTotal()).isEqualByComparingTo(new BigDecimal("13.37"));
+    }
+
+    @Test
+    @DisplayName("FacturaImportValidator ya no marca precio/litro fuera de rango para estas operaciones reales "
+            + "(regresion directa del bug de 1192 avisos falsos: antes precioUnitario quedaba en ~81,91€, "
+            + "ahora cae al fallback precioIvaInc ~1,71€/L, dentro del rango plausible 0,50-3,50€)")
+    void operacionesConCamposParciales_noDisparanAvisoDePrecioFueraDeRango() throws IOException {
+        List<String> lines = loadFixture("operaciones_campos_parciales.txt");
+        List<TarjetaResumen> tarjetas = new ArrayList<>();
+        parser.parseOperaciones(lines, tarjetas, 2026);
+
+        Factura factura = Factura.builder()
+                .totalFactura(new BigDecimal("284.47"))
+                .tarjetaResumenes(tarjetas)
+                .build();
+        tarjetas.forEach(tr -> tr.setFactura(factura));
+
+        FacturaImportValidator validator = new FacturaImportValidator();
+        List<String> avisos = validator.validar(factura);
+
+        assertThat(avisos).noneMatch(a -> a.contains("fuera de rango plausible"));
     }
 }
