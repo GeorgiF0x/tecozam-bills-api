@@ -1,0 +1,9 @@
+Nº de Tarjeta 7078 8336 5167 1188 Nº de Matrícula DUMITRU Conductor
+Precio Precio Dto. Dto. tot. Bonif. Importe Ob-
+Ref Fecha / Concepto Establecimiento Kms Cantidad Precio Precio Unitario Aplicado Importe Total % cent€/u Total € Total € serv.
+Hora Neto (€) iva inc. (€) (€) iva inc. iva inc. € iva inc. iva inc. iva inc. iva inc. (1)
+1855776 06/06 14:44 DIESEL E+ NEOTECH (L) E.S. OIARTZUN GI 636 P.K. 88.390 47,93 1,70900 1,70900 81,91 14,00 6,71 75,20 TF
+1776349 09/06 10:46 DIESEL E+ NEOTECH (L) E.S. GUREGAS MIRAMON POL. 45,62 1,70900 1,70900 77,96 14,00 6,39 71,57
+1973102 18/06 19:34 DIESEL E+ NEOTECH (L) E.S. OIARTZUN GI 636 P.K. 89.040 44,75 1,63900 1,63900 73,35 14,00 6,27 67,08 T
+1310154 27/06 14:56 DIESEL E+ NEOTECH (L) E.S. GUREGAS MIRAMON POL. 39,24 1,59900 1,59900 62,74 14,00 5,49 57,25 FC
+1310154 27/06 14:56 ADBLUE REPSOL (L) E.S. GUREGAS MIRAMON POL. 12,62 1,25900 1,25900 15,89 20,00 2,52 13,37 F

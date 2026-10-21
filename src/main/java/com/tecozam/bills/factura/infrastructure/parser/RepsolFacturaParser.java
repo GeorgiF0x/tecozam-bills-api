@@ -609,17 +609,45 @@ public class RepsolFacturaParser implements FacturaParser {
 
         ConceptoUnificado conceptoUnificado = resolveConceptoRepsol(conceptoOriginal);
 
-        // Mapear valores numéricos a campos
+        // Mapear valores numéricos a campos.
         // nums: [cantidad, precioNeto, precioIvaInc, precioUnitario, precioAplicado, importe, dto%, dtoCent, bonif, importeTotal]
+        //
+        // pdftotext/PDFBox eliminan en silencio las celdas en blanco: cuando
+        // una fila no trae alguna de las columnas intermedias (precioUnitario,
+        // precioAplicado, importe, dto%, dtoCent, bonif — algo muy habitual,
+        // esas columnas solo se imprimen con valor cuando aplica un precio
+        // distinto al "iva inc." o un descuento), la tirada de números queda
+        // más corta y el desplazamiento posicional hacia estos índices deja
+        // de ser fiable: un valor como "importe" (ej. 81,91€) acababa
+        // asignado a precioUnitario, muy por encima de un precio/litro
+        // plausible (bug real: 1192 avisos falsos en una sola factura).
+        //
+        // Los únicos campos cuya posición SÍ es inambigua sea cual sea el
+        // número de columnas presentes son: cantidad/precioNeto/precioIvaInc
+        // (siempre los primeros, cuando existen) e importeTotal (siempre el
+        // último). Las columnas intermedias solo se reparten posicionalmente
+        // cuando la tirada trae los 10 valores completos — el único caso sin
+        // ambigüedad posible —; en cualquier otro caso se dejan sin asignar
+        // en vez de adivinar mal: ninguna se usa en el cotejo ni en los
+        // avisos de plausibilidad (solo cantidad/precioUnitario(fallback
+        // precioIvaInc)/importeTotal se validan).
         BigDecimal cantidad       = nums.size() > 0 ? nums.get(0) : null;
         BigDecimal precioNeto     = nums.size() > 1 ? nums.get(1) : null;
         BigDecimal precioIvaInc   = nums.size() > 2 ? nums.get(2) : null;
-        BigDecimal precioUnitario = nums.size() > 3 ? nums.get(3) : null;
-        BigDecimal precioAplicado = nums.size() > 4 ? nums.get(4) : null;
-        BigDecimal importe        = nums.size() > 5 ? nums.get(5) : null;
-        BigDecimal dtoPorcentaje  = nums.size() > 6 ? nums.get(6) : null;
-        BigDecimal dtoTotal       = nums.size() > 7 ? nums.get(7) : null;
-        BigDecimal bonificacion   = nums.size() > 8 ? nums.get(8) : null;
+        BigDecimal precioUnitario = null;
+        BigDecimal precioAplicado = null;
+        BigDecimal importe        = null;
+        BigDecimal dtoPorcentaje  = null;
+        BigDecimal dtoTotal       = null;
+        BigDecimal bonificacion   = null;
+        if (nums.size() == 10) {
+            precioUnitario = nums.get(3);
+            precioAplicado = nums.get(4);
+            importe        = nums.get(5);
+            dtoPorcentaje  = nums.get(6);
+            dtoTotal       = nums.get(7);
+            bonificacion   = nums.get(8);
+        }
 
         // El importe realmente cobrado es siempre el ÚLTIMO número de la línea,
         // sea cual sea el número de campos intermedios presentes: los peajes
