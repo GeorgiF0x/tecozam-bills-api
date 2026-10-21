@@ -54,9 +54,28 @@ public class FacturaImportValidator {
             }
         }
 
+        validarCamposNumericosNulos(factura, avisos);
         validarTotalFactura(factura, avisos);
 
         return avisos;
+    }
+
+    /**
+     * Antes el parser dejaba total/base/IVA en null en silencio cuando no
+     * lograba extraer el dato (bug real: "NaN €" en el frontend sin ningun
+     * aviso). Esto marca la factura para revision manual en vez de colar el
+     * dato basura sin que nadie se entere.
+     */
+    private void validarCamposNumericosNulos(Factura factura, List<String> avisos) {
+        if (factura.getTotalFactura() == null) {
+            avisos.add("No se pudo extraer el total de la factura — requiere revisión manual.");
+        }
+        if (factura.getBaseImponible() == null) {
+            avisos.add("No se pudo extraer la base imponible de la factura — requiere revisión manual.");
+        }
+        if (factura.getTotalIva() == null) {
+            avisos.add("No se pudo extraer el IVA de la factura — requiere revisión manual.");
+        }
     }
 
     /**

@@ -20,6 +20,9 @@ class FacturaImportValidatorTest {
     @Test
     void operacionPlausible_noGeneraAvisos() {
         Factura factura = facturaConPeriodo(LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31));
+        factura.setTotalFactura(new BigDecimal("74.00"));
+        factura.setBaseImponible(new BigDecimal("61.16"));
+        factura.setTotalIva(new BigDecimal("12.84"));
         TarjetaResumen tr = tarjetaResumen(factura, "1234");
         tr.getOperaciones().add(operacion(tr, factura,
                 LocalDateTime.of(2026, 7, 15, 10, 0), ConceptoUnificado.DIESEL,
@@ -145,6 +148,48 @@ class FacturaImportValidatorTest {
         List<String> avisos = validator.validar(factura);
 
         assertThat(avisos).anyMatch(a -> a.contains("Total de factura"));
+    }
+
+    @Test
+    void totalFacturaNula_generaAvisoDeRevisionManual() {
+        Factura factura = facturaConPeriodo(LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31));
+        TarjetaResumen tr = tarjetaResumen(factura, "1234");
+        tr.getOperaciones().add(operacion(tr, factura,
+                LocalDateTime.of(2026, 7, 15, 10, 0), ConceptoUnificado.DIESEL,
+                "44.90", "1.648", "74.00"));
+        // factura.totalFactura queda null (parser no lo pudo extraer)
+
+        List<String> avisos = validator.validar(factura);
+
+        assertThat(avisos).anyMatch(a -> a.contains("No se pudo extraer el total de la factura"));
+    }
+
+    @Test
+    void baseImponibleNula_generaAvisoDeRevisionManual() {
+        Factura factura = facturaConPeriodo(LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31));
+        TarjetaResumen tr = tarjetaResumen(factura, "1234");
+        tr.getOperaciones().add(operacion(tr, factura,
+                LocalDateTime.of(2026, 7, 15, 10, 0), ConceptoUnificado.DIESEL,
+                "44.90", "1.648", "74.00"));
+        // factura.baseImponible queda null (parser no lo pudo extraer)
+
+        List<String> avisos = validator.validar(factura);
+
+        assertThat(avisos).anyMatch(a -> a.contains("No se pudo extraer la base imponible"));
+    }
+
+    @Test
+    void totalIvaNulo_generaAvisoDeRevisionManual() {
+        Factura factura = facturaConPeriodo(LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31));
+        TarjetaResumen tr = tarjetaResumen(factura, "1234");
+        tr.getOperaciones().add(operacion(tr, factura,
+                LocalDateTime.of(2026, 7, 15, 10, 0), ConceptoUnificado.DIESEL,
+                "44.90", "1.648", "74.00"));
+        // factura.totalIva queda null (parser no lo pudo extraer)
+
+        List<String> avisos = validator.validar(factura);
+
+        assertThat(avisos).anyMatch(a -> a.contains("No se pudo extraer el IVA"));
     }
 
     // ─── Helpers ──────────────────────────────────────────────────────────
