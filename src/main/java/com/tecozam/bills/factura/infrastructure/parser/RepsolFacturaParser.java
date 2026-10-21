@@ -93,10 +93,6 @@ public class RepsolFacturaParser implements FacturaParser {
     // ── Línea de operación ────────────────────────────────────────────────────
     private static final Pattern P_OP_LINE = Pattern.compile(
             "^(\\d{6,8})\\s+(\\d{2}/\\d{2})\\s+(\\d{2}:\\d{2})\\s+(.+)$");
-    // Código de carretera (letra-guion-dígitos-coma, ej. "N-525," o "A-52,")
-    // que precede a un punto kilométrico con coma decimal embebido en el
-    // establecimiento — ver uso en parseLineaOperacion.
-    private static final Pattern P_CODIGO_CARRETERA = Pattern.compile(".*[A-Za-z]-\\d+,$");
 
     private static final DateTimeFormatter FMT_DATE = DateTimeFormatter.ofPattern("dd/MM/yyyy");
 
@@ -561,32 +557,40 @@ public class RepsolFacturaParser implements FacturaParser {
         }
 
         // Recoger hasta 10 valores numéricos desde el final.
-        //
-        // Un establecimiento puede traer un punto kilométrico con coma
-        // decimal pegado a un código de carretera, ej. "CR N-525, 132,1"
-        // (carretera N-525, km 132,1): el token "132,1" por sí solo cumple
-        // el mismo patrón numérico que un campo real, y cuando la fila no
-        // trae columna de Kms que actúe de freno (el freno habitual, un
-        // número con PUNTO en vez de coma, p.ej. "144.510"), el escaneo
-        // seguía tirando hacia atrás y lo colaba como si fuera "cantidad",
-        // desplazando todos los campos reales una posición (bug real:
-        // cantidad 25,92 leída como 132,1, disparando un aviso falso de
-        // "importe no cuadra" con un calculado de 220,47€). La señal que SI
-        // distingue esto de forma fiable es el código de carretera en sí
-        // (letra-guion-dígitos-coma, ej. "N-525," o "A-52,") justo antes del
-        // número — un campo numérico real de la tabla nunca viene precedido
-        // por ese patrón. No basta con "el token anterior termina en coma":
-        // un número de PK sin código de carretera (ej. "PK 118," antes de un
-        // importe real duplicado "12,02 12,02") SI debe seguir leyéndose.
         while (i >= 0 && nums.size() < 10) {
             String tok = tokens[i];
-            boolean precedidoPorCodigoCarretera = i > 0 && P_CODIGO_CARRETERA.matcher(tokens[i - 1]).matches();
-            if (tok.matches("-?[\\d.]+,[\\d]+") && !precedidoPorCodigoCarretera) {
+            if (tok.matches("-?[\\d.]+,[\\d]+")) {
                 nums.add(0, parseAmount(tok));
                 i--;
             } else {
                 break;
             }
+        }
+
+        // Un establecimiento puede traer un punto kilométrico con coma
+        // decimal pegado a un código de carretera, ej. "CR N-525, 132,1"
+        // (carretera N-525, km 132,1): el token "132,1" por sí solo cumple
+        // el mismo patrón numérico que un campo real, y cuando la fila no
+        // trae columna de Kms que actúe de freno (el freno habitual, un
+        // número con PUNTO en vez de coma, p.ej. "144.510"), el escaneo se
+        // cuela un token de más AL PRINCIPIO de la tirada (nums.add(0,...)
+        // siempre inserta por delante, así que ese sobrante cae justo en
+        // nums.get(0)) — desplazando todos los campos reales una posición
+        // (bug real: cantidad 25,92 leída como 132,1, disparando un aviso
+        // falso de "importe no cuadra" con un calculado de 220,47€).
+        //
+        // No se puede distinguir este caso del real por el TEXTO que lo
+        // precede (un código de carretera sin punto kilométrico detrás,
+        // ej. "CTR N-634, 36,85 ...", es perfectamente legítimo y el número
+        // que sigue SÍ es la cantidad real). La señal fiable es aritmética,
+        // no textual: si al descartar ese primer valor los restantes casan
+        // EXACTAMENTE con la identidad conocida (importe-dtoTotal==importeTotal
+        // con descuento real, o importe==importeTotal sin descuento), es que
+        // sobraba; si no casan ni con ni sin descartarlo, se deja tal cual.
+        if (nums.size() == 6 && esIdentidadSinDescuento(nums.subList(1, 6))) {
+            nums.remove(0);
+        } else if (nums.size() == 8 && esIdentidadConDescuento(nums.subList(1, 8))) {
+            nums.remove(0);
         }
 
         // El resto antes de los números: "concepto [E.S. establecimiento] [kms]"
@@ -726,6 +730,23 @@ public class RepsolFacturaParser implements FacturaParser {
                 .bonificacion(bonificacion)
                 .observaciones(obs)
                 .build();
+    }
+
+    /**
+     * Forma sin descuento ([cantidad, precioNeto, precioIvaInc, importe,
+     * importeTotal], 5 valores): válida solo si importe == importeTotal.
+     */
+    private boolean esIdentidadSinDescuento(List<BigDecimal> cinco) {
+        return cinco.get(3).compareTo(cinco.get(4)) == 0;
+    }
+
+    /**
+     * Forma con descuento ([cantidad, precioNeto, precioIvaInc, importe,
+     * dto%, dtoTotal, importeTotal], 7 valores): válida solo si
+     * importe - dtoTotal == importeTotal.
+     */
+    private boolean esIdentidadConDescuento(List<BigDecimal> siete) {
+        return siete.get(3).subtract(siete.get(5)).compareTo(siete.get(6)) == 0;
     }
 
     /**
