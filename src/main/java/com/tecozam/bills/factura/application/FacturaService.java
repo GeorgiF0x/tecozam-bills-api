@@ -274,6 +274,18 @@ public class FacturaService {
         log.info("[FacturaService] Factura {} eliminada (id={})", factura.getNumFactura(), id);
     }
 
+    /**
+     * Borrado en lote de facturas. Atómico: hereda la transacción de clase, así
+     * que si {@link #eliminar(Long)} lanza una excepción para cualquier id del
+     * lote (ej. {@link ResourceNotFoundException}), se propaga sin capturarla y
+     * la transacción entera revierte — no queda nada a medio borrar.
+     */
+    public void eliminarMasivo(List<Long> ids) {
+        for (Long id : ids) {
+            eliminar(id);
+        }
+    }
+
     // ─────────────────────────────────────────────────────────────────────────
     // HELPERS
     // ─────────────────────────────────────────────────────────────────────────

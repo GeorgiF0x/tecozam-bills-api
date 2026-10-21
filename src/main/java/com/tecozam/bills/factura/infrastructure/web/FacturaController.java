@@ -107,4 +107,14 @@ public class FacturaController {
         facturaService.eliminar(id);
         return ResponseEntity.noContent().build();
     }
+
+    /**
+     * Borrado en lote (atómico: si un id falla, no se borra ninguno).
+     */
+    @DeleteMapping
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<Void> eliminarMasivo(@RequestBody List<Long> ids) {
+        facturaService.eliminarMasivo(ids);
+        return ResponseEntity.noContent().build();
+    }
 }
