@@ -135,7 +135,17 @@ RED→GREEN para los casos nuevos de clasificación por prefijo.
       sin reclasificar, solo mensaje con serie. Evidencia:
       `./mvnw.cmd -o test` → `Tests run: 375, Failures: 0, Errors: 0` /
       `BUILD SUCCESS`.
-- [ ] 7. Verificación manual con los dos ficheros reales (Repsol y Moeve/Cepsa)
-      Pendiente a propósito — según instrucción explícita del orquestador,
-      esta verificación con los Excel reales vía Playwright la hace el
-      orquestador después, no esta entrega.
+- [x] 7. Verificación manual con los dos ficheros reales (Repsol y Moeve/Cepsa)
+      Desplegado el fix (merge a `main` en ambos repos, push, autodeploy
+      Dokploy) y repetido en vivo contra bills.z-innova.com el ciclo
+      borrar-tarjetas → importar Excel:
+      - Repsol (`LISTADO TARJETAS REPSOL.xlsx`): "2 tarjetas reclasificadas
+        automáticamente como VIAT (número fuera del prefijo Repsol
+        conocido)"; aviso bajó de 96 a 94 filas "procesadas como TARJETA por
+        defecto"; confirmado en /maestros/viats que los 2 ViaT reales
+        (`0972401002001099309` C. GOMEZ, `0972401002002270964` M.VICENTE)
+        aparecen correctamente, con nombre de conductor real.
+      - Moeve/Cepsa (`LISTADO TARJETAS MOEVE CEPSA.xlsx`): 0 reclasificados
+        (correcto, sin señal fiable), 320 filas con concepto vacío ahora
+        muestran su serie (`7076460769` / `7080110080` / etc.) en el detalle
+        por fila, sin ningún falso positivo a VIAT.
