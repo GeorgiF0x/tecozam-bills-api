@@ -149,17 +149,29 @@ public class FacturaImportValidator {
 
         // 3. importeTotal no cuadra con cantidad x precioUnitario — indica que
         // alguno de los tres campos se leyo de la columna equivocada. Cuando
-        // el parser identifico un descuento real (dtoTotal != null, forma
-        // confirmada via la identidad importe-dtoTotal==importeTotal), se
+        // el parser identifico un descuento real (dtoTotal != null), se
         // descuenta antes de comparar: un descuento real no es un error de
         // parseo, y contarlo como discrepancia disparaba un aviso falso en
         // cada operacion con descuento de una factura real.
+        //
+        // El SIGNO de dtoTotal varia segun el parser de origen: Repsol lo
+        // guarda en positivo (identidad confirmada: importe-dtoTotal==
+        // importeTotal), pero Moeve lo guarda tal cual viene impreso en el
+        // extracto, ya en negativo (identidad confirmada en
+        // parseExtractoFamilyBBasic: dtoTotal=-0.704) — ahi hay que SUMARLO,
+        // no restarlo. Ademas, cuando una operacion de Moeve no tiene
+        // descuento real, el extracto repite el mismo importe donde iria la
+        // columna de descuento, y el parser (que solo cuenta posiciones
+        // desde el final, sin verificar que sea un descuento real) lo puede
+        // confundir con uno. En vez de asumir un signo o un proveedor
+        // concreto, se prueban las dos direcciones y tambien "sin descuento"
+        // y se usa la que mas se acerque al importe real — evita avisos
+        // falsos en ambos casos sin necesitar que el parser declare de donde
+        // viene la factura.
         if (op.getImporteTotal() != null && op.getCantidad() != null && precio != null
                 && op.getCantidad().signum() > 0 && precio.signum() > 0) {
-            BigDecimal calculado = op.getCantidad().multiply(precio);
-            if (op.getDtoTotal() != null) {
-                calculado = calculado.subtract(op.getDtoTotal());
-            }
+            BigDecimal base = op.getCantidad().multiply(precio);
+            BigDecimal calculado = mejorCandidatoConDescuento(base, op.getDtoTotal(), op.getImporteTotal());
             double diffPct = calculado.signum() != 0
                     ? Math.abs(op.getImporteTotal().doubleValue() - calculado.doubleValue()) / calculado.doubleValue()
                     : 0;
@@ -194,6 +206,27 @@ public class FacturaImportValidator {
                         ref, fechaOp, desde, hasta));
             }
         }
+    }
+
+    /**
+     * Ver comentario en el punto 3 de {@link #validarOperacion}: el signo y
+     * la fiabilidad de dtoTotal varian segun el proveedor/parser de origen,
+     * asi que en vez de asumir uno se prueban las dos direcciones (restar,
+     * sumar) y tambien ignorarlo del todo, quedandose con la que mas se
+     * acerque al importe real de la factura.
+     */
+    private BigDecimal mejorCandidatoConDescuento(BigDecimal base, BigDecimal dtoTotal, BigDecimal importeTotal) {
+        if (dtoTotal == null) return base;
+        BigDecimal mejor = base;
+        BigDecimal mejorDiff = base.subtract(importeTotal).abs();
+        for (BigDecimal candidato : List.of(base.subtract(dtoTotal), base.add(dtoTotal))) {
+            BigDecimal diff = candidato.subtract(importeTotal).abs();
+            if (diff.compareTo(mejorDiff) < 0) {
+                mejor = candidato;
+                mejorDiff = diff;
+            }
+        }
+        return mejor;
     }
 
     private String referencia(TarjetaResumen tr, Operacion op) {

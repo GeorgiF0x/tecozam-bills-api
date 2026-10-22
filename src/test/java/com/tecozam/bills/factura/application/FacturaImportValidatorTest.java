@@ -93,6 +93,66 @@ class FacturaImportValidatorTest {
     }
 
     @Test
+    void moeveDescuentoAlmacenadoEnNegativo_noGeneraAvisoFalsoDeNoCuadra() {
+        // Bug real (Moeve, modo regex): dtoTotal viene del extracto ya con el
+        // signo negativo (p. ej. "-7,023"), a diferencia de Repsol que lo
+        // guarda en positivo. El validador restaba dtoTotal asumiendo signo
+        // positivo (convencion de Repsol) y, al restar un negativo, SUMABA el
+        // descuento en vez de aplicarlo — disparando un aviso falso en casi
+        // toda la factura. Caso real: tarjeta 708011008022414419, operacion
+        // DIESEL del 2026-09-01: 36,20 x 1,858 - 7,023 = 60,25 (cuadra con el
+        // importe real 60,24); el bug calculaba 36,20 x 1,858 + 7,023 = 74,30.
+        Factura factura = facturaConPeriodo(LocalDate.of(2026, 9, 1), LocalDate.of(2026, 9, 30));
+        TarjetaResumen tr = tarjetaResumen(factura, "708011008022414419");
+        Operacion op = Operacion.builder()
+                .tarjetaResumen(tr)
+                .factura(factura)
+                .fechaHora(LocalDateTime.of(2026, 9, 1, 14, 44))
+                .conceptoUnificado(ConceptoUnificado.DIESEL.name())
+                .cantidad(new BigDecimal("36.20"))
+                .precioUnitario(new BigDecimal("1.858"))
+                .dtoTotal(new BigDecimal("-7.023"))
+                .importeTotal(new BigDecimal("60.24"))
+                .build();
+        tr.getOperaciones().add(op);
+
+        List<String> avisos = validator.validar(factura);
+
+        assertThat(avisos).noneMatch(a -> a.contains("no cuadra"));
+    }
+
+    @Test
+    void moeveSinDescuentoRealConImporteRepetidoComoDtoTotal_noGeneraAvisoFalso() {
+        // Bug real (Moeve, modo regex): cuando una operacion NO tiene
+        // descuento, el extracto repite el mismo importe en vez de imprimir
+        // una columna de descuento real. El parser, que identifica dtoTotal
+        // solo contando posiciones desde el final (sin verificar que sea un
+        // descuento real), confundia ese importe repetido con un descuento
+        // -- casi cancelando el calculo entero y disparando diferencias de
+        // cientos de miles por ciento. Caso real: tarjeta 708011008022420119,
+        // operacion DIESEL del 2026-09-05: 21,94 x 1,759 = 38,59 (coincide ya
+        // con el importe real sin tocar dtoTotal); el bug restaba el
+        // "dtoTotal" repetido (38,59) dejando un calculado de ~0,00.
+        Factura factura = facturaConPeriodo(LocalDate.of(2026, 9, 1), LocalDate.of(2026, 9, 30));
+        TarjetaResumen tr = tarjetaResumen(factura, "708011008022420119");
+        Operacion op = Operacion.builder()
+                .tarjetaResumen(tr)
+                .factura(factura)
+                .fechaHora(LocalDateTime.of(2026, 9, 5, 7, 24))
+                .conceptoUnificado(ConceptoUnificado.DIESEL.name())
+                .cantidad(new BigDecimal("21.94"))
+                .precioUnitario(new BigDecimal("1.759"))
+                .dtoTotal(new BigDecimal("38.59"))
+                .importeTotal(new BigDecimal("38.59"))
+                .build();
+        tr.getOperaciones().add(op);
+
+        List<String> avisos = validator.validar(factura);
+
+        assertThat(avisos).noneMatch(a -> a.contains("no cuadra"));
+    }
+
+    @Test
     void fechaFueraDelPeriodoDeFactura_generaAviso() {
         Factura factura = facturaConPeriodo(LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31));
         TarjetaResumen tr = tarjetaResumen(factura, "1234");

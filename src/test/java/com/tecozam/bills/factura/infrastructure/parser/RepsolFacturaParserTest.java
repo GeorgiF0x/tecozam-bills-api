@@ -184,6 +184,56 @@ class RepsolFacturaParserTest {
     }
 
     @Test
+    @DisplayName("aplicarCabeceraLiquidacion conserva el Núm. Doc. Liq. completo aunque tenga un espacio interno (bug real: factura NLPX/00055916, \"Núm. Doc. Liq. NL NLPX/00055916\" se truncaba a \"NL\" porque el patrón solo capturaba el primer token no-blanco)")
+    void aplicarCabeceraLiquidacionConservaNumDocLiqConEspacioInterno() throws IOException {
+        List<String> lines = loadFixture("liquidacion_nlpx_referencia_corta.txt");
+        Factura.FacturaBuilder builder = Factura.builder();
+
+        parser.aplicarCabeceraLiquidacion(lines, builder);
+        Factura factura = builder.build();
+
+        assertThat(factura.getNumFactura()).isEqualTo("NL NLPX/00055916");
+    }
+
+    @Test
+    @DisplayName("parseOperaciones reconoce operaciones de peaje con referencia corta (3-4 dígitos, p. ej. \"0004\"/\"0019\"), no solo el formato largo habitual de 6-8 dígitos (bug real: factura NLPX/00055916, 9 de 10 operaciones de peaje AUTOESTRADA se perdían enteras porque su referencia no llegaba a 6 dígitos)")
+    void parseOperacionesReconoceReferenciaCortaDePeaje() throws IOException {
+        List<String> lines = loadFixture("liquidacion_nlpx_referencia_corta.txt");
+        List<TarjetaResumen> tarjetas = new ArrayList<>();
+
+        parser.parseOperaciones(lines, tarjetas, 2026);
+
+        assertThat(tarjetas).hasSize(2);
+
+        TarjetaResumen benitogc = tarjetas.get(0);
+        assertThat(benitogc.getOperaciones()).hasSize(2);
+        Operacion autoestrada1 = benitogc.getOperaciones().get(1);
+        assertThat(autoestrada1.getReferencia()).isEqualTo("0004");
+        assertThat(autoestrada1.getImporteTotal()).isEqualByComparingTo(new BigDecimal("2.50"));
+
+        TarjetaResumen pjnunes = tarjetas.get(1);
+        assertThat(pjnunes.getOperaciones()).hasSize(1);
+        Operacion autoestrada2 = pjnunes.getOperaciones().get(0);
+        assertThat(autoestrada2.getReferencia()).isEqualTo("0019");
+        assertThat(autoestrada2.getImporteTotal()).isEqualByComparingTo(new BigDecimal("2.45"));
+    }
+
+    @Test
+    @DisplayName("parseOperaciones clasifica \"DESCUENTOS TELEPEAJES\" como DESCUENTO, no como PEAJE, aunque contenga la subcadena \"PEAJE\" (fix preventivo: mismo bug ya confirmado y arreglado en MoeveFacturaParser.resolveConceptoMoeve, el check de PEAJE/AUTOPISTA se comprobaba antes que el de DESCUENTO)")
+    void parseOperacionesDescuentoTelepeajesNoSeConfundeConPeajePorLaSubcadena() throws IOException {
+        List<String> lines = loadFixture("liquidacion_descuento_telepeajes_contiene_peaje.txt");
+        List<TarjetaResumen> tarjetas = new ArrayList<>();
+
+        parser.parseOperaciones(lines, tarjetas, 2026);
+
+        assertThat(tarjetas).hasSize(1);
+        Operacion op = tarjetas.get(0).getOperaciones().get(0);
+        assertThat(op.getConceptoUnificado())
+                .isEqualTo(com.tecozam.bills.shared.domain.enums.ConceptoUnificado.DESCUENTO.name());
+        assertThat(op.getImporteTotal()).isEqualByComparingTo(new BigDecimal("-18.04"));
+    }
+
+    @Test
     @DisplayName("parseOperaciones extrae conductor limpio (sin arrastrar la palabra 'Conductor'), matrícula con espacio, y separa establecimiento aunque 'E.S.' venga pegado al nombre o ausente (bugs reales de la factura Solred de agosto 2026)")
     void parseOperacionesExtraeConductorMatriculaYEstablecimientoCorrectamente() throws IOException {
         List<String> lines = loadFixture("liquidacion_multitarjeta.txt");

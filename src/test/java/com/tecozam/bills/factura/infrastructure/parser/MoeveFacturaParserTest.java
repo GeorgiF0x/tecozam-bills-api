@@ -4,6 +4,7 @@ import com.tecozam.bills.factura.domain.Factura;
 import com.tecozam.bills.factura.domain.FacturaConceptoResumen;
 import com.tecozam.bills.factura.domain.Operacion;
 import com.tecozam.bills.factura.domain.TarjetaResumen;
+import com.tecozam.bills.shared.domain.enums.ConceptoUnificado;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -782,6 +783,110 @@ class MoeveFacturaParserTest {
         assertThat(op.getImporteTotal()).isEqualByComparingTo(new BigDecimal("135.95"));
         // PEAJE no tiene litros reales.
         assertThat(op.getCantidad()).isNull();
+    }
+
+    @Test
+    @DisplayName("parseExtracto reconoce los litros de un bidon de ECOBLUE a partir del propio texto del concepto (\"ECOBLUE 5 LT\"), no de la posicion numerica (bug real: la factura BA72400000586435 marcaba precio/litro de 13,75€ para AdBlue, fuera de rango, porque el extracto solo imprime 2 valores para un bidon de tamaño fijo y litros/precio quedaban mal asignados)")
+    void parseExtractoEcoblueBidonLitrosEnConcepto() throws IOException {
+        List<String> lines = loadFixture("familyB_adblue_bidon_litros_en_concepto.txt");
+        List<TarjetaResumen> tarjetaResumenes = new ArrayList<>();
+
+        parser.parseExtracto(lines, tarjetaResumenes);
+
+        assertThat(tarjetaResumenes).hasSize(1);
+        TarjetaResumen tarjeta = tarjetaResumenes.get(0);
+        assertThat(tarjeta.getOperaciones()).hasSize(1);
+
+        Operacion op = tarjeta.getOperaciones().get(0);
+        assertThat(op.getConceptoOriginal()).isEqualTo("ECOBLUE 5 LT");
+        assertThat(op.getImporteTotal()).isEqualByComparingTo(new BigDecimal("13.75"));
+        assertThat(op.getCantidad()).isEqualByComparingTo(new BigDecimal("5"));
+        assertThat(op.getPrecioUnitario()).isEqualByComparingTo(new BigDecimal("2.750"));
+    }
+
+    @Test
+    @DisplayName("parseExtracto no confunde la columna opcional \"PAGADO CON SALDO\" (normalmente 0,00 y omitida) con dtoTotal/importeTotal cuando aparece como un token extra al final de la línea (bug real: factura BA72400000586435, tarjeta 708011008022434318, dto_total quedaba en 29,77 (en realidad el importe total real) e importeTotal en -2,87 (en realidad el pagado con saldo), porque la heurística \"últimos dos tokens\" se desplaza un puesto con el token extra)")
+    void parseExtractoPagadoConSaldoTokenExtraNoDesplazaDtoEImporteTotal() throws IOException {
+        List<String> lines = loadFixture("familyB_pagado_con_saldo_token_extra.txt");
+        List<TarjetaResumen> tarjetaResumenes = new ArrayList<>();
+
+        parser.parseExtracto(lines, tarjetaResumenes);
+
+        assertThat(tarjetaResumenes).hasSize(1);
+        TarjetaResumen tarjeta = tarjetaResumenes.get(0);
+        assertThat(tarjeta.getOperaciones()).hasSize(1);
+
+        Operacion op = tarjeta.getOperaciones().get(0);
+        assertThat(op.getCantidad()).isEqualByComparingTo(new BigDecimal("15.97"));
+        assertThat(op.getPrecioIvaInc()).isEqualByComparingTo(new BigDecimal("32.64"));
+        assertThat(op.getDtoTotal()).isEqualByComparingTo(new BigDecimal("-2.875"));
+        assertThat(op.getImporteTotal()).isEqualByComparingTo(new BigDecimal("29.77"));
+    }
+
+    @Test
+    @DisplayName("parseExtracto no confunde el IVA% impreso con decimales (\"21,00\", no \"21\") con el importe real de un peaje cuando la línea solo trae 2 valores (bug real: factura BA72400000504018, 404 operaciones de peaje mostraban TODAS importeTotal=21,00 -el IVA%- en vez del precio real, que se perdía en la posición de \"litros\")")
+    void parseExtractoPeajeConIvaFormateadoConDecimalesNoSustituyeImporteReal() throws IOException {
+        List<String> lines = loadFixture("familyB_peaje_iva_formateado_con_decimales.txt");
+        List<TarjetaResumen> tarjetaResumenes = new ArrayList<>();
+
+        parser.parseExtracto(lines, tarjetaResumenes);
+
+        assertThat(tarjetaResumenes).hasSize(1);
+        TarjetaResumen tarjeta = tarjetaResumenes.get(0);
+        assertThat(tarjeta.getOperaciones()).hasSize(1);
+
+        Operacion op = tarjeta.getOperaciones().get(0);
+        assertThat(op.getEstablecimiento()).isEqualTo("INTERBIAK Ugaldebieta S/V-Arrigorriaga S/");
+        assertThat(op.getImporteTotal()).isEqualByComparingTo(new BigDecimal("2.05"));
+        assertThat(op.getCantidad()).isNull();
+    }
+
+    @Test
+    @DisplayName("parseExtracto reconoce una operación de peaje Family A cuando el establecimiento viene acumulado de líneas de texto previas y la propia línea de operación empieza directamente por la fecha yyyy-MM-dd (bug real: factura 00D785003790392026/2026-724-100262520, la rama genérica de \"detectar fecha\" tragaba la línea entera y perdía referencia+concepto+importe, causando que la suma de operaciones extraídas no cuadrase con el total de factura)")
+    void parseExtractoPeajeFamilyASinEstablecimientoEnLaPropiaLineaDeOperacion() throws IOException {
+        List<String> lines = loadFixture("familyA_extracto_peaje_sin_establecimiento_en_linea.txt");
+        List<TarjetaResumen> tarjetaResumenes = new ArrayList<>();
+
+        parser.parseExtracto(lines, tarjetaResumenes);
+
+        assertThat(tarjetaResumenes).hasSize(1);
+        TarjetaResumen tarjeta = tarjetaResumenes.get(0);
+        assertThat(tarjeta.getOperaciones()).hasSize(1);
+
+        Operacion op = tarjeta.getOperaciones().get(0);
+        assertThat(op.getEstablecimiento()).isEqualTo("TUNEL ARTXANDA Zestoa/Zumaia- Mendebalde");
+        assertThat(op.getConceptoOriginal()).isEqualTo("AUTOPISTAS DE PEAJE");
+        assertThat(op.getFechaHora()).isEqualTo(LocalDateTime.of(2026, 8, 31, 18, 27));
+        assertThat(op.getImporteTotal()).isEqualByComparingTo(new BigDecimal("9.74"));
+    }
+
+    @Test
+    @DisplayName("resolveConceptoMoeve clasifica \"Descuentos Telepeaje\" como DESCUENTO, no como PEAJE, aunque la palabra contenga la subcadena \"PEAJE\" (bug real: factura BA72400000586389, el check de PEAJE/AUTOPISTA se comprobaba antes que el de DESCUENTO, así que \"Descuentos Telepeaje\" nunca llegaba a clasificarse como descuento y el validador disparaba un falso \"importe negativo en concepto que no es descuento\")")
+    void parseExtractoDescuentoTelepeajeNoSeConfundeConPeajePorLaSubcadena() throws IOException {
+        List<String> lines = loadFixture("familyB_descuento_telepeaje_contiene_peaje.txt");
+        List<TarjetaResumen> tarjetaResumenes = new ArrayList<>();
+
+        parser.parseExtracto(lines, tarjetaResumenes);
+
+        assertThat(tarjetaResumenes).hasSize(1);
+        Operacion op = tarjetaResumenes.get(0).getOperaciones().get(0);
+        assertThat(op.getConceptoUnificado()).isEqualTo(ConceptoUnificado.DESCUENTO.name());
+        assertThat(op.getImporteTotal()).isEqualByComparingTo(new BigDecimal("-2.30"));
+    }
+
+    @Test
+    @DisplayName("resolveConceptoMoeve reconoce \"GNA. SEM PB 95\" (gasolina sin plomo en portugués) como GASOLINA, no OTROS (bug real: factura FT A/00000042540, al no reconocerse como combustible real se perdían los litros -cantidad quedaba NULL- en todas sus operaciones)")
+    void parseExtractoGasolinaPortuguesaSemPbSeReconoceComoGasolina() throws IOException {
+        List<String> lines = loadFixture("familyB_gasolina_pt_sem_pb.txt");
+        List<TarjetaResumen> tarjetaResumenes = new ArrayList<>();
+
+        parser.parseExtracto(lines, tarjetaResumenes);
+
+        assertThat(tarjetaResumenes).hasSize(1);
+        Operacion op = tarjetaResumenes.get(0).getOperaciones().get(0);
+        assertThat(op.getConceptoUnificado()).isEqualTo(ConceptoUnificado.GASOLINA.name());
+        assertThat(op.getCantidad()).isEqualByComparingTo(new BigDecimal("34.16"));
+        assertThat(op.getImporteTotal()).isEqualByComparingTo(new BigDecimal("66.33"));
     }
 
     @Test
