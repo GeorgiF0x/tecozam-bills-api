@@ -142,6 +142,7 @@ public class FacturaService {
                 String canonico = TarjetaNumeroNormalizer.canonical(tr.getNumTarjeta(), proveedor.getCodigo());
                 tr.setNumTarjeta(canonico);
                 Tarjeta tarjeta = tarjetaRepository.findByNumeroTarjeta(canonico)
+                        .map(this::restaurarSiEliminada)
                         .orElseGet(() -> crearTarjetaEnMaestro(canonico, tr.getAlias(), proveedor));
                 tr.setTarjeta(tarjeta);
                 tarjetasTocadas.add(tarjeta);
@@ -312,6 +313,18 @@ public class FacturaService {
     // ─────────────────────────────────────────────────────────────────────────
     // HELPERS
     // ─────────────────────────────────────────────────────────────────────────
+
+    // Mismo bug ya corregido en ListadoTarjetasImportService: findByNumeroTarjeta
+    // no filtra por eliminadoEn, asi que puede devolver una tarjeta soft-deleted.
+    // Sin este restore() quedaria vinculada a la factura pero invisible en todos
+    // los listados (que si filtran eliminadoEn IS NULL).
+    private Tarjeta restaurarSiEliminada(Tarjeta tarjeta) {
+        if (tarjeta.isEliminado()) {
+            tarjeta.restore();
+            return tarjetaRepository.save(tarjeta);
+        }
+        return tarjeta;
+    }
 
     private Tarjeta crearTarjetaEnMaestro(String numTarjeta, String alias, Proveedor proveedor) {
         log.info("[FacturaService] Creando nueva tarjeta en maestro: {}", numTarjeta);

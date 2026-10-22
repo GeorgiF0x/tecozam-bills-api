@@ -203,6 +203,30 @@ class FacturaServiceTest {
         org.mockito.Mockito.verifyNoInteractions(reclasificarTarjetasAViatService);
     }
 
+    @Test
+    @DisplayName("si la tarjeta facturada ya existe pero esta soft-deleted, la restaura antes de vincularla "
+            + "(mismo bug ya corregido en ListadoTarjetasImportService: 'ya existia' sin restore() la deja "
+            + "invisible en los listados pese a estar vinculada a la factura)")
+    void importar_tarjetaEncontradaSoftDeleted_laRestaura() throws Exception {
+        com.tecozam.bills.tarjeta.domain.Tarjeta tarjetaEliminada = com.tecozam.bills.tarjeta.domain.Tarjeta.builder()
+                .numeroTarjeta("1234567890123456")
+                .proveedor(proveedor)
+                .build();
+        tarjetaEliminada.setId(99L);
+        tarjetaEliminada.softDelete();
+        assertThat(tarjetaEliminada.isEliminado()).isTrue();
+
+        when(tarjetaRepository.findByNumeroTarjeta(anyString())).thenReturn(Optional.of(tarjetaEliminada));
+        when(configuracionImportService.obtener()).thenReturn(new ConfiguracionImportDTO(false, null, null));
+        when(facturaParser.parse(any(), any())).thenReturn(facturaParseResultConUnaOperacion());
+        when(facturaImportValidator.validar(any(Factura.class))).thenReturn(List.of());
+
+        service.importar(1L, pdfFile(), null);
+
+        assertThat(tarjetaEliminada.isEliminado()).isFalse();
+        verify(tarjetaRepository).save(tarjetaEliminada);
+    }
+
     private FacturaParseResult facturaParseResultConUnaOperacion() {
         Factura factura = Factura.builder()
                 .numFactura("FA-TEST-001")
