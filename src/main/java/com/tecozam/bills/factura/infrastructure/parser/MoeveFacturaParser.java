@@ -156,6 +156,33 @@ public class MoeveFacturaParser implements FacturaParser {
     private static final Pattern P_OP_LINE_PEAJE = Pattern.compile(
             "^(.+?)\\s+(\\d{4}-\\d{2}-\\d{2}|\\d{2}\\.\\d{2}\\.\\d{4})\\s+(\\d{2}:\\d{2}(?::\\d{2})?)\\s+(\\d+)\\s+(.+)$");
 
+    // ── Extracto: línea de operación de peaje/red (Family A) sin
+    // establecimiento en la propia línea ─────────────────────────────────────
+    // Igual que P_OP_LINE_PEAJE, pero cuando el nombre de la estación se
+    // partió en líneas de texto previas (ya acumulado en
+    // currentEstablecimiento) y la línea de la operación empieza
+    // directamente por la fecha, sin texto delante. Debe comprobarse ANTES
+    // que la detección genérica de "fecha de operación", que si no se
+    // adelanta se queda la línea entera (continue) y pierde referencia,
+    // concepto e importe sin avisar (bug real: factura
+    // 00D785003790392026/2026-724-100262520, "TUNEL ARTXANDA Zestoa/Zumaia-"
+    // + "Mendebalde" + "2026-08-31 18:27 61002394681 AUTOPISTAS DE PEAJE
+    // 9,74" en tres líneas — la tercera no tenía establecimiento propio y se
+    // perdía entera, provocando que la suma de operaciones extraídas no
+    // cuadrase con el total de factura).
+    private static final Pattern P_OP_LINE_PEAJE_SIN_ESTABLECIMIENTO = Pattern.compile(
+            "^(\\d{4}-\\d{2}-\\d{2}|\\d{2}\\.\\d{2}\\.\\d{4})\\s+(\\d{2}:\\d{2}(?::\\d{2})?)\\s+(\\d+)\\s+(.+)$");
+
+    // ── Bidón de AdBlue de tamaño fijo (p. ej. "ECOBLUE 5 LT") ────────────────
+    // El extracto solo imprime 2 valores para esta forma de venta (un campo a
+    // 0 y el importe total), sin litros ni precio/litro reales en columna: la
+    // cantidad real va pegada al propio texto del concepto, sin coma decimal,
+    // asi que el tokenizador no la reconoce como numero (bug real: factura
+    // BA72400000586435, litros quedaban en 0 y el importe total se guardaba
+    // como si fuera el precio por litro, disparando un aviso de "precio fuera
+    // de rango" de 13,75€/L).
+    private static final Pattern P_ECOBLUE_BIDON = Pattern.compile("ECOBLUE\\s+(\\d+)\\s*LT", Pattern.CASE_INSENSITIVE);
+
     // ── Fecha operación en extracto ───────────────────────────────────────────
     private static final Pattern P_FECHA_OP = Pattern.compile("(\\d{4}-\\d{2}-\\d{2})");
     private static final Pattern P_HORA_OP  = Pattern.compile("^(\\d{2}:\\d{2})$");
@@ -761,6 +788,39 @@ public class MoeveFacturaParser implements FacturaParser {
                 continue;
             }
 
+            // Igual que el bloque anterior, pero sin establecimiento en la
+            // propia línea (ya acumulado en currentEstablecimiento) — ver
+            // comentario de P_OP_LINE_PEAJE_SIN_ESTABLECIMIENTO. Debe
+            // comprobarse ANTES que "Detectar fecha de operación" para que
+            // esa rama genérica no se trague la línea entera.
+            Matcher opPeajeSinEstM = P_OP_LINE_PEAJE_SIN_ESTABLECIMIENTO.matcher(line);
+            if (opPeajeSinEstM.matches() && currentEstablecimiento != null) {
+                try {
+                    String fechaRaw = opPeajeSinEstM.group(1);
+                    LocalDate fechaPeaje = fechaRaw.contains(".")
+                            ? LocalDate.parse(fechaRaw, FMT_DD_MM_YYYY_DOT)
+                            : LocalDate.parse(fechaRaw, FMT_YYYY_MM_DD);
+                    LocalDateTime fechaHoraPeaje = fechaPeaje.atTime(parseHoraOpcionalSegundos(opPeajeSinEstM.group(2)));
+                    String referenciaPeaje = opPeajeSinEstM.group(3);
+
+                    String[] tokens = opPeajeSinEstM.group(4).strip().split("\\s+");
+                    ConceptoSplit split = splitConceptoNumerico(tokens, 0);
+                    List<String> numTokens = collectNumericTokens(tokens, split.nextIndex());
+
+                    if (!numTokens.isEmpty()) {
+                        Operacion op = buildOperacionFromNumericTail(referenciaPeaje, split.concepto(),
+                                fechaHoraPeaje, trimEstablecimiento(currentEstablecimiento), null, numTokens);
+                        op.setTarjetaResumen(currentTarjeta);
+                        currentTarjeta.getOperaciones().add(op);
+                    }
+                } catch (Exception e) {
+                    log.warn("[Moeve] Error parseando operación de peaje sin establecimiento '{}': {}",
+                            line, e.getMessage());
+                }
+                currentEstablecimiento = null;
+                continue;
+            }
+
             // Detectar fecha de operación (yyyy-MM-dd)
             Matcher fechaM = P_FECHA_OP.matcher(line);
             if (fechaM.find() && line.strip().matches(".*\\d{4}-\\d{2}-\\d{2}.*")) {
@@ -893,6 +953,28 @@ public class MoeveFacturaParser implements FacturaParser {
      * puede traer hasta 6; indexar desde el final es el único criterio que
      * se cumple en ambos casos).
      */
+    private static final Set<BigDecimal> IVA_PORCENTAJES_VALIDOS = Set.of(
+            new BigDecimal("4.00"), new BigDecimal("10.00"), new BigDecimal("21.00"), new BigDecimal("23.00"));
+
+    private static boolean esPorcentajeIvaValido(BigDecimal valor) {
+        return IVA_PORCENTAJES_VALIDOS.stream().anyMatch(iva -> iva.compareTo(valor) == 0);
+    }
+
+    private static final BigDecimal TOLERANCIA_IMPORTE_CON_IVA = new BigDecimal("0.05");
+
+    /**
+     * Comprueba la identidad estable importeConIVA + dtoTotal ≈ importeTotal
+     * (dtoTotal conserva su signo bruto del extracto), observada en todas las
+     * operaciones de combustible normales. Se usa para detectar cuándo la
+     * columna opcional "PAGADO CON SALDO" desplaza la heurística posicional
+     * de dtoTotal/importeTotal (ver comentario en {@link #buildOperacionFromNumericTail}).
+     */
+    private static boolean esImporteTotalConsistente(BigDecimal importeConIVA, BigDecimal dtoTotal,
+            BigDecimal importeTotal) {
+        return importeConIVA.add(dtoTotal).subtract(importeTotal).abs()
+                .compareTo(TOLERANCIA_IMPORTE_CON_IVA) <= 0;
+    }
+
     private Operacion buildOperacionFromNumericTail(String referencia, String conceptoOriginal,
             LocalDateTime fechaHora, String establecimiento, String conductor, List<String> numTokens) {
         ConceptoUnificado conceptoUnificado = resolveConceptoMoeve(conceptoOriginal);
@@ -904,6 +986,56 @@ public class MoeveFacturaParser implements FacturaParser {
                 ? parseAmount(numTokens.get(numTokens.size() - 2)) : null;
         BigDecimal importeTotal   = numTokens.isEmpty()
                 ? null : parseAmount(numTokens.get(numTokens.size() - 1));
+
+        // Columna opcional "PAGADO CON SALDO": normalmente 0,00 y omitida por
+        // el extracto, pero cuando es distinta de cero se imprime como un
+        // token numérico extra al final de la línea, desplazando un puesto la
+        // heurística "últimos dos tokens" (bug real: factura BA72400000586435,
+        // tarjeta 708011008022434318, dtoTotal quedaba en 29,77 -el importe
+        // total real- e importeTotal en -2,87 -el pagado con saldo-). Se
+        // detecta validando la identidad estable importeConIVA + dtoTotal ≈
+        // importeTotal (se cumple en todas las operaciones normales); si falla
+        // con la asignación de los dos últimos tokens pero se cumple
+        // desplazando la lectura un token a la izquierda, se usa esa en su
+        // lugar y el último token (pagado con saldo) se descarta.
+        if (numTokens.size() > 7 && importeConIVA != null && dtoTotal != null && importeTotal != null
+                && !esImporteTotalConsistente(importeConIVA, dtoTotal, importeTotal)) {
+            BigDecimal dtoTotalDesplazado = parseAmount(numTokens.get(numTokens.size() - 3));
+            BigDecimal importeTotalDesplazado = parseAmount(numTokens.get(numTokens.size() - 2));
+            if (esImporteTotalConsistente(importeConIVA, dtoTotalDesplazado, importeTotalDesplazado)) {
+                dtoTotal = dtoTotalDesplazado;
+                importeTotal = importeTotalDesplazado;
+            }
+        }
+
+        // Bidon de AdBlue de tamaño fijo: ver comentario de P_ECOBLUE_BIDON.
+        // Solo se aplica cuando la linea trae 2 valores o menos (la forma rica
+        // de 7 valores, igual que un repostaje normal de combustible, ya se
+        // parsea bien por posicion y no debe tocarse).
+        if (conceptoUnificado == ConceptoUnificado.ADBLUE && numTokens.size() <= 2 && importeTotal != null) {
+            Matcher bidonM = P_ECOBLUE_BIDON.matcher(conceptoOriginal);
+            if (bidonM.find()) {
+                BigDecimal litrosBidon = new BigDecimal(bidonM.group(1));
+                if (litrosBidon.signum() > 0) {
+                    litros = litrosBidon;
+                    precioUnitario = importeTotal.divide(litrosBidon, 3, RoundingMode.HALF_UP);
+                }
+            }
+        }
+
+        // Peaje con IVA% impreso con decimales ("21,00" en vez de "21"): el
+        // extracto solo imprime 2 valores para esta forma de peaje (importe
+        // real + IVA% formateado), y al traer coma decimal el IVA% pasa el
+        // filtro de "es numerico" (que excluye un "21" normal) y la
+        // heuristica "ultimo token = importeTotal" lo coge en vez del importe
+        // real, que ademas se pierde en la posicion de "litros" (bug real:
+        // factura BA72400000504018, 404 operaciones de peaje mostraban TODAS
+        // importeTotal=21,00 -el IVA%- en vez del precio real).
+        if (conceptoUnificado == ConceptoUnificado.PEAJE && numTokens.size() == 2
+                && litros != null && importeTotal != null
+                && esPorcentajeIvaValido(importeTotal) && !esPorcentajeIvaValido(litros)) {
+            importeTotal = litros;
+        }
 
         // Conceptos sin litros reales (PEAJE/LAVADO/DESCUENTO/OTRAS COMPRAS...)
         // solo traen importe en la posicion donde iria "litros" — sin este
@@ -1040,13 +1172,20 @@ public class MoeveFacturaParser implements FacturaParser {
             return ConceptoUnificado.DIESEL;
         }
         if (upper.contains("G. SIN PLOMO") || upper.contains("GASOLINA")
-                || upper.contains("OPTIMA 95") || upper.contains("SIN PLOMO")) {
+                || upper.contains("OPTIMA 95") || upper.contains("SIN PLOMO")
+                || upper.contains("SEM PB") || upper.contains("SEM CHUMBO")) {
             return ConceptoUnificado.GASOLINA;
         }
         if (upper.contains("ECOBLUE")) return ConceptoUnificado.ADBLUE;
+        // DESCUENTO se comprueba ANTES que PEAJE/AUTOPISTA: "Descuentos
+        // Telepeaje" contiene la subcadena "PEAJE" (dentro de "TELEPEAJE") y
+        // se clasificaba como PEAJE normal sin llegar nunca a esta rama (bug
+        // real: factura BA72400000586389, el validador disparaba un falso
+        // "importe negativo en concepto que no es descuento" porque el
+        // concepto nunca se reconocía como DESCUENTO).
+        if (upper.contains("DESCUENTO")) return ConceptoUnificado.DESCUENTO;
         if (upper.contains("PEAJE") || upper.contains("AUTOPISTA")) return ConceptoUnificado.PEAJE;
         if (upper.contains("LAVADO")) return ConceptoUnificado.LAVADO;
-        if (upper.contains("DESCUENTO")) return ConceptoUnificado.DESCUENTO;
         // Delegar al ConceptoMapper como fallback
         return ConceptoMapper.resolve(raw);
     }

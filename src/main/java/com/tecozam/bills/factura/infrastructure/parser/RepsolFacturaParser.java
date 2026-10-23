@@ -57,7 +57,10 @@ public class RepsolFacturaParser implements FacturaParser {
     // Numero real del documento de liquidacion, cuando lo trae impreso (no
     // todos los ejemplares lo traen — de ahi el fallback sintetico de mas
     // abajo, pero cuando SI esta presente tiene prioridad).
-    private static final Pattern P_NUM_DOC_LIQ = Pattern.compile("N[úu]m\\.?\\s*Doc\\.?\\s*Liq\\.?\\s+(\\S+)");
+    // El identificador puede traer un espacio interno, p. ej.
+    // "NL NLPX/00055916" (bug real: con (\S+) se truncaba a "NL", perdiendo
+    // " NLPX/00055916" — se captura el resto de la línea, igual que P_NUM_FACTURA.
+    private static final Pattern P_NUM_DOC_LIQ = Pattern.compile("N[úu]m\\.?\\s*Doc\\.?\\s*Liq\\.?\\s+(.+)");
 
     // ── Conceptos resumen ─────────────────────────────────────────────────────
     // Cabecera real: "Concepto Cantidad Base Tipo Cuota Importe" (orden:
@@ -91,8 +94,13 @@ public class RepsolFacturaParser implements FacturaParser {
             "N[\\u00ba°]\\s*de\\s*Tarjeta\\s+([\\d ]{15,23})\\s+N[\\u00ba°]\\s*de\\s*Matr[ií]cula\\s+(.+?)(?:\\s+Conductor\\b\\s*(.*))?$");
 
     // ── Línea de operación ────────────────────────────────────────────────────
+    // La referencia admite desde 1 dígito: los peajes AUTOESTRADA de algunas
+    // facturas de liquidación usan un contador corto por tarjeta (p. ej.
+    // "0004", "0019"), no el ID largo habitual de 6-8 dígitos (bug real:
+    // factura NLPX/00055916, 9 de 10 operaciones de peaje se perdían enteras
+    // porque su referencia no llegaba a 6 dígitos).
     private static final Pattern P_OP_LINE = Pattern.compile(
-            "^(\\d{6,8})\\s+(\\d{2}/\\d{2})\\s+(\\d{2}:\\d{2})\\s+(.+)$");
+            "^(\\d{1,8})\\s+(\\d{2}/\\d{2})\\s+(\\d{2}:\\d{2})\\s+(.+)$");
 
     private static final DateTimeFormatter FMT_DATE = DateTimeFormatter.ofPattern("dd/MM/yyyy");
 
@@ -797,10 +805,14 @@ public class RepsolFacturaParser implements FacturaParser {
             return ConceptoUnificado.GASOLINA;
         }
         if (upper.contains("ADBLUE")) return ConceptoUnificado.ADBLUE;
+        // DESCUENTO se comprueba ANTES que PEAJE/AUTOPISTA: "DESCUENTOS
+        // TELEPEAJES" contiene la subcadena "PEAJE" (dentro de "TELEPEAJE") y
+        // se clasificaba como PEAJE normal sin llegar nunca a esta rama
+        // (mismo bug real ya corregido en MoeveFacturaParser.resolveConceptoMoeve).
+        if (upper.contains("DESCUENTO") || upper.contains("BONIF")) return ConceptoUnificado.DESCUENTO;
         if (upper.contains("AUTOPISTA") || upper.contains("PEAJE")) return ConceptoUnificado.PEAJE;
         if (upper.contains("LAVADO")) return ConceptoUnificado.LAVADO;
         if (upper.contains("LUBRIC") || upper.contains("ACEITE")) return ConceptoUnificado.LUBRICANTE;
-        if (upper.contains("DESCUENTO") || upper.contains("BONIF")) return ConceptoUnificado.DESCUENTO;
         // Delegar a ConceptoMapper como fallback
         ConceptoUnificado mapped = ConceptoMapper.resolve(raw);
         return mapped;
