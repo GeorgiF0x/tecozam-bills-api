@@ -1,17 +1,20 @@
 package com.tecozam.bills.auth.application;
 
+import com.tecozam.bills.auditoria.infrastructure.persistence.PinAccesoEventoRepository;
 import com.tecozam.bills.auth.domain.UsuarioCampo;
 import com.tecozam.bills.auth.dto.CrearUsuarioCampoRequest;
 import com.tecozam.bills.auth.dto.EditarUsuarioCampoRequest;
 import com.tecozam.bills.auth.dto.UsuarioCampoDTO;
 import com.tecozam.bills.auth.infrastructure.persistence.UsuarioCampoRepository;
 import com.tecozam.bills.shared.domain.enums.EstadoRegistro;
+import com.tecozam.bills.shared.infrastructure.exception.BusinessException;
 import com.tecozam.bills.shared.infrastructure.exception.DuplicateResourceException;
 import com.tecozam.bills.shared.infrastructure.exception.ResourceNotFoundException;
 import com.tecozam.bills.trabajador.application.TrabajadorResolver;
 import com.tecozam.bills.trabajador.domain.OrigenTrabajador;
 import com.tecozam.bills.trabajador.domain.Trabajador;
 import com.tecozam.bills.trabajador.infrastructure.persistence.TrabajadorRepository;
+import com.tecozam.bills.webauthn.infrastructure.persistence.WebauthnCredentialRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -30,10 +33,12 @@ public class UsuarioCampoService {
     private final TrabajadorRepository trabajadorRepository;
     private final TrabajadorResolver trabajadorResolver;
     private final PasswordEncoder passwordEncoder;
+    private final WebauthnCredentialRepository webauthnCredentialRepository;
+    private final PinAccesoEventoRepository pinAccesoEventoRepository;
 
     @Transactional(readOnly = true)
     public List<UsuarioCampoDTO> findAll() {
-        return usuarioCampoRepository.findAll().stream()
+        return usuarioCampoRepository.findByEliminadoEnIsNull().stream()
                 .map(this::toDTO)
                 .toList();
     }
@@ -178,6 +183,39 @@ public class UsuarioCampoService {
         usuarioCampoRepository.save(usuario);
         log.info("Password reset para usuario campo {}", usuario.getUsername());
         return toDTO(usuario);
+    }
+
+    /**
+     * Borrado logico (por defecto) o fisico (real=true) de un usuario de
+     * campo. El borrado real solo se permite si el usuario no tiene ninguna
+     * credencial WebAuthn ni evento de acceso a PIN asociado; en caso
+     * contrario se rechaza para no romper la trazabilidad de auditoria.
+     */
+    public void eliminar(Long id, boolean real) {
+        UsuarioCampo usuario = findOrThrow(id);
+
+        if (real) {
+            eliminarFisicamente(usuario);
+            log.info("Usuario campo {} eliminado (borrado fisico)", id);
+        } else {
+            usuario.softDelete();
+            usuarioCampoRepository.save(usuario);
+            log.info("Usuario campo {} eliminado (borrado logico)", id);
+        }
+    }
+
+    private void eliminarFisicamente(UsuarioCampo usuario) {
+        if (tieneHistorial(usuario.getId())) {
+            throw new BusinessException(
+                    "No se puede eliminar permanentemente: este usuario tiene historial asociado "
+                            + "(credenciales WebAuthn o eventos de acceso a PIN). Usa el borrado logico en su lugar.");
+        }
+        usuarioCampoRepository.delete(usuario);
+    }
+
+    private boolean tieneHistorial(Long usuarioId) {
+        return webauthnCredentialRepository.existsByUsuarioCampoId(usuarioId)
+                || pinAccesoEventoRepository.existsByUsuarioCampoId(usuarioId);
     }
 
     private UsuarioCampo findOrThrow(Long id) {

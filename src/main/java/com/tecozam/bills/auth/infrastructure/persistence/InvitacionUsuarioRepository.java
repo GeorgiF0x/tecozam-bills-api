@@ -18,4 +18,8 @@ public interface InvitacionUsuarioRepository extends JpaRepository<InvitacionUsu
     List<InvitacionUsuario> findByUsedAtIsNullAndExpiresAtAfter(LocalDateTime expiresAfter);
 
     void deleteByUsuarioId(Long usuarioId);
+
+    boolean existsByUsuarioId(Long usuarioId);
+
+    boolean existsByInvitadoPorId(Long invitadoPorId);
 }

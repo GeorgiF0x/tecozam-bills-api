@@ -71,7 +71,7 @@ public class UsuarioOficinaService {
 
     @Transactional(readOnly = true)
     public List<UsuarioOficinaDTO> findAll() {
-        return usuarioOficinaRepository.findAll().stream()
+        return usuarioOficinaRepository.findByEliminadoEnIsNull().stream()
                 .map(this::toDTO)
                 .toList();
     }
@@ -370,6 +370,40 @@ public class UsuarioOficinaService {
         invitacion.setUsedAt(LocalDateTime.now());
         invitacionUsuarioRepository.save(invitacion);
         log.info("Invitación cancelada: id={}", invitacionId);
+    }
+
+    /**
+     * Borrado logico (por defecto) o fisico (real=true) de un usuario de
+     * oficina. El borrado real solo se permite si el usuario no tiene
+     * ningun historial de invitaciones asociado (ni como invitado ni como
+     * invitador); en caso contrario se rechaza para no romper la
+     * trazabilidad de auditoria.
+     */
+    public void eliminar(Long id, boolean real) {
+        UsuarioOficina usuario = findOrThrow(id);
+
+        if (real) {
+            eliminarFisicamente(usuario);
+            log.info("Usuario oficina {} eliminado (borrado fisico)", id);
+        } else {
+            usuario.softDelete();
+            usuarioOficinaRepository.save(usuario);
+            log.info("Usuario oficina {} eliminado (borrado logico)", id);
+        }
+    }
+
+    private void eliminarFisicamente(UsuarioOficina usuario) {
+        if (tieneHistorial(usuario.getId())) {
+            throw new BusinessException(
+                    "No se puede eliminar permanentemente: este usuario tiene historial de invitaciones "
+                            + "asociado. Usa el borrado logico en su lugar.");
+        }
+        usuarioOficinaRepository.delete(usuario);
+    }
+
+    private boolean tieneHistorial(Long usuarioId) {
+        return invitacionUsuarioRepository.existsByUsuarioId(usuarioId)
+                || invitacionUsuarioRepository.existsByInvitadoPorId(usuarioId);
     }
 
     @Transactional(readOnly = true)
