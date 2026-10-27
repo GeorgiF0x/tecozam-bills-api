@@ -78,6 +78,9 @@ public class UsuarioOficina {
     @Column(name = "modificado_en")
     private LocalDateTime modificadoEn;
 
+    @Column(name = "eliminado_en")
+    private LocalDateTime eliminadoEn;
+
     @PrePersist
     protected void onPrePersist() {
         this.creadoEn = LocalDateTime.now();
@@ -87,5 +90,13 @@ public class UsuarioOficina {
     @PreUpdate
     protected void onPreUpdate() {
         this.modificadoEn = LocalDateTime.now();
+    }
+
+    public boolean isEliminado() {
+        return this.eliminadoEn != null;
+    }
+
+    public void softDelete() {
+        this.eliminadoEn = LocalDateTime.now();
     }
 }

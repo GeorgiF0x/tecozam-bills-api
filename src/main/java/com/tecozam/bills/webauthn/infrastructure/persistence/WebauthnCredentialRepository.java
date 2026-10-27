@@ -14,4 +14,6 @@ public interface WebauthnCredentialRepository extends JpaRepository<WebauthnCred
 
     @Query("SELECT c FROM WebauthnCredential c WHERE c.credentialId = :credentialId AND c.eliminadoEn IS NULL")
     Optional<WebauthnCredential> findActiveByCredentialId(@Param("credentialId") byte[] credentialId);
+
+    boolean existsByUsuarioCampoId(Long usuarioCampoId);
 }

@@ -25,6 +25,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
@@ -116,6 +117,14 @@ public class UsuarioOficinaController {
         }
         return ResponseEntity.ok(usuarioOficinaService.cambiarRol(
                 id, nuevoRol, authentication.getName()));
+    }
+
+    @DeleteMapping("/{id:\\d+}")
+    @Operation(summary = "Eliminar usuario de oficina",
+            description = "Por defecto, borrado lógico (se conserva para auditoría). Con real=true, borrado físico si no tiene historial asociado")
+    public ResponseEntity<Void> eliminar(@PathVariable Long id, @RequestParam(defaultValue = "false") boolean real) {
+        usuarioOficinaService.eliminar(id, real);
+        return ResponseEntity.noContent().build();
     }
 
     @PostMapping("/invitaciones")

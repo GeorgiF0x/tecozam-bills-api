@@ -439,6 +439,61 @@ class UsuarioOficinaServiceTest {
         assertThat(resultado.get(0).invitadoPorUsername()).isEqualTo("admin1");
     }
 
+    // ── eliminar ─────────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("eliminar hace borrado logico (softDelete), no borra el registro")
+    void eliminar_hacesBorradoLogico() {
+        UsuarioOficina usuario = UsuarioOficina.builder()
+                .username("borrar1").rol(Rol.GESTOR).activo(true)
+                .estadoRegistro(EstadoRegistro.ACTIVO).build();
+        usuario.setId(500L);
+
+        when(usuarioOficinaRepository.findById(500L)).thenReturn(Optional.of(usuario));
+        when(usuarioOficinaRepository.save(any(UsuarioOficina.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        service.eliminar(500L, false);
+
+        assertThat(usuario.isEliminado()).isTrue();
+        verify(usuarioOficinaRepository).save(usuario);
+        verify(usuarioOficinaRepository, never()).delete(any(UsuarioOficina.class));
+    }
+
+    @Test
+    @DisplayName("eliminar con real=true borra fisicamente si el usuario no tiene historial")
+    void eliminar_real_sinHistorial_borraFisicamente() {
+        UsuarioOficina usuario = UsuarioOficina.builder()
+                .username("borrar2").rol(Rol.GESTOR).activo(true)
+                .estadoRegistro(EstadoRegistro.ACTIVO).build();
+        usuario.setId(501L);
+
+        when(usuarioOficinaRepository.findById(501L)).thenReturn(Optional.of(usuario));
+        when(invitacionUsuarioRepository.existsByUsuarioId(501L)).thenReturn(false);
+        when(invitacionUsuarioRepository.existsByInvitadoPorId(501L)).thenReturn(false);
+
+        service.eliminar(501L, true);
+
+        verify(usuarioOficinaRepository).delete(usuario);
+        verify(usuarioOficinaRepository, never()).save(any(UsuarioOficina.class));
+    }
+
+    @Test
+    @DisplayName("eliminar con real=true rechaza el borrado si el usuario tiene historial asociado")
+    void eliminar_real_conHistorial_lanzaBusinessException() {
+        UsuarioOficina usuario = UsuarioOficina.builder()
+                .username("borrar3").rol(Rol.GESTOR).activo(true)
+                .estadoRegistro(EstadoRegistro.ACTIVO).build();
+        usuario.setId(502L);
+
+        when(usuarioOficinaRepository.findById(502L)).thenReturn(Optional.of(usuario));
+        when(invitacionUsuarioRepository.existsByUsuarioId(502L)).thenReturn(true);
+
+        assertThatThrownBy(() -> service.eliminar(502L, true))
+                .isInstanceOf(BusinessException.class);
+        verify(usuarioOficinaRepository, never()).delete(any(UsuarioOficina.class));
+        verify(usuarioOficinaRepository, never()).save(any(UsuarioOficina.class));
+    }
+
     private static String sha256(String input) {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");

@@ -12,4 +12,6 @@ public interface PinAccesoEventoRepository extends JpaRepository<PinAccesoEvento
     List<PinAccesoEvento> findByUsuarioCampoIdOrderByTimestampDesc(Long usuarioCampoId);
 
     boolean existsByTarjetaId(Long tarjetaId);
+
+    boolean existsByUsuarioCampoId(Long usuarioCampoId);
 }

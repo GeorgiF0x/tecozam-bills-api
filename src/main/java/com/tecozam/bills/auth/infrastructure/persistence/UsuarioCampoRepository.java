@@ -20,4 +20,6 @@ public interface UsuarioCampoRepository extends JpaRepository<UsuarioCampo, Long
     List<UsuarioCampo> findByEstadoRegistro(EstadoRegistro estadoRegistro);
 
     boolean existsByTrabajadorId(Long trabajadorId);
+
+    List<UsuarioCampo> findByEliminadoEnIsNull();
 }
