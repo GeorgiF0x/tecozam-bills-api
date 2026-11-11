@@ -151,6 +151,7 @@ public class PrestamoService {
                 .estado("ACTIVO")
                 .fechaInicio(req.fechaInicio())
                 .fechaFinPrevista(req.fechaFinPrevista())
+                .tipoPrestamo(req.fechaFinPrevista() != null ? "TEMPORAL" : "INDEFINIDO")
                 .observaciones(req.observaciones())
                 .creadoPorCampo(true);
 
