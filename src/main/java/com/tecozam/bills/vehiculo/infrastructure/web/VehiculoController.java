@@ -1,6 +1,7 @@
 package com.tecozam.bills.vehiculo.infrastructure.web;
 
 import com.tecozam.bills.vehiculo.application.VehiculoService;
+import com.tecozam.bills.vehiculo.dto.CreateMiVehiculoRequest;
 import com.tecozam.bills.vehiculo.dto.CreateVehiculoRequest;
 import com.tecozam.bills.vehiculo.dto.UpdateVehiculoRequest;
 import com.tecozam.bills.vehiculo.dto.VehiculoDTO;
@@ -8,6 +9,7 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -46,6 +48,20 @@ public class VehiculoController {
     @PreAuthorize("hasAnyRole('ADMIN','GESTOR')")
     public ResponseEntity<VehiculoDTO> create(@Valid @RequestBody CreateVehiculoRequest request) {
         return ResponseEntity.status(201).body(vehiculoService.create(request));
+    }
+
+    @PostMapping("/mios")
+    @PreAuthorize("isAuthenticated()")
+    @Operation(summary = "Alta self-service de vehiculo de sustitucion", description = "El operario da de alta una matricula que no esta en la flota; queda marcada para revision del gestor.")
+    public ResponseEntity<VehiculoDTO> crearMiVehiculo(@Valid @RequestBody CreateMiVehiculoRequest request) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(vehiculoService.crearMiVehiculo(request));
+    }
+
+    @PatchMapping("/{id}/revisar")
+    @PreAuthorize("hasAnyRole('ADMIN','GESTOR')")
+    @Operation(summary = "Marcar revisado", description = "El gestor confirma un vehiculo autoregistrado por un operario, incorporandolo a la flota.")
+    public VehiculoDTO marcarRevisado(@PathVariable Long id) {
+        return vehiculoService.marcarRevisado(id);
     }
 
     @PutMapping("/{id}")

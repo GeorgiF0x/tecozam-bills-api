@@ -47,4 +47,9 @@ public class Vehiculo extends BaseEntity {
     @Column(nullable = false)
     @Builder.Default
     private boolean activo = true;
+
+    /** True si el vehiculo lo dio de alta el propio operario desde la PWA (vehiculo de sustitucion). */
+    @Column(name = "creado_por_campo", nullable = false)
+    @Builder.Default
+    private boolean creadoPorCampo = false;
 }

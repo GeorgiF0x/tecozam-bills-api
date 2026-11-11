@@ -11,5 +11,6 @@ public record VehiculoDTO(
         String descripcion,
         String estado,
         boolean activo,
+        boolean creadoPorCampo,
         LocalDateTime creadoEn
 ) {}

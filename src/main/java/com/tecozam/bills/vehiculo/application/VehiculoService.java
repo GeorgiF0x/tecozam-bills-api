@@ -9,6 +9,7 @@ import com.tecozam.bills.tarjeta.infrastructure.persistence.TarjetaAsignacionRep
 import com.tecozam.bills.ticket.infrastructure.persistence.TicketRepository;
 import com.tecozam.bills.vehiculo.domain.CategoriaRecurso;
 import com.tecozam.bills.vehiculo.domain.Vehiculo;
+import com.tecozam.bills.vehiculo.dto.CreateMiVehiculoRequest;
 import com.tecozam.bills.vehiculo.dto.CreateVehiculoRequest;
 import com.tecozam.bills.vehiculo.dto.UpdateVehiculoRequest;
 import com.tecozam.bills.vehiculo.dto.VehiculoDTO;
@@ -77,6 +78,46 @@ public class VehiculoService {
         vehiculo = vehiculoRepository.save(vehiculo);
         log.info("Vehiculo creado: {} (id={})", vehiculo.getMatricula(), vehiculo.getId());
 
+        return toDTO(vehiculo);
+    }
+
+    /**
+     * Alta self-service de un vehiculo de sustitucion desde la PWA: el operario
+     * da de alta una matricula que no esta en la flota registrada (p.ej. un
+     * vehiculo de alquiler o prestado). Queda marcado con creadoPorCampo=true
+     * para que el gestor lo revise despues (ver marcarRevisado/eliminar).
+     */
+    public VehiculoDTO crearMiVehiculo(CreateMiVehiculoRequest request) {
+        if (request.matricula() == null || request.matricula().isBlank()) {
+            throw new BusinessException("La matrícula es obligatoria", "matricula");
+        }
+        if (vehiculoRepository.existsByMatricula(request.matricula())) {
+            throw new DuplicateResourceException("Vehiculo", "matricula", request.matricula());
+        }
+
+        Vehiculo vehiculo = Vehiculo.builder()
+                .matricula(request.matricula())
+                .categoria(CategoriaRecurso.VEHICULO)
+                .tipo("Sin clasificar")
+                .descripcion(request.descripcion())
+                .estado(EstadoRecurso.DISPONIBLE)
+                .activo(true)
+                .creadoPorCampo(true)
+                .build();
+
+        vehiculo = vehiculoRepository.save(vehiculo);
+        log.info("Vehiculo de sustitucion creado por operario: {} (id={})", vehiculo.getMatricula(), vehiculo.getId());
+
+        return toDTO(vehiculo);
+    }
+
+    /** El gestor confirma que un vehiculo autoregistrado por un operario queda incorporado a la flota. */
+    public VehiculoDTO marcarRevisado(Long id) {
+        Vehiculo vehiculo = vehiculoRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Vehiculo", id));
+        vehiculo.setCreadoPorCampo(false);
+        vehiculo = vehiculoRepository.save(vehiculo);
+        log.info("Vehiculo {} marcado como revisado", id);
         return toDTO(vehiculo);
     }
 
@@ -194,6 +235,7 @@ public class VehiculoService {
                 vehiculo.getDescripcion(),
                 vehiculo.getEstado().name(),
                 vehiculo.isActivo(),
+                vehiculo.isCreadoPorCampo(),
                 vehiculo.getCreadoEn()
         );
     }
