@@ -117,7 +117,7 @@ public class PrestamoService {
                         return new RecursoDisponibleDTO(v.getId(), desc, v.getDescripcion());
                     })
                     .toList();
-            case "VEHICULO" -> vehiculoRepository.findByEstadoAndActivoTrue(EstadoRecurso.DISPONIBLE).stream()
+            case "VEHICULO" -> vehiculoRepository.findByEstadoAndActivoTrueAndEliminadoEnIsNull(EstadoRecurso.DISPONIBLE).stream()
                     .map(v -> {
                         String desc = v.getMatricula() != null ? v.getMatricula() : "Vehículo #" + v.getId();
                         String detalle = null;

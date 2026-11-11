@@ -15,6 +15,8 @@ public interface VehiculoRepository extends JpaRepository<Vehiculo, Long> {
 
     List<Vehiculo> findByEstadoAndActivoTrue(EstadoRecurso estado);
 
+    List<Vehiculo> findByEstadoAndActivoTrueAndEliminadoEnIsNull(EstadoRecurso estado);
+
     Optional<Vehiculo> findByMatricula(String matricula);
 
     boolean existsByMatricula(String matricula);
