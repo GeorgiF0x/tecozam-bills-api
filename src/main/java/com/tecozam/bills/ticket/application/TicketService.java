@@ -23,6 +23,7 @@ import com.tecozam.bills.ticket.dto.CreateTicketManualRequest;
 import com.tecozam.bills.ticket.dto.CreateTicketOcrValidadoRequest;
 import com.tecozam.bills.ticket.dto.LineaOcrDTO;
 import com.tecozam.bills.ticket.dto.TicketDTO;
+import com.tecozam.bills.ticket.infrastructure.persistence.TicketLineaRepository;
 import com.tecozam.bills.ticket.infrastructure.persistence.TicketRepository;
 import com.tecozam.bills.trabajador.domain.Trabajador;
 import com.tecozam.bills.trabajador.infrastructure.persistence.TrabajadorRepository;
@@ -35,7 +36,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.io.IOException;
 import java.math.BigDecimal;
+import java.nio.file.Files;
+import java.nio.file.Paths;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
@@ -66,6 +70,7 @@ public class TicketService {
     private final com.tecozam.bills.auth.infrastructure.persistence.UsuarioCampoRepository usuarioCampoRepository;
     private final FileStorageService fileStorageService;
     private final TicketLineaPlausibilidadValidator plausibilidadValidator;
+    private final TicketLineaRepository ticketLineaRepository;
 
     @Transactional(readOnly = true)
     public List<TicketDTO> findAll(String estadoCotejo) {
@@ -184,6 +189,47 @@ public class TicketService {
         }
         Usuario legacy = usuarioRepository.findByUsername(username).orElse(null);
         return legacy != null ? legacy.getTrabajador() : null;
+    }
+
+    public record FotoLinea(byte[] bytes, String contentType) {}
+
+    /**
+     * Foto de una línea de ticket (ver TicketLinea.fotoUrl — es una ruta en
+     * disco, no una URL servible; este es el único punto que la lee). Mismo
+     * criterio de autorización que obtenerPropioPendiente: dueño del ticket
+     * o ADMIN/GESTOR (comprobado por el caller vía esAdmin).
+     */
+    @Transactional(readOnly = true)
+    public FotoLinea obtenerFotoLinea(Long lineaId, String username, boolean esAdmin) {
+        TicketLinea linea = ticketLineaRepository.findById(lineaId)
+                .orElseThrow(() -> new ResourceNotFoundException("TicketLinea", lineaId));
+
+        if (!esAdmin) {
+            Trabajador trabajador = resolveTrabajadorByUsername(username);
+            Trabajador dueno = linea.getTicket().getTrabajador();
+            if (trabajador == null || dueno == null || !trabajador.getId().equals(dueno.getId())) {
+                throw new BusinessException("Esta foto no es tuya", "lineaId");
+            }
+        }
+
+        if (linea.getFotoUrl() == null) {
+            throw new ResourceNotFoundException("Foto", lineaId);
+        }
+
+        byte[] bytes;
+        try {
+            bytes = Files.readAllBytes(Paths.get(linea.getFotoUrl()));
+        } catch (IOException e) {
+            throw new ResourceNotFoundException("Foto", lineaId);
+        }
+        return new FotoLinea(bytes, contentTypeFromPath(linea.getFotoUrl()));
+    }
+
+    private String contentTypeFromPath(String path) {
+        String lower = path.toLowerCase();
+        if (lower.endsWith(".png")) return "image/png";
+        if (lower.endsWith(".webp")) return "image/webp";
+        return "image/jpeg";
     }
 
     public TicketDTO createManual(CreateTicketManualRequest req) {

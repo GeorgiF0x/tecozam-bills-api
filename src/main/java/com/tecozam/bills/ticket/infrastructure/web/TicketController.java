@@ -15,6 +15,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
@@ -78,6 +79,19 @@ public class TicketController {
             Authentication authentication,
             @Valid @RequestBody ActualizarTicketPropioRequest request) {
         return ResponseEntity.ok(ticketService.actualizarPropio(authentication.getName(), id, request));
+    }
+
+    @GetMapping("/lineas/{id:\\d+}/foto")
+    @PreAuthorize("isAuthenticated()")
+    @Operation(summary = "Foto de una línea de ticket",
+            description = "Devuelve el binario de la foto. Requiere ser el dueño del ticket o ADMIN/GESTOR.")
+    public ResponseEntity<byte[]> fotoLinea(@PathVariable Long id, Authentication authentication) {
+        boolean esAdmin = authentication.getAuthorities().stream()
+                .anyMatch(a -> a.getAuthority().equals("ROLE_ADMIN") || a.getAuthority().equals("ROLE_GESTOR"));
+        TicketService.FotoLinea foto = ticketService.obtenerFotoLinea(id, authentication.getName(), esAdmin);
+        return ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType(foto.contentType()))
+                .body(foto.bytes());
     }
 
     @GetMapping("/candidatos-vincular")

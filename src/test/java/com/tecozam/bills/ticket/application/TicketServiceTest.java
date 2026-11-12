@@ -12,10 +12,12 @@ import com.tecozam.bills.tarjeta.domain.TarjetaAsignacion;
 import com.tecozam.bills.tarjeta.infrastructure.persistence.TarjetaAsignacionRepository;
 import com.tecozam.bills.tarjeta.infrastructure.persistence.TarjetaRepository;
 import com.tecozam.bills.ticket.domain.Ticket;
+import com.tecozam.bills.ticket.domain.TicketLinea;
 import com.tecozam.bills.ticket.domain.TipoGasto;
 import com.tecozam.bills.ticket.dto.CreateTicketManualRequest;
 import com.tecozam.bills.ticket.dto.CreateTicketOcrValidadoRequest;
 import com.tecozam.bills.ticket.dto.LineaOcrDTO;
+import com.tecozam.bills.ticket.infrastructure.persistence.TicketLineaRepository;
 import com.tecozam.bills.ticket.infrastructure.persistence.TicketRepository;
 import com.tecozam.bills.trabajador.domain.Trabajador;
 import com.tecozam.bills.trabajador.infrastructure.persistence.TrabajadorRepository;
@@ -57,6 +59,7 @@ class TicketServiceTest {
     @Mock UsuarioRepository usuarioRepository;
     @Mock UsuarioCampoRepository usuarioCampoRepository;
     @Mock FileStorageService fileStorageService;
+    @Mock TicketLineaRepository ticketLineaRepository;
 
     TicketService service;
 
@@ -69,7 +72,7 @@ class TicketServiceTest {
         service = new TicketService(ticketRepository, operacionRepository, proveedorRepository,
                 trabajadorRepository, tarjetaRepository, tarjetaAsignacionRepository, vehiculoRepository,
                 usuarioRepository, usuarioCampoRepository, fileStorageService,
-                new TicketLineaPlausibilidadValidator());
+                new TicketLineaPlausibilidadValidator(), ticketLineaRepository);
 
         trabajador = new Trabajador();
         trabajador.setId(2L);
@@ -359,6 +362,62 @@ class TicketServiceTest {
         assertThatThrownBy(() -> service.actualizarPropio("campo1", 50L, request))
                 .isInstanceOf(com.tecozam.bills.shared.infrastructure.exception.BusinessException.class);
         verify(ticketRepository, never()).save(any(Ticket.class));
+    }
+
+    // ─── obtenerFotoLinea ───────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("obtenerFotoLinea devuelve los bytes de la foto cuando el ticket es propio")
+    void obtenerFotoLinea_propia_devuelveBytes() throws Exception {
+        mockTrabajadorCampo("campo1", trabajador);
+        java.nio.file.Path tmp = java.nio.file.Files.createTempFile("foto-test", ".png");
+        java.nio.file.Files.write(tmp, new byte[]{1, 2, 3});
+
+        Ticket ticket = Ticket.builder().trabajador(trabajador).build();
+        TicketLinea linea = TicketLinea.builder().ticket(ticket).fotoUrl(tmp.toString()).build();
+        when(ticketLineaRepository.findById(7L)).thenReturn(Optional.of(linea));
+
+        try {
+            var foto = service.obtenerFotoLinea(7L, "campo1", false);
+            assertThat(foto.bytes()).containsExactly(1, 2, 3);
+            assertThat(foto.contentType()).isEqualTo("image/png");
+        } finally {
+            java.nio.file.Files.deleteIfExists(tmp);
+        }
+    }
+
+    @Test
+    @DisplayName("obtenerFotoLinea de un ticket de OTRO trabajador lanza BusinessException")
+    void obtenerFotoLinea_deOtroTrabajador_lanzaExcepcion() {
+        mockTrabajadorCampo("campo1", trabajador);
+        Trabajador otro = new Trabajador();
+        otro.setId(99L);
+        Ticket ticket = Ticket.builder().trabajador(otro).build();
+        TicketLinea linea = TicketLinea.builder().ticket(ticket).fotoUrl("/no/importa.png").build();
+        when(ticketLineaRepository.findById(7L)).thenReturn(Optional.of(linea));
+
+        assertThatThrownBy(() -> service.obtenerFotoLinea(7L, "campo1", false))
+                .isInstanceOf(com.tecozam.bills.shared.infrastructure.exception.BusinessException.class);
+    }
+
+    @Test
+    @DisplayName("obtenerFotoLinea como ADMIN puede ver la foto de cualquier trabajador")
+    void obtenerFotoLinea_comoAdmin_puedeVerCualquierFoto() throws Exception {
+        java.nio.file.Path tmp = java.nio.file.Files.createTempFile("foto-test", ".jpg");
+        java.nio.file.Files.write(tmp, new byte[]{9, 9});
+
+        Trabajador otro = new Trabajador();
+        otro.setId(99L);
+        Ticket ticket = Ticket.builder().trabajador(otro).build();
+        TicketLinea linea = TicketLinea.builder().ticket(ticket).fotoUrl(tmp.toString()).build();
+        when(ticketLineaRepository.findById(7L)).thenReturn(Optional.of(linea));
+
+        try {
+            var foto = service.obtenerFotoLinea(7L, "admin", true);
+            assertThat(foto.bytes()).containsExactly(9, 9);
+        } finally {
+            java.nio.file.Files.deleteIfExists(tmp);
+        }
     }
 
     @Test
