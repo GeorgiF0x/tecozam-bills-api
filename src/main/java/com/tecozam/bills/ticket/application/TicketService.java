@@ -922,7 +922,9 @@ public class TicketService {
                 l.getImporteTotal(),
                 l.getNumRecibo(),
                 l.getMatricula(),
-                l.getFotoUrl()
+                // fotoUrl en TicketLinea es una ruta en disco (ver obtenerFotoLinea);
+                // al cliente le exponemos el endpoint que la sirve, no la ruta cruda.
+                l.getFotoUrl() != null ? "/api/tickets/lineas/" + l.getId() + "/foto" : null
         );
     }
 }
