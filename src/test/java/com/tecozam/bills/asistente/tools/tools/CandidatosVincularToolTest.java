@@ -83,7 +83,7 @@ class CandidatosVincularToolTest {
                 id, null, null, null, null, null, null, null,
                 estacion, null, fechaHora, null, null, null, null,
                 null, null, importeTotal, null, null, null, null,
-                null, "PENDIENTE", null, null, null, null, null,
+                null, null, "PENDIENTE", null, null, null, null, null,
                 null, null, false, null
         );
     }

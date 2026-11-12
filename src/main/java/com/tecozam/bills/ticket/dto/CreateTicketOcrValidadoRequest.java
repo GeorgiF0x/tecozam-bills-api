@@ -1,5 +1,6 @@
 package com.tecozam.bills.ticket.dto;
 
+import com.tecozam.bills.ticket.domain.TipoGasto;
 import com.tecozam.bills.vehiculo.domain.CategoriaRecurso;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
@@ -17,6 +18,11 @@ import java.util.List;
  *
  * FLEET-01: el campo pin es opcional; sólo se valida formato (4 dígitos) cuando
  * el cliente lo envía. El PIN existe únicamente a efectos de consulta.
+ *
+ * tipoGasto es OPCIONAL (no @NotNull) a propósito: el despliegue de prod es
+ * manual (backend y PWA no siempre se despliegan a la vez), así que una PWA
+ * antigua sin este campo no debe romper la subida — TicketService lo trata
+ * como COMBUSTIBLE si no viene.
  */
 public record CreateTicketOcrValidadoRequest(
         @NotNull Long tarjetaId,
@@ -25,5 +31,6 @@ public record CreateTicketOcrValidadoRequest(
         @NotNull Long vehiculoId,
         @NotNull Long centroCosteId,
         Integer kilometros,
+        TipoGasto tipoGasto,
         List<LineaOcrDTO> lineas
 ) {}

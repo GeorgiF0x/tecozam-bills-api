@@ -12,6 +12,7 @@ import com.tecozam.bills.tarjeta.domain.TarjetaAsignacion;
 import com.tecozam.bills.tarjeta.infrastructure.persistence.TarjetaAsignacionRepository;
 import com.tecozam.bills.tarjeta.infrastructure.persistence.TarjetaRepository;
 import com.tecozam.bills.ticket.domain.Ticket;
+import com.tecozam.bills.ticket.domain.TipoGasto;
 import com.tecozam.bills.ticket.dto.CreateTicketManualRequest;
 import com.tecozam.bills.ticket.dto.CreateTicketOcrValidadoRequest;
 import com.tecozam.bills.ticket.dto.LineaOcrDTO;
@@ -96,7 +97,7 @@ class TicketServiceTest {
         when(ticketRepository.save(any(Ticket.class))).thenAnswer(inv -> inv.getArgument(0));
 
         CreateTicketOcrValidadoRequest request = new CreateTicketOcrValidadoRequest(
-                200L, null, CategoriaRecurso.VEHICULO, 1L, 5L, null,
+                200L, null, CategoriaRecurso.VEHICULO, 1L, 5L, null, TipoGasto.COMBUSTIBLE,
                 List.of(new LineaOcrDTO(0, "P.A. MARCO CANAVESES SOALHÕES",
                         LocalDateTime.of(2026, 6, 5, 16, 23), "GASOLEO", null, null, null,
                         new BigDecimal("28.56"), new BigDecimal("1.961"), new BigDecimal("52.30"))));
@@ -131,7 +132,7 @@ class TicketServiceTest {
                 .thenReturn(List.of(operacionConPrecioDistinto));
 
         CreateTicketOcrValidadoRequest request = new CreateTicketOcrValidadoRequest(
-                200L, null, CategoriaRecurso.VEHICULO, 1L, 5L, null,
+                200L, null, CategoriaRecurso.VEHICULO, 1L, 5L, null, TipoGasto.COMBUSTIBLE,
                 List.of(new LineaOcrDTO(0, "P.A. MARCO CANAVESES SOALHÕES",
                         LocalDateTime.of(2026, 6, 5, 16, 23), "GASOLEO", null, null, null,
                         new BigDecimal("28.56"), new BigDecimal("1.961"), new BigDecimal("52.30"))));
@@ -249,6 +250,117 @@ class TicketServiceTest {
                 .isInstanceOf(com.tecozam.bills.shared.infrastructure.exception.ResourceNotFoundException.class);
     }
 
+    // ─── Autoservicio: eliminarPropio / actualizarPropio ───────────────────────
+
+    private void mockTrabajadorCampo(String username, Trabajador t) {
+        UsuarioCampo campo = new UsuarioCampo();
+        campo.setUsername(username);
+        campo.setTrabajador(t);
+        when(usuarioCampoRepository.findByUsername(username)).thenReturn(Optional.of(campo));
+    }
+
+    @Test
+    @DisplayName("eliminarPropio borra (logico) un ticket propio en PENDIENTE")
+    void eliminarPropio_propioYPendiente_hacesBorradoLogico() {
+        mockTrabajadorCampo("campo1", trabajador);
+        Ticket ticket = Ticket.builder()
+                .trabajador(trabajador)
+                .estadoCotejo("PENDIENTE")
+                .importeTotal(new BigDecimal("3.30"))
+                .build();
+        ticket.setId(50L);
+        when(ticketRepository.findById(50L)).thenReturn(Optional.of(ticket));
+        when(ticketRepository.save(any(Ticket.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        service.eliminarPropio("campo1", 50L);
+
+        assertThat(ticket.isEliminado()).isTrue();
+        verify(ticketRepository).save(ticket);
+    }
+
+    @Test
+    @DisplayName("eliminarPropio sobre un ticket de OTRO trabajador lanza BusinessException")
+    void eliminarPropio_deOtroTrabajador_lanzaExcepcion() {
+        mockTrabajadorCampo("campo1", trabajador);
+        Trabajador otro = new Trabajador();
+        otro.setId(99L);
+        Ticket ticket = Ticket.builder()
+                .trabajador(otro)
+                .estadoCotejo("PENDIENTE")
+                .importeTotal(new BigDecimal("3.30"))
+                .build();
+        ticket.setId(50L);
+        when(ticketRepository.findById(50L)).thenReturn(Optional.of(ticket));
+
+        assertThatThrownBy(() -> service.eliminarPropio("campo1", 50L))
+                .isInstanceOf(com.tecozam.bills.shared.infrastructure.exception.BusinessException.class);
+        verify(ticketRepository, never()).save(any(Ticket.class));
+    }
+
+    @Test
+    @DisplayName("eliminarPropio sobre un ticket ya COTEJADO lanza BusinessException")
+    void eliminarPropio_noPendiente_lanzaExcepcion() {
+        mockTrabajadorCampo("campo1", trabajador);
+        Ticket ticket = Ticket.builder()
+                .trabajador(trabajador)
+                .estadoCotejo("COTEJADO")
+                .importeTotal(new BigDecimal("3.30"))
+                .build();
+        ticket.setId(50L);
+        when(ticketRepository.findById(50L)).thenReturn(Optional.of(ticket));
+
+        assertThatThrownBy(() -> service.eliminarPropio("campo1", 50L))
+                .isInstanceOf(com.tecozam.bills.shared.infrastructure.exception.BusinessException.class);
+        verify(ticketRepository, never()).save(any(Ticket.class));
+    }
+
+    @Test
+    @DisplayName("actualizarPropio corrige los datos de un ticket propio en PENDIENTE")
+    void actualizarPropio_propioYPendiente_actualizaCampos() {
+        mockTrabajadorCampo("campo1", trabajador);
+        Ticket ticket = Ticket.builder()
+                .trabajador(trabajador)
+                .estadoCotejo("PENDIENTE")
+                .estacion("MAL ESCRITO")
+                .importeTotal(new BigDecimal("3.30"))
+                .build();
+        ticket.setId(50L);
+        when(ticketRepository.findById(50L)).thenReturn(Optional.of(ticket));
+        when(ticketRepository.save(any(Ticket.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        com.tecozam.bills.ticket.dto.ActualizarTicketPropioRequest request =
+                new com.tecozam.bills.ticket.dto.ActualizarTicketPropioRequest(
+                        "AP-68 SALIDA 12", LocalDateTime.of(2026, 11, 12, 11, 46),
+                        new BigDecimal("3.30"), null, null, TipoGasto.PEAJE);
+
+        var dto = service.actualizarPropio("campo1", 50L, request);
+
+        assertThat(dto.estacion()).isEqualTo("AP-68 SALIDA 12");
+        assertThat(dto.tipoGasto()).isEqualTo("PEAJE");
+        verify(ticketRepository).save(ticket);
+    }
+
+    @Test
+    @DisplayName("actualizarPropio sobre un ticket ya COTEJADO lanza BusinessException")
+    void actualizarPropio_noPendiente_lanzaExcepcion() {
+        mockTrabajadorCampo("campo1", trabajador);
+        Ticket ticket = Ticket.builder()
+                .trabajador(trabajador)
+                .estadoCotejo("COTEJADO")
+                .importeTotal(new BigDecimal("3.30"))
+                .build();
+        ticket.setId(50L);
+        when(ticketRepository.findById(50L)).thenReturn(Optional.of(ticket));
+
+        com.tecozam.bills.ticket.dto.ActualizarTicketPropioRequest request =
+                new com.tecozam.bills.ticket.dto.ActualizarTicketPropioRequest(
+                        "X", LocalDateTime.now(), new BigDecimal("3.30"), null, null, TipoGasto.PEAJE);
+
+        assertThatThrownBy(() -> service.actualizarPropio("campo1", 50L, request))
+                .isInstanceOf(com.tecozam.bills.shared.infrastructure.exception.BusinessException.class);
+        verify(ticketRepository, never()).save(any(Ticket.class));
+    }
+
     @Test
     @DisplayName("cotejarPendientes vincula la operacion aunque el importe no coincida (tarjetas de flota facturan a precio pactado, distinto del ticket fisico) — bug real: antes quedaba en SIN_COINCIDENCIA")
     void cotejarPendientes_vinculaOperacionConImporteDistinto() {
@@ -344,7 +456,7 @@ class TicketServiceTest {
         CreateTicketManualRequest request = new CreateTicketManualRequest(
                 null, null, null, null,
                 "E.S. ESPINOSA", LocalDateTime.of(2026, 7, 21, 12, 18),
-                new BigDecimal("12.02"), null, null, null, null, null,
+                new BigDecimal("12.02"), null, null, null, null, null, null,
                 "9309", null, null, null);
 
         when(ticketRepository.findPosiblesDuplicados(eq("9309"), any(), any(), eq(new BigDecimal("12.02"))))
@@ -362,7 +474,7 @@ class TicketServiceTest {
         CreateTicketManualRequest request = new CreateTicketManualRequest(
                 null, null, null, null,
                 "E.S. ESPINOSA", LocalDateTime.of(2026, 7, 21, 12, 18),
-                new BigDecimal("12.02"), null, null, null, null, null,
+                new BigDecimal("12.02"), null, null, null, null, null, null,
                 null, null, null, null);
 
         when(ticketRepository.save(any(Ticket.class))).thenAnswer(inv -> inv.getArgument(0));
@@ -389,7 +501,7 @@ class TicketServiceTest {
                 .thenReturn(List.of(new Ticket()));
 
         CreateTicketOcrValidadoRequest request = new CreateTicketOcrValidadoRequest(
-                200L, null, CategoriaRecurso.VEHICULO, 1L, 5L, null,
+                200L, null, CategoriaRecurso.VEHICULO, 1L, 5L, null, TipoGasto.COMBUSTIBLE,
                 List.of(new LineaOcrDTO(0, "P.A. MARCO CANAVESES SOALHÕES",
                         LocalDateTime.of(2026, 6, 5, 16, 23), "GASOLEO", null, null, null,
                         new BigDecimal("28.56"), new BigDecimal("1.961"), new BigDecimal("52.30"))));

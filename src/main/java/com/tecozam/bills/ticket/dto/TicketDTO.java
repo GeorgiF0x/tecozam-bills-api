@@ -27,6 +27,7 @@ public record TicketDTO(
         String nifEstacion,
         String imagenUrl,
         String concepto,
+        String tipoGasto,
         String observaciones,
         String estadoCotejo,
         Long operacionCotejadaId,
@@ -50,6 +51,7 @@ public record TicketDTO(
             BigDecimal precioLitro,
             BigDecimal importeTotal,
             String numRecibo,
-            String matricula
+            String matricula,
+            String fotoUrl
     ) {}
 }

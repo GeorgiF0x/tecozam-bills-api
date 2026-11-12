@@ -48,8 +48,12 @@ public class Vehiculo extends BaseEntity {
     @Builder.Default
     private boolean activo = true;
 
-    /** True si el vehiculo lo dio de alta el propio operario desde la PWA (vehiculo de sustitucion). */
-    @Column(name = "creado_por_campo", nullable = false)
+    /**
+     * True si el vehiculo lo dio de alta el propio operario desde la PWA (vehiculo de sustitucion).
+     * columnDefinition con DEFAULT: mismo motivo que Ticket.tipoGasto — en dev,
+     * ddl-auto=update sin default explicito falla contra una tabla "vehiculos" no vacia.
+     */
+    @Column(name = "creado_por_campo", nullable = false, columnDefinition = "BIT DEFAULT 0")
     @Builder.Default
     private boolean creadoPorCampo = false;
 }

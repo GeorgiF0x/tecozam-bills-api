@@ -9,6 +9,8 @@ import jakarta.validation.constraints.Size;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
+import com.tecozam.bills.ticket.domain.TipoGasto;
+
 public record CreateTicketManualRequest(
         Long proveedorId,
         Long trabajadorId,
@@ -21,6 +23,7 @@ public record CreateTicketManualRequest(
         BigDecimal precioLitro,
         Integer kms,
         String concepto,
+        TipoGasto tipoGasto,
         String observaciones,
         @Pattern(regexp = "\\d{4}", message = "Los últimos 4 dígitos de tarjeta deben ser exactamente 4 números") String numTarjeta4ultimos,
         @Size(max = 20, message = "La matrícula no puede superar 20 caracteres") String matricula,

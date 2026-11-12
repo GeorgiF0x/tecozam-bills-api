@@ -80,6 +80,16 @@ public class Ticket extends BaseEntity {
     @Column(name = "concepto")
     private String concepto;
 
+    /**
+     * COMBUSTIBLE o PEAJE — elegido por el operario al capturar (ver TipoGasto).
+     * columnDefinition con DEFAULT: en dev, ddl-auto=update genera su propio
+     * ALTER TABLE (sin pasar por la migracion V36), y sin default explicito
+     * SQL Server lo rechaza en una tabla "tickets" no vacia.
+     */
+    @Column(name = "tipo_gasto", nullable = false, columnDefinition = "VARCHAR(20) DEFAULT 'COMBUSTIBLE'")
+    @Builder.Default
+    private String tipoGasto = "COMBUSTIBLE";
+
     @Column(name = "observaciones", columnDefinition = "NVARCHAR(MAX)")
     private String observaciones;
 

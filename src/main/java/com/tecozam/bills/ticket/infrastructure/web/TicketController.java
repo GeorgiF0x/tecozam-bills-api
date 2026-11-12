@@ -1,6 +1,7 @@
 package com.tecozam.bills.ticket.infrastructure.web;
 
 import com.tecozam.bills.ticket.application.TicketService;
+import com.tecozam.bills.ticket.dto.ActualizarTicketPropioRequest;
 import com.tecozam.bills.ticket.dto.CotejoResultDTO;
 import com.tecozam.bills.ticket.dto.CreateTicketManualRequest;
 import com.tecozam.bills.ticket.dto.CreateTicketOcrValidadoRequest;
@@ -59,6 +60,24 @@ public class TicketController {
     @Operation(summary = "Mis tickets", description = "Devuelve los tickets del trabajador autenticado.")
     public ResponseEntity<List<TicketDTO>> misTickets(Authentication authentication) {
         return ResponseEntity.ok(ticketService.findMisTickets(authentication.getName()));
+    }
+
+    @DeleteMapping("/mis-tickets/{id:\\d+}")
+    @PreAuthorize("isAuthenticated()")
+    @Operation(summary = "Eliminar ticket propio", description = "Borrado lógico de un ticket propio en estado PENDIENTE")
+    public ResponseEntity<Void> eliminarPropio(@PathVariable Long id, Authentication authentication) {
+        ticketService.eliminarPropio(authentication.getName(), id);
+        return ResponseEntity.noContent().build();
+    }
+
+    @PatchMapping("/mis-tickets/{id:\\d+}")
+    @PreAuthorize("isAuthenticated()")
+    @Operation(summary = "Editar ticket propio", description = "Corrige los datos de un ticket propio en estado PENDIENTE")
+    public ResponseEntity<TicketDTO> actualizarPropio(
+            @PathVariable Long id,
+            Authentication authentication,
+            @Valid @RequestBody ActualizarTicketPropioRequest request) {
+        return ResponseEntity.ok(ticketService.actualizarPropio(authentication.getName(), id, request));
     }
 
     @GetMapping("/candidatos-vincular")

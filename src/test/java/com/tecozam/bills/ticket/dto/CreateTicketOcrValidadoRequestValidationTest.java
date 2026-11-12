@@ -1,5 +1,6 @@
 package com.tecozam.bills.ticket.dto;
 
+import com.tecozam.bills.ticket.domain.TipoGasto;
 import com.tecozam.bills.vehiculo.domain.CategoriaRecurso;
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.Validation;
@@ -41,7 +42,9 @@ class CreateTicketOcrValidadoRequestValidationTest {
                 CategoriaRecurso.VEHICULO,
                 1L,
                 1L,
-                null, null
+                null,
+                TipoGasto.COMBUSTIBLE,
+                null
         );
     }
 

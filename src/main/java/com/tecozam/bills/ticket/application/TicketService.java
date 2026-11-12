@@ -16,6 +16,8 @@ import com.tecozam.bills.tarjeta.infrastructure.persistence.TarjetaAsignacionRep
 import com.tecozam.bills.tarjeta.infrastructure.persistence.TarjetaRepository;
 import com.tecozam.bills.ticket.domain.Ticket;
 import com.tecozam.bills.ticket.domain.TicketLinea;
+import com.tecozam.bills.ticket.domain.TipoGasto;
+import com.tecozam.bills.ticket.dto.ActualizarTicketPropioRequest;
 import com.tecozam.bills.ticket.dto.CotejoResultDTO;
 import com.tecozam.bills.ticket.dto.CreateTicketManualRequest;
 import com.tecozam.bills.ticket.dto.CreateTicketOcrValidadoRequest;
@@ -134,6 +136,47 @@ public class TicketService {
                 .toList();
     }
 
+    /**
+     * Ticket propio y PENDIENTE, u BusinessException. Usado por las acciones
+     * de autoservicio del operario (editar/eliminar su propio error antes de
+     * que lo cotejemos) — a partir de ahi solo ADMIN puede tocarlo.
+     */
+    private Ticket obtenerPropioPendiente(String username, Long id) {
+        Trabajador trabajador = resolveTrabajadorByUsername(username);
+        Ticket ticket = ticketRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Ticket", id));
+        if (trabajador == null || ticket.getTrabajador() == null
+                || !trabajador.getId().equals(ticket.getTrabajador().getId())) {
+            throw new BusinessException("Este ticket no es tuyo", "ticket");
+        }
+        if (!"PENDIENTE".equals(ticket.getEstadoCotejo())) {
+            throw new BusinessException("Solo puedes editar o eliminar tickets pendientes", "estadoCotejo");
+        }
+        return ticket;
+    }
+
+    @Transactional
+    public void eliminarPropio(String username, Long id) {
+        Ticket ticket = obtenerPropioPendiente(username, id);
+        ticket.softDelete();
+        ticketRepository.save(ticket);
+        log.info("Ticket {} eliminado por su propio trabajador (borrado logico)", id);
+    }
+
+    @Transactional
+    public TicketDTO actualizarPropio(String username, Long id, ActualizarTicketPropioRequest req) {
+        Ticket ticket = obtenerPropioPendiente(username, id);
+        ticket.setEstacion(req.estacion());
+        ticket.setFechaHora(req.fechaHora());
+        ticket.setImporteTotal(req.importeTotal());
+        ticket.setLitros(req.litros());
+        ticket.setPrecioLitro(req.precioLitro());
+        ticket.setTipoGasto(req.tipoGasto().name());
+        ticket = ticketRepository.save(ticket);
+        log.info("Ticket {} actualizado por su propio trabajador", id);
+        return toDTO(ticket);
+    }
+
     private Trabajador resolveTrabajadorByUsername(String username) {
         UsuarioCampo campo = usuarioCampoRepository.findByUsername(username).orElse(null);
         if (campo != null) {
@@ -156,6 +199,7 @@ public class TicketService {
                 .precioLitro(req.precioLitro())
                 .kms(req.kms())
                 .concepto(req.concepto())
+                .tipoGasto((req.tipoGasto() != null ? req.tipoGasto() : TipoGasto.COMBUSTIBLE).name())
                 .observaciones(req.observaciones())
                 .numTarjeta4ultimos(req.numTarjeta4ultimos())
                 .matricula(req.matricula())
@@ -672,7 +716,8 @@ public class TicketService {
         String observacionesTicket = "OCR validado con PIN"
                 + (numRecibo != null && !numRecibo.isBlank() ? " — Recibo: " + numRecibo : "");
 
-        List<String> avisosPlausibilidad = plausibilidadValidator.validar(lineas);
+        TipoGasto tipoGasto = request.tipoGasto() != null ? request.tipoGasto() : TipoGasto.COMBUSTIBLE;
+        List<String> avisosPlausibilidad = plausibilidadValidator.validar(lineas, tipoGasto);
         boolean requiereRevisionManual = !avisosPlausibilidad.isEmpty();
         if (requiereRevisionManual) {
             observacionesTicket += " | Revisar: " + String.join(" / ", avisosPlausibilidad);
@@ -698,6 +743,7 @@ public class TicketService {
                 .precioLitro(precioLitro)
                 .kms(request.kilometros())
                 .concepto(producto)
+                .tipoGasto(tipoGasto.name())
                 .observaciones(observacionesTicket)
                 .numTarjeta4ultimos(ultimos4)
                 .requiereRevisionManual(requiereRevisionManual)
@@ -803,6 +849,7 @@ public class TicketService {
                 t.getNifEstacion(),
                 t.getImagenUrl(),
                 t.getConcepto(),
+                t.getTipoGasto(),
                 t.getObservaciones(),
                 t.getEstadoCotejo(),
                 t.getOperacionCotejada() != null ? t.getOperacionCotejada().getId() : null,
@@ -828,7 +875,8 @@ public class TicketService {
                 l.getPrecioLitro(),
                 l.getImporteTotal(),
                 l.getNumRecibo(),
-                l.getMatricula()
+                l.getMatricula(),
+                l.getFotoUrl()
         );
     }
 }

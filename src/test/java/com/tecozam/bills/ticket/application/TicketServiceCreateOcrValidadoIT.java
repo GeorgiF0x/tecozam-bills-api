@@ -126,7 +126,8 @@ class TicketServiceCreateOcrValidadoIT {
                         new BigDecimal("10.00"), new BigDecimal("1.750"), new BigDecimal("17.50")));
 
         CreateTicketOcrValidadoRequest request = new CreateTicketOcrValidadoRequest(
-                tarjeta.getId(), null, CategoriaRecurso.VEHICULO, vehiculo.getId(), 1L, 12345, null);
+                tarjeta.getId(), null, CategoriaRecurso.VEHICULO, vehiculo.getId(), 1L, 12345,
+                com.tecozam.bills.ticket.domain.TipoGasto.COMBUSTIBLE, null);
 
         List<MultipartFile> fotos = List.of(
                 new MockMultipartFile("imagenes", "foto0.jpg", "image/jpeg", "foto-0-bytes".getBytes()),
@@ -218,7 +219,8 @@ class TicketServiceCreateOcrValidadoIT {
                         new BigDecimal("10.00"), new BigDecimal("1.750"), new BigDecimal("17.50")));
 
         CreateTicketOcrValidadoRequest request = new CreateTicketOcrValidadoRequest(
-                tarjeta.getId(), null, CategoriaRecurso.VEHICULO, vehiculo.getId(), 1L, 12345, null);
+                tarjeta.getId(), null, CategoriaRecurso.VEHICULO, vehiculo.getId(), 1L, 12345,
+                com.tecozam.bills.ticket.domain.TipoGasto.COMBUSTIBLE, null);
 
         // Primer envío: debe crearse sin problema (igual que el otro test).
         List<MultipartFile> fotos1 = List.of(
@@ -288,7 +290,8 @@ class TicketServiceCreateOcrValidadoIT {
                         new BigDecimal("10.00"), new BigDecimal("1.750"), new BigDecimal("17.50")));
 
         CreateTicketOcrValidadoRequest request = new CreateTicketOcrValidadoRequest(
-                tarjeta.getId(), null, CategoriaRecurso.VEHICULO, vehiculo.getId(), 1L, 12345, null);
+                tarjeta.getId(), null, CategoriaRecurso.VEHICULO, vehiculo.getId(), 1L, 12345,
+                com.tecozam.bills.ticket.domain.TipoGasto.COMBUSTIBLE, null);
 
         List<MultipartFile> fotos = List.of(
                 new MockMultipartFile("imagenes", "foto0.jpg", "image/jpeg", "foto-rev-0".getBytes()),
@@ -380,7 +383,8 @@ class TicketServiceCreateOcrValidadoIT {
                 .build());
 
         CreateTicketOcrValidadoRequest request = new CreateTicketOcrValidadoRequest(
-                tarjeta.getId(), null, CategoriaRecurso.VEHICULO, vehiculo.getId(), 1L, 12345, null);
+                tarjeta.getId(), null, CategoriaRecurso.VEHICULO, vehiculo.getId(), 1L, 12345,
+                com.tecozam.bills.ticket.domain.TipoGasto.COMBUSTIBLE, null);
 
         List<MultipartFile> fotos = List.of(
                 new MockMultipartFile("imagenes", "foto0.jpg", "image/jpeg", "foto-cotejo-0".getBytes()),
@@ -464,7 +468,8 @@ class TicketServiceCreateOcrValidadoIT {
                 .build());
 
         CreateTicketOcrValidadoRequest request = new CreateTicketOcrValidadoRequest(
-                tarjeta.getId(), null, CategoriaRecurso.VEHICULO, vehiculo.getId(), 1L, 12345, null);
+                tarjeta.getId(), null, CategoriaRecurso.VEHICULO, vehiculo.getId(), 1L, 12345,
+                com.tecozam.bills.ticket.domain.TipoGasto.COMBUSTIBLE, null);
 
         List<MultipartFile> fotos = List.of(
                 new MockMultipartFile("imagenes", "foto0.jpg", "image/jpeg", "foto-discrepancia-0".getBytes()),

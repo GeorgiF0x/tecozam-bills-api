@@ -1,5 +1,6 @@
 package com.tecozam.bills.ticket.application;
 
+import com.tecozam.bills.ticket.domain.TipoGasto;
 import com.tecozam.bills.ticket.dto.LineaOcrDTO;
 import org.springframework.stereotype.Component;
 
@@ -29,11 +30,11 @@ public class TicketLineaPlausibilidadValidator {
     private static final BigDecimal LITROS_MAX_REPOSTAJE = new BigDecimal("500");
     private static final double TOLERANCIA_IMPORTE_CALCULADO = 0.15; // 15%, igual que FacturaImportValidator
 
-    public List<String> validar(List<LineaOcrDTO> lineas) {
+    public List<String> validar(List<LineaOcrDTO> lineas, TipoGasto tipoGasto) {
         List<String> avisos = new ArrayList<>();
 
         for (int i = 0; i < lineas.size(); i++) {
-            validarLinea(i, lineas.get(i), avisos);
+            validarLinea(i, lineas.get(i), avisos, tipoGasto);
         }
 
         validarConsistenciaEntreLineas(lineas, avisos);
@@ -41,7 +42,13 @@ public class TicketLineaPlausibilidadValidator {
         return avisos;
     }
 
-    private void validarLinea(int indice, LineaOcrDTO l, List<String> avisos) {
+    private void validarLinea(int indice, LineaOcrDTO l, List<String> avisos, TipoGasto tipoGasto) {
+        // Un peaje no tiene litros/precio-litro — serian siempre 0 y disparaban
+        // un falso "fuera de rango" (ver ticket #285 del cliente).
+        if (tipoGasto == TipoGasto.PEAJE) {
+            return;
+        }
+
         String ref = String.format(Locale.ROOT, "Linea %d (foto %s)", indice + 1,
                 l.fotoIndice() != null ? l.fotoIndice() : "?");
 
