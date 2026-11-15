@@ -19,9 +19,14 @@ public interface VehiculoRepository extends JpaRepository<Vehiculo, Long> {
 
     Optional<Vehiculo> findByMatricula(String matricula);
 
-    boolean existsByMatricula(String matricula);
+    /**
+     * Excluye los vehiculos borrados logicamente: uno rechazado (p.ej. un
+     * "vehiculo de sustitucion" autorregistrado que el gestor rechazo) no
+     * debe bloquear para siempre su matricula en altas o imports futuros.
+     */
+    boolean existsByMatriculaAndEliminadoEnIsNull(String matricula);
 
-    boolean existsByCodigoObra(String codigoObra);
+    boolean existsByCodigoObraAndEliminadoEnIsNull(String codigoObra);
 
     List<Vehiculo> findByEliminadoEnIsNull();
 

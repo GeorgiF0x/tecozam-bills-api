@@ -56,7 +56,7 @@ public class VehiculoService {
             if (request.matricula() == null || request.matricula().isBlank()) {
                 throw new BusinessException("La matrícula es obligatoria para la categoría VEHICULO");
             }
-            if (vehiculoRepository.existsByMatricula(request.matricula())) {
+            if (vehiculoRepository.existsByMatriculaAndEliminadoEnIsNull(request.matricula())) {
                 throw new DuplicateResourceException("Vehiculo", "matricula", request.matricula());
             }
         } else {
@@ -91,7 +91,7 @@ public class VehiculoService {
         if (request.matricula() == null || request.matricula().isBlank()) {
             throw new BusinessException("La matrícula es obligatoria", "matricula");
         }
-        if (vehiculoRepository.existsByMatricula(request.matricula())) {
+        if (vehiculoRepository.existsByMatriculaAndEliminadoEnIsNull(request.matricula())) {
             throw new DuplicateResourceException("Vehiculo", "matricula", request.matricula());
         }
 

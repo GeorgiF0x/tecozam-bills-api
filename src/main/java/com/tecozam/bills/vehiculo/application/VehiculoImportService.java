@@ -90,10 +90,10 @@ public class VehiculoImportService {
 
     private boolean existeYa(FilaVehiculoImportada fila) {
         if (fila.matricula() != null && !fila.matricula().isBlank()) {
-            return vehiculoRepository.existsByMatricula(fila.matricula());
+            return vehiculoRepository.existsByMatriculaAndEliminadoEnIsNull(fila.matricula());
         }
         if (fila.codigoObra() != null && !fila.codigoObra().isBlank()) {
-            return vehiculoRepository.existsByCodigoObra(fila.codigoObra());
+            return vehiculoRepository.existsByCodigoObraAndEliminadoEnIsNull(fila.codigoObra());
         }
         return false;
     }

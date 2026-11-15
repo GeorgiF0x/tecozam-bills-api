@@ -32,8 +32,11 @@ class VehiculoImportServiceIT {
 
     @AfterEach
     void limpiar() {
-        vehiculoRepository.findByMatricula(MATRICULA_1).ifPresent(vehiculoRepository::delete);
-        vehiculoRepository.findByMatricula(MATRICULA_2).ifPresent(vehiculoRepository::delete);
+        // Por matricula puede haber mas de una fila (una borrada logicamente +
+        // su reemplazo), asi que no vale findByMatricula (single-result).
+        vehiculoRepository.findAll().stream()
+                .filter(v -> MATRICULA_1.equals(v.getMatricula()) || MATRICULA_2.equals(v.getMatricula()))
+                .forEach(vehiculoRepository::delete);
     }
 
     private MultipartFile excel(String[][] filas) throws Exception {
@@ -67,8 +70,8 @@ class VehiculoImportServiceIT {
         assertThat(report.existentes()).isZero();
         assertThat(report.errores()).hasSize(1);
         assertThat(report.errores().get(0)).contains("matricula");
-        assertThat(vehiculoRepository.existsByMatricula(MATRICULA_1)).isTrue();
-        assertThat(vehiculoRepository.existsByMatricula(MATRICULA_2)).isTrue();
+        assertThat(vehiculoRepository.existsByMatriculaAndEliminadoEnIsNull(MATRICULA_1)).isTrue();
+        assertThat(vehiculoRepository.existsByMatriculaAndEliminadoEnIsNull(MATRICULA_2)).isTrue();
     }
 
     @Test
@@ -81,5 +84,27 @@ class VehiculoImportServiceIT {
 
         assertThat(report.creados()).isZero();
         assertThat(report.existentes()).isEqualTo(1);
+    }
+
+    /**
+     * Regresion real reportada por el cliente: un vehiculo "de sustitucion"
+     * autorregistrado y luego rechazado por el gestor queda borrado logicamente
+     * (eliminado_en no nulo) pero su matricula seguia bloqueada para siempre en
+     * altas e imports futuros, aunque ya no aparezca en ningun listado.
+     */
+    @Test
+    void importarMatriculaDeUnVehiculoBorradoLogicamenteLaReutiliza() throws Exception {
+        MultipartFile primero = excel(new String[][]{{"Furgoneta", MATRICULA_1, "", "VEHICULO", ""}});
+        importService.importar(primero);
+        vehiculoRepository.findByMatricula(MATRICULA_1).ifPresent(v -> {
+            v.softDelete();
+            vehiculoRepository.save(v);
+        });
+
+        MultipartFile segundo = excel(new String[][]{{"Furgoneta", MATRICULA_1, "", "VEHICULO", "Reemplazo"}});
+        ImportVehiculosReportDTO report = importService.importar(segundo);
+
+        assertThat(report.creados()).isEqualTo(1);
+        assertThat(report.existentes()).isZero();
     }
 }
