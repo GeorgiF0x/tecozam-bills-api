@@ -147,6 +147,35 @@ class TarjetaServiceTest {
     }
 
     @Test
+    @DisplayName("findMisTarjetas: expone el vehiculo de la asignacion para que la PWA sepa que vehiculo lleva el operario")
+    void findMisTarjetas_exponeElVehiculoDeLaAsignacion() {
+        var usuarioCampo = new com.tecozam.bills.auth.domain.UsuarioCampo();
+        usuarioCampo.setUsername("campo1");
+        usuarioCampo.setTrabajador(trabajador);
+        when(usuarioCampoRepository.findByUsername("campo1")).thenReturn(Optional.of(usuarioCampo));
+
+        com.tecozam.bills.vehiculo.domain.Vehiculo vehiculo =
+                com.tecozam.bills.vehiculo.domain.Vehiculo.builder().matricula("1234-ABC").build();
+        vehiculo.setId(77L);
+
+        TarjetaAsignacion asignacion = TarjetaAsignacion.builder()
+                .tarjeta(tarjeta)
+                .trabajador(trabajador)
+                .vehiculo(vehiculo)
+                .fechaDesde(LocalDate.now())
+                .build();
+
+        when(tarjetaAsignacionRepository.findActivasByTrabajadorId(eq(2L), any(LocalDate.class)))
+                .thenReturn(List.of(asignacion));
+
+        List<MiTarjetaDTO> misTarjetas = service.findMisTarjetas("campo1");
+
+        assertThat(misTarjetas).hasSize(1);
+        assertThat(misTarjetas.get(0).vehiculoId()).isEqualTo(77L);
+        assertThat(misTarjetas.get(0).vehiculoMatricula()).isEqualTo("1234-ABC");
+    }
+
+    @Test
     @DisplayName("devolver cierra la asignacion con fecha de AYER, no hoy (bug real: con fecha de hoy seguia contando como activa el resto del dia)")
     void devolver_cierraAsignacionConFechaDeAyer() {
         when(tarjetaRepository.findById(10114L)).thenReturn(Optional.of(tarjeta));

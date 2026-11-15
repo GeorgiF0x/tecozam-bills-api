@@ -7,5 +7,7 @@ public record MiTarjetaDTO(
         String proveedor,
         String producto,
         String centroCosteNombre,
-        boolean tienePinGuardado
+        boolean tienePinGuardado,
+        Long vehiculoId,
+        String vehiculoMatricula
 ) {}

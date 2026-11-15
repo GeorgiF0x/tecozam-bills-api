@@ -311,7 +311,7 @@ public class TarjetaService {
                 tarjetaAsignacionRepository.findActivasByTrabajadorId(trabajador.getId(), LocalDate.now());
 
         return asignaciones.stream()
-                .map(a -> toMiTarjetaDTO(a.getTarjeta()))
+                .map(this::toMiTarjetaDTO)
                 .toList();
     }
 
@@ -337,9 +337,11 @@ public class TarjetaService {
                 .orElse(false);
     }
 
-    private MiTarjetaDTO toMiTarjetaDTO(Tarjeta tarjeta) {
+    private MiTarjetaDTO toMiTarjetaDTO(TarjetaAsignacion asignacion) {
+        Tarjeta tarjeta = asignacion.getTarjeta();
         String numero = tarjeta.getNumeroTarjeta();
         String ultimos4 = numero.length() >= 4 ? numero.substring(numero.length() - 4) : numero;
+        Vehiculo vehiculo = asignacion.getVehiculo();
         return new MiTarjetaDTO(
                 tarjeta.getId(),
                 ultimos4,
@@ -347,7 +349,9 @@ public class TarjetaService {
                 tarjeta.getProveedor().getNombre(),
                 null,
                 null,
-                tarjeta.getPinEncrypted() != null
+                tarjeta.getPinEncrypted() != null,
+                vehiculo != null ? vehiculo.getId() : null,
+                vehiculo != null ? vehiculo.getMatricula() : null
         );
     }
 
