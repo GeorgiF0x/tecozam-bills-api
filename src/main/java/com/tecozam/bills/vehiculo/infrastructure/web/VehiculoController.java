@@ -36,8 +36,10 @@ public class VehiculoController {
     private final VehiculoService vehiculoService;
 
     @GetMapping
-    public List<VehiculoDTO> findAll(@RequestParam(defaultValue = "true") boolean activo) {
-        return vehiculoService.findAll(activo);
+    public List<VehiculoDTO> findAll(
+            @RequestParam(defaultValue = "true") boolean activo,
+            @RequestParam(required = false) String categoria) {
+        return vehiculoService.findAll(activo, categoria);
     }
 
     @GetMapping("/archivados")

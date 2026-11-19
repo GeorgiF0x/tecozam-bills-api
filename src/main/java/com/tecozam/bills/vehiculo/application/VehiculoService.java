@@ -37,10 +37,18 @@ public class VehiculoService {
     private final TicketRepository ticketRepository;
 
     @Transactional(readOnly = true)
-    public List<VehiculoDTO> findAll(boolean soloActivos) {
-        List<Vehiculo> vehiculos = soloActivos
-                ? vehiculoRepository.findByActivoTrueAndEliminadoEnIsNull()
-                : vehiculoRepository.findByEliminadoEnIsNull();
+    public List<VehiculoDTO> findAll(boolean soloActivos, String categoriaStr) {
+        List<Vehiculo> vehiculos;
+        if (categoriaStr == null || categoriaStr.isBlank()) {
+            vehiculos = soloActivos
+                    ? vehiculoRepository.findByActivoTrueAndEliminadoEnIsNull()
+                    : vehiculoRepository.findByEliminadoEnIsNull();
+        } else {
+            CategoriaRecurso categoria = parseCategoria(categoriaStr);
+            vehiculos = soloActivos
+                    ? vehiculoRepository.findByCategoriaAndActivoTrueAndEliminadoEnIsNull(categoria)
+                    : vehiculoRepository.findByCategoriaAndEliminadoEnIsNull(categoria);
+        }
         return vehiculos.stream()
                 .map(this::toDTO)
                 .toList();

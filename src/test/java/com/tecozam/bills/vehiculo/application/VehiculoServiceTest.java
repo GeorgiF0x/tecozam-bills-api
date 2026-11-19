@@ -185,4 +185,34 @@ class VehiculoServiceTest {
                 new CreateMiVehiculoRequest(null, "OBRA-99", "INDUSTRIAL_MAQUINARIA", null)))
                 .isInstanceOf(DuplicateResourceException.class);
     }
+
+    @Test
+    @DisplayName("findAll sin categoria devuelve todos los vehiculos activos, sin filtrar")
+    void findAll_sinCategoria_noFiltra() {
+        when(vehiculoRepository.findByActivoTrueAndEliminadoEnIsNull()).thenReturn(List.of(vehiculo));
+
+        List<VehiculoDTO> result = service.findAll(true, null);
+
+        assertThat(result).hasSize(1);
+        verify(vehiculoRepository, never()).findByCategoriaAndActivoTrueAndEliminadoEnIsNull(any());
+    }
+
+    @Test
+    @DisplayName("findAll con categoria filtra por esa categoria (p.ej. INDUSTRIAL_MAQUINARIA no devuelve VEHICULO)")
+    void findAll_conCategoria_filtraPorCategoria() {
+        Vehiculo maquinaria = Vehiculo.builder()
+                .codigoObra("OBRA-1")
+                .categoria(CategoriaRecurso.INDUSTRIAL_MAQUINARIA)
+                .estado(EstadoRecurso.DISPONIBLE)
+                .activo(true)
+                .build();
+        when(vehiculoRepository.findByCategoriaAndActivoTrueAndEliminadoEnIsNull(CategoriaRecurso.INDUSTRIAL_MAQUINARIA))
+                .thenReturn(List.of(maquinaria));
+
+        List<VehiculoDTO> result = service.findAll(true, "INDUSTRIAL_MAQUINARIA");
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).categoria()).isEqualTo("INDUSTRIAL_MAQUINARIA");
+        verify(vehiculoRepository, never()).findByActivoTrueAndEliminadoEnIsNull();
+    }
 }

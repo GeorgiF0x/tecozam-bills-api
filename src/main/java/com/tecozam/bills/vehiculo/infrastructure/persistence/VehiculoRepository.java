@@ -1,6 +1,7 @@
 package com.tecozam.bills.vehiculo.infrastructure.persistence;
 
 import com.tecozam.bills.shared.domain.enums.EstadoRecurso;
+import com.tecozam.bills.vehiculo.domain.CategoriaRecurso;
 import com.tecozam.bills.vehiculo.domain.Vehiculo;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
@@ -33,4 +34,8 @@ public interface VehiculoRepository extends JpaRepository<Vehiculo, Long> {
     List<Vehiculo> findByActivoTrueAndEliminadoEnIsNull();
 
     List<Vehiculo> findByEliminadoEnIsNotNull();
+
+    List<Vehiculo> findByCategoriaAndEliminadoEnIsNull(CategoriaRecurso categoria);
+
+    List<Vehiculo> findByCategoriaAndActivoTrueAndEliminadoEnIsNull(CategoriaRecurso categoria);
 }
