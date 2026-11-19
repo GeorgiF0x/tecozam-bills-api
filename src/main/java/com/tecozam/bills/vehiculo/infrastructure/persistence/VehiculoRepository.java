@@ -31,4 +31,6 @@ public interface VehiculoRepository extends JpaRepository<Vehiculo, Long> {
     List<Vehiculo> findByEliminadoEnIsNull();
 
     List<Vehiculo> findByActivoTrueAndEliminadoEnIsNull();
+
+    List<Vehiculo> findByEliminadoEnIsNotNull();
 }

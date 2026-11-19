@@ -4,6 +4,7 @@ import com.tecozam.bills.vehiculo.application.VehiculoService;
 import com.tecozam.bills.vehiculo.dto.CreateMiVehiculoRequest;
 import com.tecozam.bills.vehiculo.dto.CreateVehiculoRequest;
 import com.tecozam.bills.vehiculo.dto.UpdateVehiculoRequest;
+import com.tecozam.bills.vehiculo.dto.VehiculoArchivadoDTO;
 import com.tecozam.bills.vehiculo.dto.VehiculoDTO;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -39,7 +40,14 @@ public class VehiculoController {
         return vehiculoService.findAll(activo);
     }
 
-    @GetMapping("/{id}")
+    @GetMapping("/archivados")
+    @PreAuthorize("hasAnyRole('ADMIN','GESTOR')")
+    @Operation(summary = "Vehículos archivados", description = "Vehiculos borrados logicamente que todavia tienen un vinculo activo (tarjeta o prestamo), para localizarlos y revisar si hay que desvincularlos.")
+    public List<VehiculoArchivadoDTO> findArchivados() {
+        return vehiculoService.findArchivados();
+    }
+
+    @GetMapping("/{id:\\d+}")
     public VehiculoDTO findById(@PathVariable Long id) {
         return vehiculoService.findById(id);
     }

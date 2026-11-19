@@ -5,6 +5,7 @@ import com.tecozam.bills.shared.domain.enums.EstadoRecurso;
 import com.tecozam.bills.shared.infrastructure.exception.BusinessException;
 import com.tecozam.bills.shared.infrastructure.exception.DuplicateResourceException;
 import com.tecozam.bills.shared.infrastructure.exception.ResourceNotFoundException;
+import com.tecozam.bills.tarjeta.domain.TarjetaAsignacion;
 import com.tecozam.bills.tarjeta.infrastructure.persistence.TarjetaAsignacionRepository;
 import com.tecozam.bills.ticket.infrastructure.persistence.TicketRepository;
 import com.tecozam.bills.vehiculo.domain.CategoriaRecurso;
@@ -12,6 +13,7 @@ import com.tecozam.bills.vehiculo.domain.Vehiculo;
 import com.tecozam.bills.vehiculo.dto.CreateMiVehiculoRequest;
 import com.tecozam.bills.vehiculo.dto.CreateVehiculoRequest;
 import com.tecozam.bills.vehiculo.dto.UpdateVehiculoRequest;
+import com.tecozam.bills.vehiculo.dto.VehiculoArchivadoDTO;
 import com.tecozam.bills.vehiculo.dto.VehiculoDTO;
 import com.tecozam.bills.vehiculo.infrastructure.persistence.VehiculoRepository;
 import lombok.RequiredArgsConstructor;
@@ -19,6 +21,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.List;
 
 @Service
@@ -40,6 +44,37 @@ public class VehiculoService {
         return vehiculos.stream()
                 .map(this::toDTO)
                 .toList();
+    }
+
+    /**
+     * Vehiculos borrados logicamente que todavia tienen un vinculo activo
+     * (tarjeta asignada o prestamo sin devolver) para que el gestor pueda
+     * localizarlos y revisar si hay que desvincularlos.
+     */
+    @Transactional(readOnly = true)
+    public List<VehiculoArchivadoDTO> findArchivados() {
+        return vehiculoRepository.findByEliminadoEnIsNotNull().stream()
+                .map(this::toArchivadoDTO)
+                .toList();
+    }
+
+    private VehiculoArchivadoDTO toArchivadoDTO(Vehiculo vehiculo) {
+        List<String> vinculos = new ArrayList<>();
+        for (TarjetaAsignacion asignacion : tarjetaAsignacionRepository.findActivasByVehiculoId(vehiculo.getId(), LocalDate.now())) {
+            vinculos.add("Tarjeta asignada a " + asignacion.getTrabajador().getNombre());
+        }
+        for (var prestamo : prestamoRepository.findByVehiculoIdAndEstadoIn(vehiculo.getId(), List.of("ACTIVO", "VENCIDO"))) {
+            vinculos.add("Préstamo activo de " + prestamo.getTrabajador().getNombre());
+        }
+        return new VehiculoArchivadoDTO(
+                vehiculo.getId(),
+                vehiculo.getMatricula(),
+                vehiculo.getCodigoObra(),
+                vehiculo.getTipo(),
+                vehiculo.getDescripcion(),
+                vehiculo.getEliminadoEn(),
+                vinculos
+        );
     }
 
     @Transactional(readOnly = true)

@@ -22,6 +22,8 @@ public interface PrestamoRepository extends JpaRepository<Prestamo, Long> {
 
     boolean existsByVehiculoId(Long vehiculoId);
 
+    List<Prestamo> findByVehiculoIdAndEstadoIn(Long vehiculoId, List<String> estados);
+
     boolean existsByViatId(Long viatId);
 
     boolean existsByCentroCosteId(Long centroCosteId);

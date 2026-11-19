@@ -1,13 +1,17 @@
 package com.tecozam.bills.vehiculo.application;
 
+import com.tecozam.bills.prestamo.domain.Prestamo;
 import com.tecozam.bills.prestamo.infrastructure.persistence.PrestamoRepository;
 import com.tecozam.bills.shared.domain.enums.EstadoRecurso;
 import com.tecozam.bills.shared.infrastructure.exception.BusinessException;
 import com.tecozam.bills.shared.infrastructure.exception.ResourceNotFoundException;
+import com.tecozam.bills.tarjeta.domain.TarjetaAsignacion;
 import com.tecozam.bills.tarjeta.infrastructure.persistence.TarjetaAsignacionRepository;
 import com.tecozam.bills.ticket.infrastructure.persistence.TicketRepository;
+import com.tecozam.bills.trabajador.domain.Trabajador;
 import com.tecozam.bills.vehiculo.domain.CategoriaRecurso;
 import com.tecozam.bills.vehiculo.domain.Vehiculo;
+import com.tecozam.bills.vehiculo.dto.VehiculoArchivadoDTO;
 import com.tecozam.bills.vehiculo.infrastructure.persistence.VehiculoRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -22,6 +26,7 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -100,5 +105,25 @@ class VehiculoServiceTest {
 
         assertThatThrownBy(() -> service.eliminarMasivo(List.of(50L, 999L), false))
                 .isInstanceOf(ResourceNotFoundException.class);
+    }
+
+    @Test
+    @DisplayName("findArchivados devuelve los vehiculos eliminados con sus vinculos activos (tarjeta y prestamo)")
+    void findArchivados_devuelveVinculosActivos() {
+        vehiculo.softDelete();
+        Trabajador trabajador = Trabajador.builder().nombre("Juan Perez").build();
+        TarjetaAsignacion asignacion = TarjetaAsignacion.builder().trabajador(trabajador).vehiculo(vehiculo).build();
+        Prestamo prestamo = Prestamo.builder().trabajador(trabajador).vehiculo(vehiculo).estado("ACTIVO").build();
+
+        when(vehiculoRepository.findByEliminadoEnIsNotNull()).thenReturn(List.of(vehiculo));
+        when(tarjetaAsignacionRepository.findActivasByVehiculoId(eq(50L), any())).thenReturn(List.of(asignacion));
+        when(prestamoRepository.findByVehiculoIdAndEstadoIn(eq(50L), any())).thenReturn(List.of(prestamo));
+
+        List<VehiculoArchivadoDTO> result = service.findArchivados();
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).matricula()).isEqualTo("1234-ABC");
+        assertThat(result.get(0).vinculosActivos())
+                .containsExactly("Tarjeta asignada a Juan Perez", "Préstamo activo de Juan Perez");
     }
 }

@@ -39,4 +39,8 @@ public interface TarjetaAsignacionRepository extends JpaRepository<TarjetaAsigna
             + "AND (a.fechaHasta IS NULL OR a.fechaHasta >= :hoy)")
     Optional<TarjetaAsignacion> findActivaByTarjetaIdAndTrabajadorId(
             @Param("tarjetaId") Long tarjetaId, @Param("trabajadorId") Long trabajadorId, @Param("hoy") LocalDate hoy);
+
+    @Query("SELECT a FROM TarjetaAsignacion a WHERE a.vehiculo.id = :vehiculoId "
+            + "AND (a.fechaHasta IS NULL OR a.fechaHasta >= :hoy)")
+    List<TarjetaAsignacion> findActivasByVehiculoId(@Param("vehiculoId") Long vehiculoId, @Param("hoy") LocalDate hoy);
 }
