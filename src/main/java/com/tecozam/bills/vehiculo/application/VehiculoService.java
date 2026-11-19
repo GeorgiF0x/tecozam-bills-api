@@ -117,22 +117,36 @@ public class VehiculoService {
     }
 
     /**
-     * Alta self-service de un vehiculo de sustitucion desde la PWA: el operario
-     * da de alta una matricula que no esta en la flota registrada (p.ej. un
-     * vehiculo de alquiler o prestado). Queda marcado con creadoPorCampo=true
-     * para que el gestor lo revise despues (ver marcarRevisado/eliminar).
+     * Alta self-service desde la PWA de un vehiculo de sustitucion o una
+     * maquinaria/recurso industrial subcontratado que no esta en la flota
+     * registrada (p.ej. un vehiculo de alquiler, o maquinaria de un
+     * subcontratista sin codigo de obra propio). Queda marcado con
+     * creadoPorCampo=true para que el gestor lo revise despues (ver
+     * marcarRevisado/eliminar).
      */
     public VehiculoDTO crearMiVehiculo(CreateMiVehiculoRequest request) {
-        if (request.matricula() == null || request.matricula().isBlank()) {
-            throw new BusinessException("La matrícula es obligatoria", "matricula");
-        }
-        if (vehiculoRepository.existsByMatriculaAndEliminadoEnIsNull(request.matricula())) {
-            throw new DuplicateResourceException("Vehiculo", "matricula", request.matricula());
+        CategoriaRecurso categoria = parseCategoria(request.categoria());
+
+        if (categoria == CategoriaRecurso.VEHICULO) {
+            if (request.matricula() == null || request.matricula().isBlank()) {
+                throw new BusinessException("La matrícula es obligatoria", "matricula");
+            }
+            if (vehiculoRepository.existsByMatriculaAndEliminadoEnIsNull(request.matricula())) {
+                throw new DuplicateResourceException("Vehiculo", "matricula", request.matricula());
+            }
+        } else {
+            if (request.codigoObra() == null || request.codigoObra().isBlank()) {
+                throw new BusinessException("El código de obra es obligatorio", "codigoObra");
+            }
+            if (vehiculoRepository.existsByCodigoObraAndEliminadoEnIsNull(request.codigoObra())) {
+                throw new DuplicateResourceException("Vehiculo", "codigoObra", request.codigoObra());
+            }
         }
 
         Vehiculo vehiculo = Vehiculo.builder()
                 .matricula(request.matricula())
-                .categoria(CategoriaRecurso.VEHICULO)
+                .codigoObra(request.codigoObra())
+                .categoria(categoria)
                 .tipo("Sin clasificar")
                 .descripcion(request.descripcion())
                 .estado(EstadoRecurso.DISPONIBLE)
@@ -141,7 +155,8 @@ public class VehiculoService {
                 .build();
 
         vehiculo = vehiculoRepository.save(vehiculo);
-        log.info("Vehiculo de sustitucion creado por operario: {} (id={})", vehiculo.getMatricula(), vehiculo.getId());
+        String identificador = categoria == CategoriaRecurso.VEHICULO ? vehiculo.getMatricula() : vehiculo.getCodigoObra();
+        log.info("Vehiculo/maquinaria de sustitucion creado por operario: {} (id={})", identificador, vehiculo.getId());
 
         return toDTO(vehiculo);
     }

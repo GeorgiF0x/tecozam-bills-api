@@ -4,6 +4,7 @@ import com.tecozam.bills.prestamo.domain.Prestamo;
 import com.tecozam.bills.prestamo.infrastructure.persistence.PrestamoRepository;
 import com.tecozam.bills.shared.domain.enums.EstadoRecurso;
 import com.tecozam.bills.shared.infrastructure.exception.BusinessException;
+import com.tecozam.bills.shared.infrastructure.exception.DuplicateResourceException;
 import com.tecozam.bills.shared.infrastructure.exception.ResourceNotFoundException;
 import com.tecozam.bills.tarjeta.domain.TarjetaAsignacion;
 import com.tecozam.bills.tarjeta.infrastructure.persistence.TarjetaAsignacionRepository;
@@ -11,7 +12,9 @@ import com.tecozam.bills.ticket.infrastructure.persistence.TicketRepository;
 import com.tecozam.bills.trabajador.domain.Trabajador;
 import com.tecozam.bills.vehiculo.domain.CategoriaRecurso;
 import com.tecozam.bills.vehiculo.domain.Vehiculo;
+import com.tecozam.bills.vehiculo.dto.CreateMiVehiculoRequest;
 import com.tecozam.bills.vehiculo.dto.VehiculoArchivadoDTO;
+import com.tecozam.bills.vehiculo.dto.VehiculoDTO;
 import com.tecozam.bills.vehiculo.infrastructure.persistence.VehiculoRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -125,5 +128,61 @@ class VehiculoServiceTest {
         assertThat(result.get(0).matricula()).isEqualTo("1234-ABC");
         assertThat(result.get(0).vinculosActivos())
                 .containsExactly("Tarjeta asignada a Juan Perez", "Préstamo activo de Juan Perez");
+    }
+
+    @Test
+    @DisplayName("crearMiVehiculo sin categoria da de alta un VEHICULO por matricula (comportamiento previo)")
+    void crearMiVehiculo_sinCategoria_creaVehiculoPorMatricula() {
+        when(vehiculoRepository.existsByMatriculaAndEliminadoEnIsNull("9999-TST")).thenReturn(false);
+        when(vehiculoRepository.save(any(Vehiculo.class))).thenAnswer(inv -> {
+            Vehiculo v = inv.getArgument(0);
+            v.setId(77L);
+            return v;
+        });
+
+        VehiculoDTO result = service.crearMiVehiculo(
+                new CreateMiVehiculoRequest("9999-TST", null, null, "Alquiler findes"));
+
+        assertThat(result.matricula()).isEqualTo("9999-TST");
+        assertThat(result.categoria()).isEqualTo("VEHICULO");
+        assertThat(result.creadoPorCampo()).isTrue();
+    }
+
+    @Test
+    @DisplayName("crearMiVehiculo con categoria INDUSTRIAL_MAQUINARIA da de alta por codigo de obra")
+    void crearMiVehiculo_industrial_creaPorCodigoObra() {
+        when(vehiculoRepository.existsByCodigoObraAndEliminadoEnIsNull("OBRA-99")).thenReturn(false);
+        when(vehiculoRepository.save(any(Vehiculo.class))).thenAnswer(inv -> {
+            Vehiculo v = inv.getArgument(0);
+            v.setId(78L);
+            return v;
+        });
+
+        VehiculoDTO result = service.crearMiVehiculo(
+                new CreateMiVehiculoRequest(null, "OBRA-99", "INDUSTRIAL_MAQUINARIA", "Grua subcontratada"));
+
+        assertThat(result.codigoObra()).isEqualTo("OBRA-99");
+        assertThat(result.categoria()).isEqualTo("INDUSTRIAL_MAQUINARIA");
+        assertThat(result.creadoPorCampo()).isTrue();
+    }
+
+    @Test
+    @DisplayName("crearMiVehiculo industrial sin codigo de obra lanza BusinessException")
+    void crearMiVehiculo_industrial_sinCodigoObra_lanzaExcepcion() {
+        assertThatThrownBy(() -> service.crearMiVehiculo(
+                new CreateMiVehiculoRequest(null, null, "INDUSTRIAL_MAQUINARIA", null)))
+                .isInstanceOf(BusinessException.class);
+
+        verify(vehiculoRepository, never()).save(any(Vehiculo.class));
+    }
+
+    @Test
+    @DisplayName("crearMiVehiculo industrial con codigo de obra duplicado lanza DuplicateResourceException")
+    void crearMiVehiculo_industrial_codigoObraDuplicado_lanzaExcepcion() {
+        when(vehiculoRepository.existsByCodigoObraAndEliminadoEnIsNull("OBRA-99")).thenReturn(true);
+
+        assertThatThrownBy(() -> service.crearMiVehiculo(
+                new CreateMiVehiculoRequest(null, "OBRA-99", "INDUSTRIAL_MAQUINARIA", null)))
+                .isInstanceOf(DuplicateResourceException.class);
     }
 }
