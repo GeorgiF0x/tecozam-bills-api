@@ -2,6 +2,7 @@ package com.tecozam.bills.auth.application;
 
 import com.tecozam.bills.auditoria.infrastructure.persistence.PinAccesoEventoRepository;
 import com.tecozam.bills.auth.domain.UsuarioCampo;
+import com.tecozam.bills.auth.dto.EditarUsuarioCampoRequest;
 import com.tecozam.bills.auth.infrastructure.persistence.UsuarioCampoRepository;
 import com.tecozam.bills.shared.domain.enums.EstadoRegistro;
 import com.tecozam.bills.shared.infrastructure.exception.BusinessException;
@@ -94,5 +95,53 @@ class UsuarioCampoServiceTest {
                 .isInstanceOf(BusinessException.class);
         verify(usuarioCampoRepository, never()).delete(any(UsuarioCampo.class));
         verify(usuarioCampoRepository, never()).save(any(UsuarioCampo.class));
+    }
+
+    @Test
+    @DisplayName("editar con puedeEditarTickets=true concede el permiso")
+    void editar_concedePermisoEditarTickets() {
+        UsuarioCampo usuario = UsuarioCampo.builder()
+                .username("campo4").activo(true).puedeEditarTickets(false)
+                .estadoRegistro(EstadoRegistro.ACTIVO).build();
+        usuario.setId(603L);
+
+        when(usuarioCampoRepository.findById(603L)).thenReturn(Optional.of(usuario));
+        when(usuarioCampoRepository.save(any(UsuarioCampo.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        service.editar(603L, new EditarUsuarioCampoRequest(null, null, null, null, true));
+
+        assertThat(usuario.isPuedeEditarTickets()).isTrue();
+    }
+
+    @Test
+    @DisplayName("editar con puedeEditarTickets=null no toca el permiso existente")
+    void editar_sinCampoPermiso_noLoToca() {
+        UsuarioCampo usuario = UsuarioCampo.builder()
+                .username("campo5").activo(true).puedeEditarTickets(true)
+                .estadoRegistro(EstadoRegistro.ACTIVO).build();
+        usuario.setId(604L);
+
+        when(usuarioCampoRepository.findById(604L)).thenReturn(Optional.of(usuario));
+        when(usuarioCampoRepository.save(any(UsuarioCampo.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        service.editar(604L, new EditarUsuarioCampoRequest("Nuevo Nombre", null, null, null, null));
+
+        assertThat(usuario.isPuedeEditarTickets()).isTrue();
+    }
+
+    @Test
+    @DisplayName("editar con puedeEditarTickets=false revoca el permiso")
+    void editar_revocaPermisoEditarTickets() {
+        UsuarioCampo usuario = UsuarioCampo.builder()
+                .username("campo6").activo(true).puedeEditarTickets(true)
+                .estadoRegistro(EstadoRegistro.ACTIVO).build();
+        usuario.setId(605L);
+
+        when(usuarioCampoRepository.findById(605L)).thenReturn(Optional.of(usuario));
+        when(usuarioCampoRepository.save(any(UsuarioCampo.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        service.editar(605L, new EditarUsuarioCampoRequest(null, null, null, null, false));
+
+        assertThat(usuario.isPuedeEditarTickets()).isFalse();
     }
 }

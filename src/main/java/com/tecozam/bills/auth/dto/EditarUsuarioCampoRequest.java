@@ -4,6 +4,7 @@ public record EditarUsuarioCampoRequest(
         String nombre,
         String apellidos,
         String dni,
-        String telefono
+        String telefono,
+        Boolean puedeEditarTickets
 ) {
 }

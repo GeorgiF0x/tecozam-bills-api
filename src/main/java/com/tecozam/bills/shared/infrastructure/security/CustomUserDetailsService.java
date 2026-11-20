@@ -39,8 +39,10 @@ public class CustomUserDetailsService implements UserDetailsService {
         Optional<UsuarioCampo> campoOpt = usuarioCampoRepository.findByUsernameAndActivoTrue(username);
         if (campoOpt.isPresent()) {
             UsuarioCampo u = campoOpt.get();
-            return new User(u.getUsername(), u.getPassword(),
-                    List.of(new SimpleGrantedAuthority("ROLE_CAMPO")));
+            List<SimpleGrantedAuthority> authorities = u.isPuedeEditarTickets()
+                    ? List.of(new SimpleGrantedAuthority("ROLE_CAMPO"), new SimpleGrantedAuthority("PERM_EDITAR_TICKETS"))
+                    : List.of(new SimpleGrantedAuthority("ROLE_CAMPO"));
+            return new User(u.getUsername(), u.getPassword(), authorities);
         }
 
         // Fallback: tabla legacy usuarios

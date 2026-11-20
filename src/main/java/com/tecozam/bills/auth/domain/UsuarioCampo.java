@@ -63,6 +63,11 @@ public class UsuarioCampo {
     @Builder.Default
     private boolean activo = true;
 
+    /** Concedido explícitamente por un ADMIN; por defecto nadie lo tiene. */
+    @Column(name = "puede_editar_tickets", nullable = false)
+    @Builder.Default
+    private boolean puedeEditarTickets = false;
+
     @Column(name = "refresh_token")
     private String refreshToken;
 

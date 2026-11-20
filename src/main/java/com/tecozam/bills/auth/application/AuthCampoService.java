@@ -147,7 +147,8 @@ public class AuthCampoService {
                 u.isActivo(),
                 u.getEstadoRegistro().name(),
                 u.getCreadoEn(),
-                webauthnProperties.isEnabled());
+                webauthnProperties.isEnabled(),
+                u.isPuedeEditarTickets());
     }
 
     private String hashSha256(String input) {

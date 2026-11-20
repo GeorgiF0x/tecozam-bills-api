@@ -168,6 +168,10 @@ public class UsuarioCampoService {
             usuario.setTelefono(req.telefono().trim());
         }
 
+        if (req.puedeEditarTickets() != null) {
+            usuario.setPuedeEditarTickets(req.puedeEditarTickets());
+        }
+
         if (trabajador != null) {
             trabajadorRepository.save(trabajador);
         }
@@ -237,6 +241,7 @@ public class UsuarioCampoService {
                 u.isActivo(),
                 u.getEstadoRegistro().name(),
                 u.getCreadoEn(),
-                false);
+                false,
+                u.isPuedeEditarTickets());
     }
 }

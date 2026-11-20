@@ -59,11 +59,13 @@ class SecurityAccessControlIT {
 
     private Long adminId;
     private Long campoId;
+    private Long campoEditorId;
     private Long gestorId;
     private String adminAccessToken;
     private String adminRefreshToken;
     private String campoAccessToken;
     private String campoRefreshToken;
+    private String campoEditorAccessToken;
     private String gestorAccessToken;
 
     @BeforeEach
@@ -85,6 +87,15 @@ class SecurityAccessControlIT {
                 .build());
         campoId = campo.getId();
 
+        UsuarioCampo campoEditor = usuarioCampoRepository.save(UsuarioCampo.builder()
+                .username("sectest_campo_editor_it")
+                .password(passwordEncoder.encode(PASSWORD))
+                .activo(true)
+                .estadoRegistro(EstadoRegistro.ACTIVO)
+                .puedeEditarTickets(true)
+                .build());
+        campoEditorId = campoEditor.getId();
+
         UsuarioOficina gestor = usuarioOficinaRepository.save(UsuarioOficina.builder()
                 .username("sectest_gestor_it")
                 .password(passwordEncoder.encode(PASSWORD))
@@ -104,12 +115,16 @@ class SecurityAccessControlIT {
 
         Map<String, Object> gestorTokens = login("/api/auth/oficina/login", "sectest_gestor_it");
         gestorAccessToken = (String) gestorTokens.get("accessToken");
+
+        Map<String, Object> campoEditorTokens = login("/api/auth/campo/login", "sectest_campo_editor_it");
+        campoEditorAccessToken = (String) campoEditorTokens.get("accessToken");
     }
 
     @AfterEach
     void cleanup() {
         usuarioOficinaRepository.deleteById(adminId);
         usuarioCampoRepository.deleteById(campoId);
+        usuarioCampoRepository.deleteById(campoEditorId);
         usuarioOficinaRepository.deleteById(gestorId);
     }
 
@@ -168,6 +183,41 @@ class SecurityAccessControlIT {
     }
 
     @Test
+    void campoSinPermisoNoPuedeEditarTicketPropio() {
+        ResponseEntity<String> res = patchWithToken(
+                "/api/tickets/mis-tickets/999999",
+                Map.of("estacion", "x", "fechaHora", "2026-01-01T10:00:00",
+                        "importeTotal", 10, "tipoGasto", "COMBUSTIBLE"),
+                campoAccessToken);
+        assertThat(res.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
+    }
+
+    @Test
+    void campoSinPermisoNoPuedeEliminarTicketPropio() {
+        ResponseEntity<String> res = deleteWithToken("/api/tickets/mis-tickets/999999", campoAccessToken);
+        assertThat(res.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
+    }
+
+    @Test
+    void campoConPermisoPasaElFiltroDeAutorizacionAlEditar() {
+        // El ticket 999999 no existe, así que la llamada seguirá fallando
+        // (404/400 de negocio) — lo que prueba este test es que NO es un 403:
+        // el @PreAuthorize ya no bloquea a quien tiene PERM_EDITAR_TICKETS.
+        ResponseEntity<String> res = patchWithToken(
+                "/api/tickets/mis-tickets/999999",
+                Map.of("estacion", "x", "fechaHora", "2026-01-01T10:00:00",
+                        "importeTotal", 10, "tipoGasto", "COMBUSTIBLE"),
+                campoEditorAccessToken);
+        assertThat(res.getStatusCode()).isNotEqualTo(HttpStatus.FORBIDDEN);
+    }
+
+    @Test
+    void campoConPermisoPasaElFiltroDeAutorizacionAlEliminar() {
+        ResponseEntity<String> res = deleteWithToken("/api/tickets/mis-tickets/999999", campoEditorAccessToken);
+        assertThat(res.getStatusCode()).isNotEqualTo(HttpStatus.FORBIDDEN);
+    }
+
+    @Test
     void refreshTokenNoSirveComoAccessTokenContraEndpointProtegido() {
         // Usa el refresh token de ADMIN contra un endpoint que ADMIN SI puede
         // ver (/api/tickets) — si solo probara con el token de CAMPO, un 403
@@ -212,5 +262,18 @@ class SecurityAccessControlIT {
         headers.setBearerAuth(token);
         headers.setContentType(org.springframework.http.MediaType.APPLICATION_JSON);
         return restTemplate.exchange(path, HttpMethod.POST, new HttpEntity<>(body, headers), String.class);
+    }
+
+    private ResponseEntity<String> patchWithToken(String path, Map<String, Object> body, String token) {
+        HttpHeaders headers = new HttpHeaders();
+        headers.setBearerAuth(token);
+        headers.setContentType(org.springframework.http.MediaType.APPLICATION_JSON);
+        return restTemplate.exchange(path, HttpMethod.PATCH, new HttpEntity<>(body, headers), String.class);
+    }
+
+    private ResponseEntity<String> deleteWithToken(String path, String token) {
+        HttpHeaders headers = new HttpHeaders();
+        headers.setBearerAuth(token);
+        return restTemplate.exchange(path, HttpMethod.DELETE, new HttpEntity<>(headers), String.class);
     }
 }

@@ -13,6 +13,7 @@ public record UsuarioCampoDTO(
         boolean activo,
         String estadoRegistro,
         LocalDateTime creadoEn,
-        boolean webauthnEnabled
+        boolean webauthnEnabled,
+        boolean puedeEditarTickets
 ) {
 }

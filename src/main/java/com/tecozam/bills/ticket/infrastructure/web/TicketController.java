@@ -64,16 +64,18 @@ public class TicketController {
     }
 
     @DeleteMapping("/mis-tickets/{id:\\d+}")
-    @PreAuthorize("isAuthenticated()")
-    @Operation(summary = "Eliminar ticket propio", description = "Borrado lógico de un ticket propio en estado PENDIENTE")
+    @PreAuthorize("hasAuthority('PERM_EDITAR_TICKETS')")
+    @Operation(summary = "Eliminar ticket propio",
+            description = "Borrado lógico de un ticket propio en estado PENDIENTE. Requiere el permiso PERM_EDITAR_TICKETS, concedido por un ADMIN.")
     public ResponseEntity<Void> eliminarPropio(@PathVariable Long id, Authentication authentication) {
         ticketService.eliminarPropio(authentication.getName(), id);
         return ResponseEntity.noContent().build();
     }
 
     @PatchMapping("/mis-tickets/{id:\\d+}")
-    @PreAuthorize("isAuthenticated()")
-    @Operation(summary = "Editar ticket propio", description = "Corrige los datos de un ticket propio en estado PENDIENTE")
+    @PreAuthorize("hasAuthority('PERM_EDITAR_TICKETS')")
+    @Operation(summary = "Editar ticket propio",
+            description = "Corrige los datos de un ticket propio en estado PENDIENTE. Requiere el permiso PERM_EDITAR_TICKETS, concedido por un ADMIN.")
     public ResponseEntity<TicketDTO> actualizarPropio(
             @PathVariable Long id,
             Authentication authentication,
