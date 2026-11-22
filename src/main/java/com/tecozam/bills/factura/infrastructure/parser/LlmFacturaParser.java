@@ -14,7 +14,14 @@ import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.io.RandomAccessReadBuffer;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.text.PDFTextStripper;
+import org.apache.poi.ss.usermodel.Cell;
+import org.apache.poi.ss.usermodel.DataFormatter;
+import org.apache.poi.ss.usermodel.Row;
+import org.apache.poi.ss.usermodel.Sheet;
+import org.apache.poi.ss.usermodel.Workbook;
+import org.apache.poi.ss.usermodel.WorkbookFactory;
 
+import java.io.ByteArrayInputStream;
 import java.io.InputStream;
 import java.math.BigDecimal;
 import java.net.URI;
@@ -27,11 +34,12 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Locale;
 import java.util.stream.Collectors;
 
 /**
- * Extrae los campos de una factura PDF (+ extracto opcional) usando un LLM en
- * vez del parser determinista de siempre. Solo se usa cuando el admin activa
+ * Extrae los campos de una factura (PDF o Excel, + extracto PDF opcional)
+ * usando un LLM en vez del parser determinista de siempre. Solo se usa cuando el admin activa
  * el modo LLM (ver odd/tasks/import-llm-switch.md); el resultado SIEMPRE pasa
  * despues por {@link com.tecozam.bills.factura.application.FacturaImportValidator}
  * antes de entrar al cotejo automatico — un fallo de extraccion aqui no debe
@@ -76,16 +84,45 @@ public class LlmFacturaParser implements FacturaParser {
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // EXTRACCIÓN DE TEXTO PDF (idéntico al patrón de RepsolFacturaParser)
+    // EXTRACCIÓN DE TEXTO: PDF (idéntico al patrón de RepsolFacturaParser) o
+    // Excel (.xlsx/.xls) — el modo LLM, a diferencia del parser determinista,
+    // tambien acepta facturas en Excel.
     // ─────────────────────────────────────────────────────────────────────────
 
-    private String extraerTexto(InputStream pdfInputStream) throws Exception {
-        byte[] bytes = pdfInputStream.readAllBytes();
-        try (PDDocument doc = Loader.loadPDF(new RandomAccessReadBuffer(bytes))) {
-            PDFTextStripper stripper = new PDFTextStripper();
-            stripper.setSortByPosition(true);
-            return stripper.getText(doc);
+    String extraerTexto(InputStream entradaStream) throws Exception {
+        byte[] bytes = entradaStream.readAllBytes();
+        if (esPdf(bytes)) {
+            try (PDDocument doc = Loader.loadPDF(new RandomAccessReadBuffer(bytes))) {
+                PDFTextStripper stripper = new PDFTextStripper();
+                stripper.setSortByPosition(true);
+                return stripper.getText(doc);
+            }
         }
+        return extraerTextoExcel(bytes);
+    }
+
+    private boolean esPdf(byte[] bytes) {
+        return bytes.length >= 4 && bytes[0] == '%' && bytes[1] == 'P' && bytes[2] == 'D' && bytes[3] == 'F';
+    }
+
+    private String extraerTextoExcel(byte[] bytes) throws Exception {
+        // Locale fijo: el formato de celda numerica no debe depender del
+        // locale del servidor (p.ej. "121,5" en es-ES vs "121.5" en en-US),
+        // o el LLM recibiria separadores decimales inconsistentes entre entornos.
+        DataFormatter formatter = new DataFormatter(Locale.US);
+        StringBuilder texto = new StringBuilder();
+        try (Workbook workbook = WorkbookFactory.create(new ByteArrayInputStream(bytes))) {
+            for (Sheet hoja : workbook) {
+                for (Row fila : hoja) {
+                    List<String> celdas = new ArrayList<>();
+                    for (Cell celda : fila) {
+                        celdas.add(formatter.formatCellValue(celda));
+                    }
+                    texto.append(String.join(" | ", celdas)).append('\n');
+                }
+            }
+        }
+        return texto.toString();
     }
 
     // ─────────────────────────────────────────────────────────────────────────

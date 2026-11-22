@@ -258,4 +258,36 @@ class FacturaServiceTest {
     private MockMultipartFile extractoFile() {
         return new MockMultipartFile("extractoPdf", "extracto.pdf", "application/pdf", "contenido".getBytes());
     }
+
+    private MockMultipartFile excelFile() {
+        return new MockMultipartFile("facturaPdf", "factura.xlsx",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "contenido".getBytes());
+    }
+
+    @Test
+    @DisplayName("acepta un Excel (.xlsx) como archivo de factura, no solo PDF")
+    void importar_excel_seAcepta() throws Exception {
+        when(configuracionImportService.obtener())
+                .thenReturn(new ConfiguracionImportDTO(true, null, null));
+        when(facturaParser.parse(any(), any())).thenReturn(facturaParseResultConUnaOperacion());
+        when(facturaImportValidator.validar(any(Factura.class))).thenReturn(List.of());
+
+        ImportarFacturaResponse response = service.importar(1L, excelFile(), null);
+
+        assertThat(response).isNotNull();
+        verify(facturaRepository).save(any(Factura.class));
+    }
+
+    @Test
+    @DisplayName("rechaza formatos que no son PDF ni Excel (p.ej. imagenes, Word)")
+    void importar_formatoNoSoportado_lanzaExcepcion() {
+        MockMultipartFile imagen = new MockMultipartFile("facturaPdf", "factura.jpg", "image/jpeg", "contenido".getBytes());
+
+        assertThatThrownBy(() -> service.importar(1L, imagen, null))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("PDF")
+                .hasMessageContaining("Excel");
+
+        org.mockito.Mockito.verifyNoInteractions(facturaRepository);
+    }
 }

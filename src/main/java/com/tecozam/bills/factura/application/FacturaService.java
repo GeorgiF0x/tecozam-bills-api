@@ -49,10 +49,11 @@ public class FacturaService {
     private final ReclasificarTarjetasAViatService reclasificarTarjetasAViatService;
 
     /**
-     * Importa una factura PDF (y opcionalmente un extracto) para un proveedor dado.
+     * Importa una factura (PDF o Excel) y opcionalmente un extracto PDF, para
+     * un proveedor dado.
      *
      * @param proveedorId  ID del proveedor
-     * @param facturaPdf   archivo PDF de la factura
+     * @param facturaPdf   archivo de la factura (.pdf, .xlsx o .xls)
      * @param extractoPdf  archivo PDF del extracto (opcional, sólo MOEVE)
      * @return estadísticas de la importación
      */
@@ -63,14 +64,17 @@ public class FacturaService {
         Proveedor proveedor = proveedorRepository.findById(proveedorId)
                 .orElseThrow(() -> new ResourceNotFoundException("Proveedor", proveedorId));
 
-        // 2. Validar PDF
+        // 2. Validar formato (PDF o Excel; otros formatos como imagenes o Word
+        // quedan fuera porque ni el parser determinista ni el LLM saben leerlos)
         if (facturaPdf == null || facturaPdf.isEmpty()) {
             throw new IllegalArgumentException("El archivo de factura es obligatorio");
         }
-        String contentType = facturaPdf.getContentType();
-        if (contentType != null && !contentType.contains("pdf")
-                && !facturaPdf.getOriginalFilename().toLowerCase().endsWith(".pdf")) {
-            throw new IllegalArgumentException("El archivo debe ser un PDF");
+        String nombreArchivo = facturaPdf.getOriginalFilename() == null
+                ? "" : facturaPdf.getOriginalFilename().toLowerCase();
+        boolean esFormatoAceptado = nombreArchivo.endsWith(".pdf")
+                || nombreArchivo.endsWith(".xlsx") || nombreArchivo.endsWith(".xls");
+        if (!esFormatoAceptado) {
+            throw new IllegalArgumentException("El archivo debe ser un PDF o un Excel (.xlsx, .xls)");
         }
 
         // 3. Validacion previa de extracto obligatorio para MOEVE/CEPSA

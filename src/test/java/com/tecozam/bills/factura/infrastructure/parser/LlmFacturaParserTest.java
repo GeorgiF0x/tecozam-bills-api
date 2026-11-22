@@ -5,9 +5,15 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tecozam.bills.factura.domain.Factura;
 import com.tecozam.bills.factura.domain.Operacion;
 import com.tecozam.bills.factura.domain.TarjetaResumen;
+import org.apache.pdfbox.pdmodel.PDDocument;
+import org.apache.pdfbox.pdmodel.PDPage;
+import org.apache.poi.ss.usermodel.Row;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -131,5 +137,35 @@ class LlmFacturaParserTest {
         assertThat(result.getFactura().getNumCuenta()).isNull();
         assertThat(result.getConceptos()).isEmpty();
         assertThat(result.getTarjetaResumenes()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("extraerTexto sobre un PDF real sigue extrayendo su texto (sin regresion)")
+    void extraerTexto_pdf_extraeTexto() throws Exception {
+        ByteArrayOutputStream pdfBytes = new ByteArrayOutputStream();
+        try (PDDocument doc = new PDDocument()) {
+            doc.addPage(new PDPage());
+            doc.save(pdfBytes);
+        }
+
+        String texto = parser.extraerTexto(new ByteArrayInputStream(pdfBytes.toByteArray()));
+
+        assertThat(texto).isNotNull();
+    }
+
+    @Test
+    @DisplayName("extraerTexto sobre un Excel (.xlsx) extrae el contenido de las celdas")
+    void extraerTexto_excel_extraeCeldas() throws Exception {
+        ByteArrayOutputStream excelBytes = new ByteArrayOutputStream();
+        try (XSSFWorkbook workbook = new XSSFWorkbook()) {
+            Row fila = workbook.createSheet("Factura").createRow(0);
+            fila.createCell(0).setCellValue("FA-2026-EXCEL");
+            fila.createCell(1).setCellValue(121.50);
+            workbook.write(excelBytes);
+        }
+
+        String texto = parser.extraerTexto(new ByteArrayInputStream(excelBytes.toByteArray()));
+
+        assertThat(texto).contains("FA-2026-EXCEL").contains("121.5");
     }
 }
