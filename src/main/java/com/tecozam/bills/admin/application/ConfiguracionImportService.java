@@ -49,9 +49,10 @@ public class ConfiguracionImportService {
     }
 
     /**
-     * Lee la fila unica de configuracion. La migracion V26 ya la crea con
-     * modoLlmActivo=false, pero por robustez (p.ej. entornos de test que no
-     * corren Flyway) se crea perezosamente si no existe todavia.
+     * Lee la fila unica de configuracion. La migracion V26 la crea (y V41 la
+     * pone a modoLlmActivo=true, el default actual), pero por robustez (p.ej.
+     * entornos de test que no corren Flyway) se crea perezosamente si no
+     * existe todavia.
      */
     private ConfiguracionImport obtenerEntidad() {
         List<ConfiguracionImport> filas = configuracionImportRepository.findAll();
@@ -59,7 +60,7 @@ public class ConfiguracionImportService {
             return filas.get(0);
         }
         return configuracionImportRepository.save(
-                ConfiguracionImport.builder().modoLlmActivo(false).build());
+                ConfiguracionImport.builder().modoLlmActivo(true).build());
     }
 
     private ConfiguracionImportDTO toDTO(ConfiguracionImport configuracion) {

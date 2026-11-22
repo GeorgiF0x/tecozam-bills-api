@@ -33,7 +33,7 @@ public class ConfiguracionImport {
 
     @Column(name = "modo_llm_activo", nullable = false)
     @Builder.Default
-    private boolean modoLlmActivo = false;
+    private boolean modoLlmActivo = true;
 
     @Column(name = "actualizado_en")
     private LocalDateTime actualizadoEn;

@@ -67,4 +67,16 @@ class ConfiguracionImportServiceTest {
         assertThat(dto.modoLlmActivo()).isTrue();
         assertThat(dto.actualizadoPor()).isEqualTo("admin1");
     }
+
+    @Test
+    @DisplayName("obtener sin fila existente la crea perezosamente con modoLlmActivo=true (default actual)")
+    void obtener_sinFilaExistente_laCreaConModoLlmActivoPorDefecto() {
+        when(configuracionImportRepository.findAll()).thenReturn(List.of());
+        when(configuracionImportRepository.save(any(ConfiguracionImport.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+
+        ConfiguracionImportDTO dto = service.obtener();
+
+        assertThat(dto.modoLlmActivo()).isTrue();
+    }
 }
