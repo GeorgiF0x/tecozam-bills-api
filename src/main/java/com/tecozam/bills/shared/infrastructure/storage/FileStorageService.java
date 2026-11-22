@@ -26,11 +26,20 @@ public class FileStorageService {
                 String.valueOf(now.getYear()),
                 String.format("%02d", now.getMonthValue()));
         Files.createDirectories(dir);
-        String filename = UUID.randomUUID() + "_" + numFactura.replaceAll("[^a-zA-Z0-9]", "_") + ".pdf";
+        // Desde que la factura admite Excel ademas de PDF, la extension ya no
+        // puede ser fija: el archivo guardado debe coincidir con su contenido real.
+        String extension = extensionFromFilename(file.getOriginalFilename());
+        String filename = UUID.randomUUID() + "_" + numFactura.replaceAll("[^a-zA-Z0-9]", "_") + extension;
         Path target = dir.resolve(filename);
         file.transferTo(target);
         log.info("Factura guardada: {}", target);
         return target.toString();
+    }
+
+    private String extensionFromFilename(String nombreOriginal) {
+        if (nombreOriginal == null) return ".pdf";
+        int puntoIdx = nombreOriginal.lastIndexOf('.');
+        return puntoIdx >= 0 ? nombreOriginal.substring(puntoIdx).toLowerCase() : ".pdf";
     }
 
     /**
