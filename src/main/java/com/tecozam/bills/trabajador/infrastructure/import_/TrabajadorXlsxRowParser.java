@@ -55,6 +55,23 @@ public final class TrabajadorXlsxRowParser {
         String dniNie = leerCelda(row, headers, KEY_DNI_NIE);
         String origenRaw = leerCelda(row, headers, KEY_ORIGEN);
 
+        return validar(nombre, apellidos, email, dniNie, origenRaw);
+    }
+
+    /**
+     * Misma validacion que {@link #parse}, pero a partir de campos ya
+     * extraidos (no de una fila de Excel) — reusado por el import PDF+IA de
+     * trabajadores, que extrae estos mismos campos de un PDF via LLM en vez
+     * de celdas. Garantiza que las reglas de negocio no diverjan entre Excel
+     * y PDF.
+     */
+    public Optional<FilaTrabajadorImportada> validar(String nombre, String apellidos, String email,
+                                                      String dniNie, String origenRaw) {
+        nombre = nombre == null ? "" : nombre.trim();
+        apellidos = apellidos == null ? "" : apellidos.trim();
+        email = email == null ? "" : email.trim();
+        dniNie = dniNie == null ? "" : dniNie.trim();
+
         // Fila vacia (separador/salto de linea en el Excel) — se ignora en
         // silencio, no es un error.
         if (nombre.isBlank() && apellidos.isBlank() && email.isBlank() && dniNie.isBlank()) {

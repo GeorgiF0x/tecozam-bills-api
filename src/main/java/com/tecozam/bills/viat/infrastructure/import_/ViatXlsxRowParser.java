@@ -49,6 +49,19 @@ public final class ViatXlsxRowParser {
         String numeroSerie = leerCelda(row, headers, KEY_NUMERO_SERIE);
         String descripcion = leerCelda(row, headers, KEY_DESCRIPCION);
 
+        return validar(codigo, numeroSerie, descripcion);
+    }
+
+    /**
+     * Misma validacion que {@link #parse}, a partir de campos ya extraidos —
+     * reusado por el import PDF+IA de VIATs (extrae estos mismos campos de
+     * un PDF via LLM en vez de celdas), para no duplicar reglas de negocio.
+     */
+    public Optional<FilaViatImportada> validar(String codigo, String numeroSerie, String descripcion) {
+        codigo = codigo == null ? "" : codigo.trim();
+        numeroSerie = numeroSerie == null ? "" : numeroSerie.trim();
+        descripcion = descripcion == null ? "" : descripcion.trim();
+
         // Fila vacia (separador/salto de linea en el Excel) — se ignora en
         // silencio, no es un error.
         if (codigo.isBlank() && numeroSerie.isBlank() && descripcion.isBlank()) {

@@ -12,7 +12,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
-import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+import org.apache.poi.ss.usermodel.WorkbookFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -47,7 +47,7 @@ public class ViatImportService {
         List<String> errores = new ArrayList<>();
 
         try (InputStream in = file.getInputStream();
-             Workbook wb = new XSSFWorkbook(in)) {
+             Workbook wb = WorkbookFactory.create(in)) {
             Sheet hoja = wb.getSheetAt(0);
             Map<String, Integer> headers = parser.leerCabeceras(hoja);
             for (Row row : hoja) {
@@ -61,19 +61,11 @@ public class ViatImportService {
                     continue;
                 }
 
-                if (viatRepository.existsByCodigo(fila.codigo())) {
+                if (procesarFilaValidada(fila)) {
                     existentes++;
-                    continue;
+                } else {
+                    creados++;
                 }
-
-                viatRepository.save(Viat.builder()
-                        .codigo(fila.codigo())
-                        .numeroSerie(blankToNull(fila.numeroSerie()))
-                        .descripcion(blankToNull(fila.descripcion()))
-                        .estado(EstadoRecurso.DISPONIBLE)
-                        .activo(true)
-                        .build());
-                creados++;
             }
         } catch (IOException e) {
             throw new BusinessException("Excel inválido o ilegible", e);
@@ -83,6 +75,27 @@ public class ViatImportService {
         log.info("Import viats: creados={}, existentes={}, errores={}, duracion={}ms",
                 creados, existentes, errores.size(), duracion);
         return new ImportViatsReportDTO(creados, existentes, errores, duracion);
+    }
+
+    /**
+     * Procesa una fila YA VALIDADA (cuenta como existente o crea el VIAT).
+     * Extraido para que el import PDF+IA de VIATs pueda reusarlo tras su
+     * propia pantalla de revision, sin duplicar dedupe/alta.
+     *
+     * @return true si la fila ya existia (no se creo nada nuevo)
+     */
+    public boolean procesarFilaValidada(FilaViatImportada fila) {
+        if (viatRepository.existsByCodigo(fila.codigo())) {
+            return true;
+        }
+        viatRepository.save(Viat.builder()
+                .codigo(fila.codigo())
+                .numeroSerie(blankToNull(fila.numeroSerie()))
+                .descripcion(blankToNull(fila.descripcion()))
+                .estado(EstadoRecurso.DISPONIBLE)
+                .activo(true)
+                .build());
+        return false;
     }
 
     private String describirFila(FilaViatImportada fila) {

@@ -51,6 +51,19 @@ public final class TarjetaXlsxRowParser {
         String alias = leerCelda(row, headers, KEY_ALIAS);
         String codigoProveedor = leerCelda(row, headers, KEY_PROVEEDOR);
 
+        return validar(numeroTarjeta, alias, codigoProveedor);
+    }
+
+    /**
+     * Misma validacion que {@link #parse}, a partir de campos ya extraidos —
+     * reusado por el import PDF+IA de tarjetas (extrae estos mismos campos de
+     * un PDF via LLM en vez de celdas), para no duplicar reglas de negocio.
+     */
+    public Optional<FilaTarjetaImportada> validar(String numeroTarjeta, String alias, String codigoProveedor) {
+        numeroTarjeta = numeroTarjeta == null ? "" : numeroTarjeta.trim();
+        alias = alias == null ? "" : alias.trim();
+        codigoProveedor = codigoProveedor == null ? "" : codigoProveedor.trim();
+
         // Fila vacia (separador/salto de linea en el Excel) — se ignora en
         // silencio, no es un error.
         if (numeroTarjeta.isBlank() && alias.isBlank() && codigoProveedor.isBlank()) {

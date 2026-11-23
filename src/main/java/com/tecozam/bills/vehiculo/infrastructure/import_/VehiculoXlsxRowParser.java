@@ -55,6 +55,22 @@ public final class VehiculoXlsxRowParser {
         String categoriaRaw = leerCelda(row, headers, KEY_CATEGORIA);
         String descripcion = leerCelda(row, headers, KEY_DESCRIPCION);
 
+        return validar(tipo, matricula, codigoObra, categoriaRaw, descripcion);
+    }
+
+    /**
+     * Misma validacion que {@link #parse}, a partir de campos ya extraidos —
+     * reusado por el import PDF+IA de vehiculos (extrae estos mismos campos
+     * de un PDF via LLM en vez de celdas), para no duplicar reglas de negocio.
+     */
+    public Optional<FilaVehiculoImportada> validar(String tipo, String matricula, String codigoObra,
+                                                    String categoriaRaw, String descripcion) {
+        tipo = tipo == null ? "" : tipo.trim();
+        matricula = matricula == null ? "" : matricula.trim();
+        codigoObra = codigoObra == null ? "" : codigoObra.trim();
+        categoriaRaw = categoriaRaw == null ? "" : categoriaRaw.trim();
+        descripcion = descripcion == null ? "" : descripcion.trim();
+
         // Fila vacia (separador/salto de linea en el Excel) — se ignora en
         // silencio, no es un error.
         if (tipo.isBlank() && matricula.isBlank() && codigoObra.isBlank() && descripcion.isBlank()) {

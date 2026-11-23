@@ -10,7 +10,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
-import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+import org.apache.poi.ss.usermodel.WorkbookFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -52,7 +52,7 @@ public class TrabajadorImportService {
         List<String> errores = new ArrayList<>();
 
         try (InputStream in = file.getInputStream();
-             Workbook wb = new XSSFWorkbook(in)) {
+             Workbook wb = WorkbookFactory.create(in)) {
             Sheet hoja = wb.getSheetAt(0);
             Map<String, Integer> headers = parser.leerCabeceras(hoja);
             for (Row row : hoja) {
@@ -66,13 +66,11 @@ public class TrabajadorImportService {
                     continue;
                 }
 
-                if (yaExiste(fila)) {
+                if (procesarFilaValidada(fila)) {
                     existentes++;
                 } else {
                     creados++;
                 }
-                trabajadorResolver.resolver(
-                        fila.nombre(), fila.apellidos(), fila.email(), fila.dniNie(), fila.origen());
             }
         } catch (IOException e) {
             throw new BusinessException("Excel inválido o ilegible", e);
@@ -82,6 +80,21 @@ public class TrabajadorImportService {
         log.info("Import trabajadores: creados={}, existentes={}, errores={}, duracion={}ms",
                 creados, existentes, errores.size(), duracion);
         return new ImportTrabajadoresReportDTO(creados, existentes, errores, duracion);
+    }
+
+    /**
+     * Procesa una fila YA VALIDADA (cuenta como existente o creada + delega
+     * la resolucion/creacion a {@link TrabajadorResolver}). Extraido para que
+     * el import PDF+IA de trabajadores pueda reusarlo tal cual tras su propia
+     * pantalla de revision, sin duplicar la logica de dedupe/creacion.
+     *
+     * @return true si la fila ya existia (no se creo nada nuevo)
+     */
+    public boolean procesarFilaValidada(FilaTrabajadorImportada fila) {
+        boolean existia = yaExiste(fila);
+        trabajadorResolver.resolver(
+                fila.nombre(), fila.apellidos(), fila.email(), fila.dniNie(), fila.origen());
+        return existia;
     }
 
     /** Misma prioridad de deduplicacion que {@link TrabajadorResolver#resolver}

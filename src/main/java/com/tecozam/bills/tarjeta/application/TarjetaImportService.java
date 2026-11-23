@@ -14,7 +14,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
-import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+import org.apache.poi.ss.usermodel.WorkbookFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -58,7 +58,7 @@ public class TarjetaImportService {
         List<String> errores = new ArrayList<>();
 
         try (InputStream in = file.getInputStream();
-             Workbook wb = new XSSFWorkbook(in)) {
+             Workbook wb = WorkbookFactory.create(in)) {
             Sheet hoja = wb.getSheetAt(0);
             Map<String, Integer> headers = parser.leerCabeceras(hoja);
             for (Row row : hoja) {
@@ -72,26 +72,14 @@ public class TarjetaImportService {
                     continue;
                 }
 
-                if (tarjetaRepository.existsByNumeroTarjeta(fila.numeroTarjeta())) {
+                ResultadoFila resultado = procesarFilaValidada(fila);
+                if (resultado.error() != null) {
+                    errores.add("Tarjeta " + fila.numeroTarjeta() + " — " + resultado.error());
+                } else if (resultado.yaExistia()) {
                     existentes++;
-                    continue;
+                } else {
+                    creados++;
                 }
-
-                Optional<Proveedor> proveedor = resolverProveedor(fila.codigoProveedor());
-                if (proveedor.isEmpty()) {
-                    errores.add("Tarjeta " + fila.numeroTarjeta() + " — Proveedor '"
-                            + fila.codigoProveedor() + "' no registrado o inactivo");
-                    continue;
-                }
-
-                tarjetaRepository.save(Tarjeta.builder()
-                        .numeroTarjeta(fila.numeroTarjeta())
-                        .alias(blankToNull(fila.alias()))
-                        .proveedor(proveedor.get())
-                        .estado(EstadoRecurso.DISPONIBLE)
-                        .activa(true)
-                        .build());
-                creados++;
             }
         } catch (IOException e) {
             throw new BusinessException("Excel inválido o ilegible", e);
@@ -101,6 +89,39 @@ public class TarjetaImportService {
         log.info("Import tarjetas (alta): creados={}, existentes={}, errores={}, duracion={}ms",
                 creados, existentes, errores.size(), duracion);
         return new ImportTarjetasAltaReportDTO(creados, existentes, errores, duracion);
+    }
+
+    /** Resultado de procesar una fila ya validada por el parser. */
+    public record ResultadoFila(boolean yaExistia, String error) {
+        public static ResultadoFila existente() { return new ResultadoFila(true, null); }
+        public static ResultadoFila creada() { return new ResultadoFila(false, null); }
+        public static ResultadoFila error(String mensaje) { return new ResultadoFila(false, mensaje); }
+    }
+
+    /**
+     * Procesa una fila YA VALIDADA por el parser (cuenta como existente,
+     * creada, o falla si el proveedor no resuelve). Extraido para que el
+     * import PDF+IA de tarjetas pueda reusarlo tras su propia pantalla de
+     * revision, sin duplicar dedupe/resolucion de proveedor/alta.
+     */
+    public ResultadoFila procesarFilaValidada(FilaTarjetaImportada fila) {
+        if (tarjetaRepository.existsByNumeroTarjeta(fila.numeroTarjeta())) {
+            return ResultadoFila.existente();
+        }
+
+        Optional<Proveedor> proveedor = resolverProveedor(fila.codigoProveedor());
+        if (proveedor.isEmpty()) {
+            return ResultadoFila.error("Proveedor '" + fila.codigoProveedor() + "' no registrado o inactivo");
+        }
+
+        tarjetaRepository.save(Tarjeta.builder()
+                .numeroTarjeta(fila.numeroTarjeta())
+                .alias(blankToNull(fila.alias()))
+                .proveedor(proveedor.get())
+                .estado(EstadoRecurso.DISPONIBLE)
+                .activa(true)
+                .build());
+        return ResultadoFila.creada();
     }
 
     private Optional<Proveedor> resolverProveedor(String codigoProveedor) {

@@ -30,8 +30,8 @@ public class UsuarioImportController {
                     + "Rol obligatorio para OFICINA), Dni (opcional en ambos).")
     public ResponseEntity<ImportUsuariosReportDTO> importar(@RequestPart("file") MultipartFile file) {
         String filename = file.getOriginalFilename();
-        if (filename == null || !filename.toLowerCase().endsWith(".xlsx")) {
-            throw new BusinessException("El archivo debe ser un .xlsx");
+        if (filename == null || (!filename.toLowerCase().endsWith(".xlsx") && !filename.toLowerCase().endsWith(".xls"))) {
+            throw new BusinessException("El archivo debe ser un .xlsx o .xls");
         }
         return ResponseEntity.ok(service.importar(file));
     }

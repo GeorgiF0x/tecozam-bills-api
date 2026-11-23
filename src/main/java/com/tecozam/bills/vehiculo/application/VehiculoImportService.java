@@ -13,7 +13,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
-import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+import org.apache.poi.ss.usermodel.WorkbookFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -48,7 +48,7 @@ public class VehiculoImportService {
         List<String> errores = new ArrayList<>();
 
         try (InputStream in = file.getInputStream();
-             Workbook wb = new XSSFWorkbook(in)) {
+             Workbook wb = WorkbookFactory.create(in)) {
             Sheet hoja = wb.getSheetAt(0);
             Map<String, Integer> headers = parser.leerCabeceras(hoja);
             for (Row row : hoja) {
@@ -62,21 +62,11 @@ public class VehiculoImportService {
                     continue;
                 }
 
-                if (existeYa(fila)) {
+                if (procesarFilaValidada(fila)) {
                     existentes++;
-                    continue;
+                } else {
+                    creados++;
                 }
-
-                vehiculoRepository.save(Vehiculo.builder()
-                        .matricula(blankToNull(fila.matricula()))
-                        .codigoObra(blankToNull(fila.codigoObra()))
-                        .categoria(CategoriaRecurso.valueOf(fila.categoria()))
-                        .tipo(fila.tipo())
-                        .descripcion(blankToNull(fila.descripcion()))
-                        .estado(EstadoRecurso.DISPONIBLE)
-                        .activo(true)
-                        .build());
-                creados++;
             }
         } catch (IOException e) {
             throw new BusinessException("Excel inválido o ilegible", e);
@@ -86,6 +76,29 @@ public class VehiculoImportService {
         log.info("Import vehiculos: creados={}, existentes={}, errores={}, duracion={}ms",
                 creados, existentes, errores.size(), duracion);
         return new ImportVehiculosReportDTO(creados, existentes, errores, duracion);
+    }
+
+    /**
+     * Procesa una fila YA VALIDADA (cuenta como existente o crea el
+     * vehiculo). Extraido para que el import PDF+IA de vehiculos pueda
+     * reusarlo tras su propia pantalla de revision, sin duplicar dedupe/alta.
+     *
+     * @return true si la fila ya existia (no se creo nada nuevo)
+     */
+    public boolean procesarFilaValidada(FilaVehiculoImportada fila) {
+        if (existeYa(fila)) {
+            return true;
+        }
+        vehiculoRepository.save(Vehiculo.builder()
+                .matricula(blankToNull(fila.matricula()))
+                .codigoObra(blankToNull(fila.codigoObra()))
+                .categoria(CategoriaRecurso.valueOf(fila.categoria()))
+                .tipo(fila.tipo())
+                .descripcion(blankToNull(fila.descripcion()))
+                .estado(EstadoRecurso.DISPONIBLE)
+                .activo(true)
+                .build());
+        return false;
     }
 
     private boolean existeYa(FilaVehiculoImportada fila) {

@@ -29,8 +29,8 @@ public class VehiculoImportController {
                     + "Matricula obligatoria para categoria VEHICULO; CodigoObra obligatorio para INDUSTRIAL_MAQUINARIA.")
     public ResponseEntity<ImportVehiculosReportDTO> importar(@RequestPart("file") MultipartFile file) {
         String filename = file.getOriginalFilename();
-        if (filename == null || !filename.toLowerCase().endsWith(".xlsx")) {
-            throw new BusinessException("El archivo debe ser un .xlsx");
+        if (filename == null || (!filename.toLowerCase().endsWith(".xlsx") && !filename.toLowerCase().endsWith(".xls"))) {
+            throw new BusinessException("El archivo debe ser un .xlsx o .xls");
         }
         return ResponseEntity.ok(service.importar(file));
     }

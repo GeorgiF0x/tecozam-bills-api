@@ -13,7 +13,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
-import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+import org.apache.poi.ss.usermodel.WorkbookFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -51,7 +51,7 @@ public class UsuarioImportService {
         List<String> errores = new ArrayList<>();
 
         try (InputStream in = file.getInputStream();
-             Workbook wb = new XSSFWorkbook(in)) {
+             Workbook wb = WorkbookFactory.create(in)) {
             Sheet hoja = wb.getSheetAt(0);
             Map<String, Integer> headers = parser.leerCabeceras(hoja);
             for (Row row : hoja) {
@@ -65,13 +65,11 @@ public class UsuarioImportService {
                     continue;
                 }
 
-                if (existeYa(fila)) {
+                if (procesarFilaValidada(fila)) {
                     existentes++;
-                    continue;
+                } else {
+                    creados++;
                 }
-
-                crear(fila);
-                creados++;
             }
         } catch (IOException e) {
             throw new BusinessException("Excel inválido o ilegible", e);
@@ -81,6 +79,21 @@ public class UsuarioImportService {
         log.info("Import usuarios: creados={}, existentes={}, errores={}, duracion={}ms",
                 creados, existentes, errores.size(), duracion);
         return new ImportUsuariosReportDTO(creados, existentes, errores, duracion);
+    }
+
+    /**
+     * Procesa una fila YA VALIDADA (cuenta como existente o crea el
+     * usuario). Extraido para que el import PDF+IA de usuarios pueda
+     * reusarlo tras su propia pantalla de revision, sin duplicar dedupe/alta.
+     *
+     * @return true si la fila ya existia (no se creo nada nuevo)
+     */
+    public boolean procesarFilaValidada(FilaUsuarioImportada fila) {
+        if (existeYa(fila)) {
+            return true;
+        }
+        crear(fila);
+        return false;
     }
 
     private boolean existeYa(FilaUsuarioImportada fila) {

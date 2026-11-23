@@ -64,6 +64,29 @@ public final class UsuarioXlsxRowParser {
         String telefono = leerCelda(row, headers, KEY_TELEFONO);
         String rol = leerCelda(row, headers, KEY_ROL);
 
+        return validar(tipoRaw, username, password, nombre, apellidos, email, dni, telefono, rol);
+    }
+
+    /**
+     * Misma validacion que {@link #parse}, a partir de campos ya extraidos —
+     * reusado por el import PDF+IA de usuarios (extrae estos mismos campos
+     * de un PDF via LLM en vez de celdas, EXCEPTO password: por seguridad el
+     * import PDF nunca manda contraseñas a la IA, el gestor la escribe a
+     * mano en la pantalla de revision antes de confirmar), para no duplicar
+     * reglas de negocio.
+     */
+    public Optional<FilaUsuarioImportada> validar(String tipoRaw, String username, String password, String nombre,
+            String apellidos, String email, String dni, String telefono, String rol) {
+        tipoRaw = tipoRaw == null ? "" : tipoRaw.trim();
+        username = username == null ? "" : username.trim();
+        password = password == null ? "" : password.trim();
+        nombre = nombre == null ? "" : nombre.trim();
+        apellidos = apellidos == null ? "" : apellidos.trim();
+        email = email == null ? "" : email.trim();
+        dni = dni == null ? "" : dni.trim();
+        telefono = telefono == null ? "" : telefono.trim();
+        rol = rol == null ? "" : rol.trim();
+
         // Fila vacia (separador/salto de linea) — se ignora en silencio.
         if (tipoRaw.isBlank() && username.isBlank() && nombre.isBlank()) {
             return Optional.empty();
