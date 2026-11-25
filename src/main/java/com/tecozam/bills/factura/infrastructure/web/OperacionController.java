@@ -12,6 +12,7 @@ import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -34,9 +35,14 @@ public class OperacionController {
      * @param fechaDesde       filtro fecha desde (ISO date, opcional)
      * @param fechaHasta       filtro fecha hasta (ISO date, opcional)
      * @param numTarjeta       filtro por últimos dígitos de tarjeta (opcional)
-     * @param q                busca por establecimiento o concepto original (opcional)
+     * @param q                busca por establecimiento, concepto original, número de
+     *                         tarjeta, conductor o referencia (opcional)
      * @param soloDisponibles  si true, excluye operaciones ya vinculadas a un ticket
      *                         (usado por el buscador de "vincular operacion")
+     * @param importeMin       importe total mínimo, incluido (opcional)
+     * @param importeMax       importe total máximo, incluido (opcional)
+     * @param litrosMin        litros (cantidad) mínimos, incluidos (opcional)
+     * @param litrosMax        litros (cantidad) máximos, incluidos (opcional)
      */
     @GetMapping
     @PreAuthorize("hasAnyRole('ADMIN', 'GESTOR')")
@@ -49,7 +55,11 @@ public class OperacionController {
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fechaHasta,
             @RequestParam(required = false) String numTarjeta,
             @RequestParam(required = false) String q,
-            @RequestParam(required = false) Boolean soloDisponibles
+            @RequestParam(required = false) Boolean soloDisponibles,
+            @RequestParam(required = false) BigDecimal importeMin,
+            @RequestParam(required = false) BigDecimal importeMax,
+            @RequestParam(required = false) BigDecimal litrosMin,
+            @RequestParam(required = false) BigDecimal litrosMax
     ) {
         Pageable pageable = PageRequest.of(page, size);
 
@@ -57,7 +67,8 @@ public class OperacionController {
         LocalDateTime hasta = fechaHasta != null ? fechaHasta.atTime(23, 59, 59) : null;
 
         return operacionRepository
-                .findWithFiltersEager(proveedorId, conceptoUnificado, desde, hasta, numTarjeta, q, soloDisponibles, pageable)
+                .findWithFiltersEager(proveedorId, conceptoUnificado, desde, hasta, numTarjeta, q, soloDisponibles,
+                        importeMin, importeMax, litrosMin, litrosMax, pageable)
                 .map(this::toDTO);
     }
 

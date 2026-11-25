@@ -46,9 +46,12 @@ public interface OperacionRepository extends JpaRepository<Operacion, Long> {
     List<Operacion> findByFacturaId(@Param("facturaId") Long facturaId);
 
     /**
-     * Candidatas para cotejo cuando el ticket sabe la tarjeta pero no tiene una
-     * {@code Tarjeta} formal vinculada (tickets manuales/OCR legacy sin
-     * tarjetaId): tarjeta+fecha/hora es una clave casi unica, así que el
+     * Candidatas para cotejo por los ultimos 4 digitos de la tarjeta. Se usa
+     * cuando el ticket no tiene una {@code Tarjeta} formal vinculada (tickets
+     * manuales/OCR legacy sin tarjetaId) y como fallback de
+     * {@link #findParaCotejoConTarjetaExacta} cuando el numero completo no
+     * encuentra nada (ver TicketService.buscarCandidatas, que en ese caso
+     * solo acepta operaciones de un resumen vinculado a esa misma Tarjeta). Tarjeta+fecha/hora es una clave casi unica, así que el
      * importe NO filtra aqui (las tarjetas de flota facturan a precio
      * pactado, distinto del precio de venta al publico que marca el ticket
      * fisico — filtrar por importe exacto descartaba candidatas validas). El
@@ -79,8 +82,10 @@ public interface OperacionRepository extends JpaRepository<Operacion, Long> {
      * digitos (con ~130 tarjetas reales, la probabilidad de al menos una
      * colision es de ~57% — paradoja del cumpleaños); comparar el numero
      * completo cuando el ticket tiene una Tarjeta formal vinculada elimina
-     * ese riesgo por completo. Se usa como primera opcion; el metodo por
-     * ultimos-4 queda como fallback para tickets sin Tarjeta formal.
+     * ese riesgo por completo. Se usa como primera opcion; si no encuentra
+     * nada, TicketService.buscarCandidatas cae a {@link #findParaCotejoConTarjeta}
+     * con los ultimos 4 de la Tarjeta y solo se queda con las operaciones
+     * cuyo resumen esta vinculado a esa misma Tarjeta.
      */
     @Query("SELECT o FROM Operacion o " +
             "WHERE o.fechaHora BETWEEN :desde AND :hasta " +
@@ -131,8 +136,10 @@ public interface OperacionRepository extends JpaRepository<Operacion, Long> {
      *                    TODAS las tarjetas de la factura — con flotas grandes,
      *                    la operacion real quedaba fuera de esos 200 aunque
      *                    existiera (bug real reportado por el cliente).
-     * @param q          busca por establecimiento o concepto original (opcional),
-     *                    en servidor en vez de solo sobre la pagina ya traida.
+     * @param q          busca por establecimiento, concepto original, numero de
+     *                    tarjeta, conductor o referencia (opcional, contiene, sin
+     *                    distinguir mayusculas), en servidor en vez de solo sobre
+     *                    la pagina ya traida.
      * @param soloDisponibles si es TRUE, excluye operaciones ya vinculadas a un
      *                    ticket no eliminado (operacionCotejada). Usado solo por
      *                    el buscador de "vincular operacion" — el listado general
@@ -140,6 +147,10 @@ public interface OperacionRepository extends JpaRepository<Operacion, Long> {
      *                    FALSE). Bug real: sin esto, una operacion ya consumida
      *                    por un ticket seguia apareciendo como candidata para
      *                    vincular otro ticket, sin aviso.
+     * @param importeMin  importeTotal minimo, incluido (opcional).
+     * @param importeMax  importeTotal maximo, incluido (opcional).
+     * @param litrosMin   cantidad (litros) minima, incluida (opcional).
+     * @param litrosMax   cantidad (litros) maxima, incluida (opcional).
      */
     @Query("SELECT o FROM Operacion o " +
             "LEFT JOIN FETCH o.tarjetaResumen tr " +
@@ -150,8 +161,15 @@ public interface OperacionRepository extends JpaRepository<Operacion, Long> {
             "AND (:fechaDesde IS NULL OR o.fechaHora >= :fechaDesde) " +
             "AND (:fechaHasta IS NULL OR o.fechaHora <= :fechaHasta) " +
             "AND (:numTarjeta IS NULL OR tr.numTarjeta LIKE %:numTarjeta) " +
+            "AND (:importeMin IS NULL OR o.importeTotal >= :importeMin) " +
+            "AND (:importeMax IS NULL OR o.importeTotal <= :importeMax) " +
+            "AND (:litrosMin IS NULL OR o.cantidad >= :litrosMin) " +
+            "AND (:litrosMax IS NULL OR o.cantidad <= :litrosMax) " +
             "AND (:q IS NULL OR LOWER(o.establecimiento) LIKE LOWER(CONCAT('%', :q, '%')) " +
-            "     OR LOWER(o.conceptoOriginal) LIKE LOWER(CONCAT('%', :q, '%'))) " +
+            "     OR LOWER(o.conceptoOriginal) LIKE LOWER(CONCAT('%', :q, '%')) " +
+            "     OR LOWER(tr.numTarjeta) LIKE LOWER(CONCAT('%', :q, '%')) " +
+            "     OR LOWER(tr.conductor) LIKE LOWER(CONCAT('%', :q, '%')) " +
+            "     OR LOWER(o.referencia) LIKE LOWER(CONCAT('%', :q, '%'))) " +
             "AND ((:soloDisponibles) IS NULL OR (:soloDisponibles) = FALSE OR NOT EXISTS (" +
             "     SELECT 1 FROM Ticket t WHERE t.operacionCotejada = o AND t.eliminadoEn IS NULL)) " +
             "ORDER BY o.fechaHora DESC")
@@ -163,6 +181,10 @@ public interface OperacionRepository extends JpaRepository<Operacion, Long> {
             @Param("numTarjeta") String numTarjeta,
             @Param("q") String q,
             @Param("soloDisponibles") Boolean soloDisponibles,
+            @Param("importeMin") BigDecimal importeMin,
+            @Param("importeMax") BigDecimal importeMax,
+            @Param("litrosMin") BigDecimal litrosMin,
+            @Param("litrosMax") BigDecimal litrosMax,
             Pageable pageable
     );
 }
