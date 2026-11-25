@@ -8,4 +8,9 @@ public class DuplicateResourceException extends BusinessException {
             field
         );
     }
+
+    /** Mismo 409, con un mensaje propio para el usuario final. */
+    public DuplicateResourceException(String message, String field) {
+        super(message, field);
+    }
 }

@@ -24,6 +24,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 
 @Service
 @Transactional
@@ -139,8 +140,16 @@ public class VehiculoService {
             if (request.matricula() == null || request.matricula().isBlank()) {
                 throw new BusinessException("La matrícula es obligatoria", "matricula");
             }
-            if (vehiculoRepository.existsByMatriculaAndEliminadoEnIsNull(request.matricula())) {
-                throw new DuplicateResourceException("Vehiculo", "matricula", request.matricula());
+            // Misma normalizacion que la consulta: "1234 abc", "1234-ABC" y "1234ABC" son la misma matricula
+            String matriculaNormalizada = request.matricula().replace(" ", "").replace("-", "").toUpperCase(Locale.ROOT);
+            List<Vehiculo> registrados = vehiculoRepository.findActivosPorMatriculaNormalizada(matriculaNormalizada);
+            if (!registrados.isEmpty()) {
+                // El operario no puede asignarse un vehiculo de otro (p.ej. prestado): que sepa por que y a quien acudir
+                Vehiculo existente = registrados.get(0);
+                throw new DuplicateResourceException(
+                        "La matrícula %s ya está registrada (estado: %s). Avisa a tu gestor para que te la asigne."
+                                .formatted(existente.getMatricula(), existente.getEstado().getDescripcion()),
+                        "matricula");
             }
         } else {
             if (request.codigoObra() == null || request.codigoObra().isBlank()) {

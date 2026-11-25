@@ -133,7 +133,7 @@ class VehiculoServiceTest {
     @Test
     @DisplayName("crearMiVehiculo sin categoria da de alta un VEHICULO por matricula (comportamiento previo)")
     void crearMiVehiculo_sinCategoria_creaVehiculoPorMatricula() {
-        when(vehiculoRepository.existsByMatriculaAndEliminadoEnIsNull("9999-TST")).thenReturn(false);
+        when(vehiculoRepository.findActivosPorMatriculaNormalizada("9999TST")).thenReturn(List.of());
         when(vehiculoRepository.save(any(Vehiculo.class))).thenAnswer(inv -> {
             Vehiculo v = inv.getArgument(0);
             v.setId(77L);
@@ -146,6 +146,34 @@ class VehiculoServiceTest {
         assertThat(result.matricula()).isEqualTo("9999-TST");
         assertThat(result.categoria()).isEqualTo("VEHICULO");
         assertThat(result.creadoPorCampo()).isTrue();
+    }
+
+    @Test
+    @DisplayName("crearMiVehiculo compara la matricula sin guiones, espacios ni mayusculas: '1234 abc' choca con un '1234-ABC' ya registrado (odd/tasks/paquete-cotejo-b.md, S6)")
+    void crearMiVehiculo_matriculaConOtroFormato_detectaDuplicado() {
+        when(vehiculoRepository.findActivosPorMatriculaNormalizada("1234ABC")).thenReturn(List.of(vehiculo));
+
+        assertThatThrownBy(() -> service.crearMiVehiculo(
+                new CreateMiVehiculoRequest("1234 abc", null, null, null)))
+                .isInstanceOf(DuplicateResourceException.class);
+        assertThatThrownBy(() -> service.crearMiVehiculo(
+                new CreateMiVehiculoRequest(" 1234-abc ", null, null, null)))
+                .isInstanceOf(DuplicateResourceException.class);
+        verify(vehiculoRepository, never()).save(any(Vehiculo.class));
+    }
+
+    @Test
+    @DisplayName("crearMiVehiculo con matricula ya registrada explica su estado y que avise al gestor")
+    void crearMiVehiculo_matriculaRegistrada_mensajeConEstadoYGestor() {
+        vehiculo.setEstado(EstadoRecurso.PRESTADO);
+        when(vehiculoRepository.findActivosPorMatriculaNormalizada("1234ABC")).thenReturn(List.of(vehiculo));
+
+        assertThatThrownBy(() -> service.crearMiVehiculo(
+                new CreateMiVehiculoRequest("1234 abc", null, null, null)))
+                .isInstanceOf(DuplicateResourceException.class)
+                .hasMessageContaining("ya está registrada")
+                .hasMessageContaining("Prestado")
+                .hasMessageContaining("gestor");
     }
 
     @Test
