@@ -183,6 +183,19 @@ class SecurityAccessControlIT {
     }
 
     @Test
+    void cualquierUsuarioConSesionPuedeConsultarLaVersionDelServidor() {
+        ResponseEntity<String> res = getWithToken("/api/version", campoAccessToken);
+        assertThat(res.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(res.getBody()).containsPattern("\"version\"\\s*:\\s*\"\\d+\\.\\d+\\.\\d+\"");
+    }
+
+    @Test
+    void sinSesionNoSePuedeConsultarLaVersionDelServidor() {
+        ResponseEntity<String> res = restTemplate.getForEntity("/api/version", String.class);
+        assertThat(res.getStatusCode().is2xxSuccessful()).isFalse();
+    }
+
+    @Test
     void campoNoPuedeMarcarFacturaRevisada() {
         ResponseEntity<String> res = patchWithToken("/api/facturas/999999/revisada", Map.of(), campoAccessToken);
         assertThat(res.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
