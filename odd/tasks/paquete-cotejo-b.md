@@ -101,3 +101,16 @@ Contexto del cliente (literal): «Estamos teniendo mucho problema a la hora de c
   - Web: riesgo medio y `under_budget`, sin revisión.
 
   Pendiente, decisión del usuario: fusionar las ramas en `main` y hacer push (la guía da por hecho que el código está en `main`). Después, enviar la guía a Diego.
+- L10 (2026-11-25): El usuario dijo «metelo ahora yo creo»: el indicador de versión entra en esta entrega.
+  - Backend: `GET /api/version` con sesión, desde `app.version=1.0.20` (6f4a8d5).
+  - Web: «Web 1.0.20 · Servidor X» al pie del menú lateral (608c8cb).
+  - PWA: «App 1.0.20 · Servidor X» en Perfil (1ee329a).
+  - Los dos avisan en ámbar si no coinciden. Un servidor antiguo responde 500 en una ruta inexistente (por su manejador global) y se muestra como «anterior a 1.0.20».
+
+  Verificación:
+  - Backend: 504/504.
+  - Web: Playwright 4/4 en versión (con los casos 500 y 404), 22/22 en total, y build OK.
+  - PWA: comprobada en el navegador con la API simulada en sus 3 casos, y build OK.
+  - RDD del backend: riesgo alto, concedido por el usuario, aprobado y confirmado (`review-fb1e09623e2f78ca`). Web y PWA: riesgo medio, `under_budget`.
+
+  La guía se ha actualizado con la comprobación de versiones. Regla nueva: en cada entrega hay que subir `app.version`, `WEB_VERSION` y `APP_VERSION`.
