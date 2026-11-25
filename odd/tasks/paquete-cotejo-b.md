@@ -25,9 +25,9 @@ Contexto del cliente (literal): «Estamos teniendo mucho problema a la hora de c
 
 ## Tasks
 
-- T1 · S1, S2, S3-api, S4-api, S5, S6, S7, S8 · delegado (writer API, en paralelo con T2) · hecho, sin commit: S1-S6 y S8 por el writer; S7 inline por el padre (constructor nuevo `DuplicateResourceException(message, field)`); suite `./mvnw test` 491/491
-- T2 · S3-web, S4-web, S5-web · delegado (writer WEB, en paralelo con T1) · hecho, sin commit: Playwright 19/19 (RED→GREEN en 6 tests nuevos), tsc 0, build OK, eslint solo con el error previo `tickets/page.tsx:1588`
-- T3 · S1-S3 · revisión independiente del cotejo (agente `tecozam-cotejo-reviewer`; ítem de riesgo 1: cambia estados de tickets guardados) · hecha: 1 🔴 y 4 🟡 → lote de corrección en curso (writer API)
+- T1 · S1, S2, S3-api, S4-api, S5, S6, S7, S8 · delegado (writer API, en paralelo con T2) · hecho, commits c86decd (cotejo) / f7c068c (operaciones) / f5584d6 (vehículos): S1-S6 y S8 por el writer; S7 inline por el padre (constructor nuevo `DuplicateResourceException(message, field)`); suite `./mvnw test` 491/491
+- T2 · S3-web, S4-web, S5-web · delegado (writer WEB, en paralelo con T1) · hecho, commits web 13c04a7 (vincular) / c8cbdea (factura revisada): Playwright 19/19 (RED→GREEN en 6 tests nuevos), tsc 0, build OK, eslint solo con el error previo `tickets/page.tsx:1588`
+- T3 · S1-S3 · revisión independiente del cotejo (agente `tecozam-cotejo-reviewer`; ítem de riesgo 1: cambia estados de tickets guardados) · hecha: 1 🔴 y 4 🟡 corregidos, recomprobación OK, hueco VIAT cerrado por decisión del usuario
 - T4 · S4-S6 · consultas JPQL contra MSSQL real · hecho: `OperacionRepositoryIT`, `VehiculoRepositoryIT` y E2E real con Playwright
 - T5 · S9 · guía PDF en `GUIAS/` · inline · hecho: `GUIAS/GUIA-ACTUALIZACION-2026-11-25.pdf` (v1.0.20, TBM-2026-022, 4 págs.), fuente en `GUIAS/fuentes/`
 
@@ -86,3 +86,18 @@ Contexto del cliente (literal): «Estamos teniendo mucho problema a la hora de c
   Es un hallazgo nuevo tras la corrección, así que según el protocolo no hay segunda corrección automática: queda como **Necesita tu decisión**.
 
   ❓ Si el maestro tiene una tarjeta duplicada antigua, la guardia rechaza la operación de su propia tarjeta física. Ya pasaba antes; tiene que ver con el pendiente de las tarjetas autocreadas.
+- L9 (2026-11-25): El usuario decide: «vale lo aplicamos si cierra el riesgo». El fallback por últimos 4 ya solo acepta resúmenes de la MISMA Tarjeta; se rechaza también la tarjeta nula (VIAT). Test invertido (RED→GREEN), comentarios corregidos y suite 502/502.
+
+  Commits en `feat/paquete-cotejo-b`:
+  - API: c86decd, f7c068c, f5584d6 y 329f1a6.
+  - Web: 13c04a7 y c8cbdea.
+
+  RDD:
+  - API: riesgo alto. Consentimiento concedido por el usuario; perspectivas risk, resilience y reliability. Aprobada y confirmada (`review-c83ebef15c32a811`).
+  - Avisos no bloqueantes del RDD:
+    - el 409 de la matrícula revela su estado (era el comportamiento pedido en S7);
+    - el endpoint `/revisada` está bien protegido;
+    - el reintento hace N+1 consultas (aplazado).
+  - Web: riesgo medio y `under_budget`, sin revisión.
+
+  Pendiente, decisión del usuario: fusionar las ramas en `main` y hacer push (la guía da por hecho que el código está en `main`). Después, enviar la guía a Diego.
