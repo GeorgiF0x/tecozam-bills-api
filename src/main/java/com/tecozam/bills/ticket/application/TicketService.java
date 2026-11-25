@@ -299,8 +299,19 @@ public class TicketService {
         return afectados.size();
     }
 
+    /**
+     * Coteja los tickets PENDIENTE y, ademas, reintenta los SIN_COINCIDENCIA y
+     * las INCIDENCIA puestas por el propio cotejo por falta de operacion (ver
+     * {@link #esReintentable}). Asi un ticket cuya operacion llega en una
+     * factura posterior se coteja solo al importarla (caso real ticket #508,
+     * odd/tasks/paquete-cotejo-b.md S1).
+     */
     public CotejoResultDTO cotejarPendientes() {
         List<Ticket> pendientes = ticketRepository.findByEstadoCotejo("PENDIENTE");
+        // Se cargan antes de procesar los PENDIENTE: los que este mismo cotejo
+        // deje en SIN_COINCIDENCIA/INCIDENCIA no se reintentan en la misma pasada.
+        List<Ticket> reintentables = ticketRepository.findByEstadoCotejoIn(List.of("SIN_COINCIDENCIA", "INCIDENCIA"))
+                .stream().filter(this::esReintentable).toList();
         Usuario gestorDefault = findGestorDefault();
 
         int cotejados = 0;
@@ -330,6 +341,8 @@ public class TicketService {
                     ticket.setEstadoCotejo("INCIDENCIA");
                     ticket.setTipoIncidencia("OPERACION_NO_EXISTE");
                     ticket.setObservaciones("Auto-detectado: no se encontró operación coincidente en ±24h");
+                    // Incidencia nueva del sistema: si se resolvio otra antes, que el reintento la vea
+                    ticket.setResueltoEn(null);
                     if (gestorDefault != null) ticket.setAsignadoA(gestorDefault);
                     incidencias++;
                 } else {
@@ -351,11 +364,72 @@ public class TicketService {
             }
         }
 
-        ticketRepository.saveAll(pendientes);
+        // Reintento: solo la busqueda estricta (+-2h) y solo cambia algo si hay
+        // candidata. Sin candidata el ticket no se toca (nunca empeora).
+        List<Ticket> aGuardar = new ArrayList<>(pendientes);
+        for (Ticket ticket : reintentables) {
+            List<Operacion> candidatas = buscarCandidatas(ticket,
+                    ticket.getFechaHora().minusHours(2), ticket.getFechaHora().plusHours(2));
+            if (candidatas.isEmpty()) {
+                continue;
+            }
+            Operacion mejorCandidata = elegirMejorCandidata(candidatas, ticket);
+            if (mejorCandidata == null) {
+                ticket.setEstadoCotejo("MULTIPLE");
+                limpiarIncidenciaAutomatica(ticket);
+                multiples++;
+            } else {
+                // No deshacer una reasignacion humana: el responsable actual manda
+                Usuario responsable = ticket.getAsignadoA() != null ? ticket.getAsignadoA() : gestorDefault;
+                aplicarResultadoCotejo(ticket, mejorCandidata, responsable);
+                if ("COTEJADO".equals(ticket.getEstadoCotejo())) {
+                    limpiarIncidenciaAutomatica(ticket);
+                    cotejados++;
+                } else {
+                    incidencias++;
+                }
+            }
+            aGuardar.add(ticket);
+        }
+
+        ticketRepository.saveAll(aGuardar);
         log.info("Cotejo completado: cotejados={}, sinCoincidencia={}, multiples={}, incidencias={}",
                 cotejados, sinCoincidencia, multiples, incidencias);
 
         return new CotejoResultDTO(cotejados, 0, sinCoincidencia, incidencias, multiples);
+    }
+
+    /**
+     * Ticket que el cotejo puede volver a intentar sin pisar trabajo humano:
+     * SIN_COINCIDENCIA, o INCIDENCIA puesta por el propio cotejo por falta de
+     * operacion (OPERACION_NO_EXISTE o SIN_COTEJAR_1_MES, observacion
+     * "Auto-detectado" y sin resolver). Las incidencias marcadas o resueltas por
+     * una persona no cumplen esto y nunca se tocan.
+     */
+    private boolean esReintentable(Ticket ticket) {
+        if (ticket.getOperacionCotejada() != null) {
+            return false;
+        }
+        if ("SIN_COINCIDENCIA".equals(ticket.getEstadoCotejo())) {
+            return true;
+        }
+        return "INCIDENCIA".equals(ticket.getEstadoCotejo())
+                && ("OPERACION_NO_EXISTE".equals(ticket.getTipoIncidencia())
+                        || "SIN_COTEJAR_1_MES".equals(ticket.getTipoIncidencia()))
+                && esObservacionAutomatica(ticket.getObservaciones())
+                && ticket.getResueltoEn() == null;
+    }
+
+    /** Ya hay candidata: "la operacion no existe" deja de ser cierto. */
+    private void limpiarIncidenciaAutomatica(Ticket ticket) {
+        ticket.setTipoIncidencia(null);
+        if (esObservacionAutomatica(ticket.getObservaciones())) {
+            ticket.setObservaciones(null);
+        }
+    }
+
+    private boolean esObservacionAutomatica(String observaciones) {
+        return observaciones != null && observaciones.startsWith("Auto-detectado");
     }
 
     /**
@@ -384,6 +458,8 @@ public class TicketService {
                 ticket.setTipoIncidencia("SIN_COTEJAR_1_MES");
                 ticket.setObservaciones("Auto-detectado: han pasado más de " + DIAS_LIMITE_SIN_COTEJAR
                         + " días desde la operación sin encontrar una factura que la cubra");
+                // Incidencia nueva del sistema: si se resolvio otra antes, que el reintento la vea
+                ticket.setResueltoEn(null);
                 if (gestorDefault != null) ticket.setAsignadoA(gestorDefault);
                 escalados.add(ticket);
             }
@@ -510,20 +586,41 @@ public class TicketService {
      * Busca operaciones candidatas para el ticket en la ventana de fecha dada,
      * en orden de preferencia: tarjeta completa (exacta, sin riesgo de
      * colision de ultimos 4 digitos) > tarjeta por ultimos 4 (LIKE, cuando el
-     * ticket no tiene una Tarjeta formal vinculada) > importe (si no hay
-     * ninguna tarjeta conocida). Se reutiliza tanto para la busqueda estricta
-     * (+-2h) como para la ampliada (+-24h) para que ambas respeten la misma
-     * prioridad de señal.
+     * ticket no tiene una Tarjeta formal vinculada, o cuando la tiene pero el
+     * numero exacto no encuentra nada, p.ej. porque el numero cambio en el
+     * maestro tras importar; solo acepta operaciones de esa misma Tarjeta) > importe (si no hay ninguna tarjeta
+     * conocida). Se reutiliza tanto para la busqueda estricta (+-2h) como para
+     * la ampliada (+-24h) para que ambas respeten la misma prioridad de señal.
+     * Con varias candidatas por ultimos 4, desempata {@link #elegirMejorCandidata}.
      */
     private List<Operacion> buscarCandidatas(Ticket ticket, LocalDateTime desde, LocalDateTime hasta) {
-        String numTarjetaCompleto = ticket.getTarjeta() != null ? ticket.getTarjeta().getNumeroTarjeta() : null;
+        Tarjeta tarjeta = ticket.getTarjeta();
+        String numTarjetaCompleto = tarjeta != null ? tarjeta.getNumeroTarjeta() : null;
         if (numTarjetaCompleto != null && !numTarjetaCompleto.isBlank()) {
-            return operacionRepository.findParaCotejoConTarjetaExacta(desde, hasta, numTarjetaCompleto);
+            List<Operacion> exactas = operacionRepository.findParaCotejoConTarjetaExacta(desde, hasta, numTarjetaCompleto);
+            if (!exactas.isEmpty()) {
+                return exactas;
+            }
+            // Fallback: los ultimos 4 salen de la Tarjeta, no del numTarjeta4ultimos
+            // escrito a mano (createManual los rellena por separado).
+            String limpio = numTarjetaCompleto.trim();
+            String ultimos4 = limpio.substring(Math.max(0, limpio.length() - 4));
+            // El LIKE por sufijo puede traer operaciones de otras tarjetas con el
+            // mismo final: solo valen las del resumen vinculado a ESTA Tarjeta. Un
+            // resumen sin Tarjeta solo existe tras reclasificar a VIAT (peajes).
+            return operacionRepository.findParaCotejoConTarjeta(desde, hasta, ultimos4).stream()
+                    .filter(op -> esDeLaTarjeta(op, tarjeta))
+                    .toList();
         }
         if (ticket.getNumTarjeta4ultimos() != null && !ticket.getNumTarjeta4ultimos().isBlank()) {
             return operacionRepository.findParaCotejoConTarjeta(desde, hasta, ticket.getNumTarjeta4ultimos());
         }
         return operacionRepository.findParaCotejo(desde, hasta, ticket.getImporteTotal());
+    }
+
+    private boolean esDeLaTarjeta(Operacion op, Tarjeta tarjeta) {
+        Tarjeta delResumen = op.getTarjetaResumen() != null ? op.getTarjetaResumen().getTarjeta() : null;
+        return delResumen != null && java.util.Objects.equals(delResumen.getId(), tarjeta.getId());
     }
 
     /**

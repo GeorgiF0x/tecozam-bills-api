@@ -155,8 +155,9 @@ public class ReclasificarTarjetasAViatService {
                 .build()));
 
         // Desvincular TarjetaResumen.tarjeta (FK opcional, de cualquier
-        // factura pasada o presente) antes de borrar: el cotejo no depende de
-        // este FK (usa numTarjeta como String), así que desvincular es seguro.
+        // factura pasada o presente) antes de borrar. El cotejo exacto usa
+        // numTarjeta como String; el fallback por ultimos 4 exige este FK y,
+        // al quedar nulo, nunca ofrece estos peajes a un ticket de tarjeta.
         List<TarjetaResumen> vinculadas = tarjetaResumenRepository.findByTarjetaId(tarjeta.getId());
         vinculadas.forEach(tr -> tr.setTarjeta(null));
         tarjetaResumenRepository.saveAll(vinculadas);

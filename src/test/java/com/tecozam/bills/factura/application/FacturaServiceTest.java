@@ -278,6 +278,85 @@ class FacturaServiceTest {
         verify(facturaRepository).save(any(Factura.class));
     }
 
+    // ── Marcar como revisada (odd/tasks/paquete-cotejo-b.md, S3) ──
+
+    @Test
+    @DisplayName("marcarRevisada solo quita requiereRevisionManual y guarda: el cotejo va aparte (recotejarPendientes) para que un fallo del cotejo no revierta el flag")
+    void marcarRevisada_soloGuardaElFlag() {
+        Factura factura = Factura.builder().id(10L).numFactura("FA-001").requiereRevisionManual(true).build();
+        when(facturaRepository.findById(10L)).thenReturn(Optional.of(factura));
+
+        var dto = service.marcarRevisada(10L);
+
+        assertThat(factura.isRequiereRevisionManual()).isFalse();
+        assertThat(dto.requiereRevisionManual()).isFalse();
+        verify(facturaRepository).save(factura);
+        org.mockito.Mockito.verifyNoInteractions(ticketService);
+    }
+
+    @Test
+    @DisplayName("recotejarPendientes lanza el mismo cotejo que tras un import")
+    void recotejarPendientes_lanzaElCotejo() {
+        service.recotejarPendientes();
+
+        verify(ticketService).cotejarPendientes();
+    }
+
+    @Test
+    @DisplayName("recotejarPendientes no propaga un error del cotejo (solo se registra en el log)")
+    void recotejarPendientes_errorEnCotejo_noSePropaga() {
+        when(ticketService.cotejarPendientes()).thenThrow(new IllegalStateException("fallo simulado del cotejo"));
+
+        org.assertj.core.api.Assertions.assertThatCode(() -> service.recotejarPendientes())
+                .doesNotThrowAnyException();
+    }
+
+    @Test
+    @DisplayName("recotejarPendientes corre fuera de cualquier transaccion (NOT_SUPPORTED): el cotejo abre la suya y si falla no marca rollback-only la de marcarRevisada")
+    void recotejarPendientes_fueraDeTransaccion() throws Exception {
+        var anotacion = FacturaService.class.getMethod("recotejarPendientes")
+                .getAnnotation(org.springframework.transaction.annotation.Transactional.class);
+
+        assertThat(anotacion).isNotNull();
+        assertThat(anotacion.propagation())
+                .isEqualTo(org.springframework.transaction.annotation.Propagation.NOT_SUPPORTED);
+    }
+
+    @Test
+    @DisplayName("marcarRevisada de una factura inexistente lanza ResourceNotFoundException (404)")
+    void marcarRevisada_inexistente_lanzaExcepcion() {
+        when(facturaRepository.findById(999L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.marcarRevisada(999L))
+                .isInstanceOf(ResourceNotFoundException.class);
+        org.mockito.Mockito.verifyNoInteractions(ticketService);
+    }
+
+    @Test
+    @DisplayName("el FacturaDTO expone requiereRevisionManual")
+    void findById_exponeRequiereRevisionManual() {
+        Factura factura = Factura.builder().id(10L).numFactura("FA-001").requiereRevisionManual(true).build();
+        when(facturaRepository.findById(10L)).thenReturn(Optional.of(factura));
+
+        assertThat(service.findById(10L).requiereRevisionManual()).isTrue();
+    }
+
+    // ── Mensaje de extracto obligatorio (S8) ──
+
+    @Test
+    @DisplayName("sin extracto para CEPSA/MOEVE, el mensaje dice que el extracto puede ser PDF o Excel")
+    void importar_cepsaSinExtracto_mensajeExtractoPdfOExcel() {
+        Proveedor cepsa = new Proveedor();
+        cepsa.setId(2L);
+        cepsa.setCodigo("MOEVE_CEPSA");
+        cepsa.setNombre("Moeve/Cepsa");
+        when(proveedorRepository.findById(2L)).thenReturn(Optional.of(cepsa));
+
+        assertThatThrownBy(() -> service.importar(2L, pdfFile(), null))
+                .isInstanceOf(com.tecozam.bills.shared.infrastructure.exception.BusinessException.class)
+                .hasMessage("Para facturas de Moeve/Cepsa es obligatorio adjuntar el extracto (PDF o Excel) junto con la factura.");
+    }
+
     @Test
     @DisplayName("rechaza formatos que no son PDF ni Excel (p.ej. imagenes, Word)")
     void importar_formatoNoSoportado_lanzaExcepcion() {

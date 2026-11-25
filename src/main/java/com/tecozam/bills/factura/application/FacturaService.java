@@ -25,6 +25,7 @@ import com.tecozam.bills.ticket.application.TicketService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -85,7 +86,7 @@ public class FacturaService {
         if (requiereExtracto && !tieneExtracto) {
             throw new BusinessException(
                     "Para facturas de " + proveedor.getNombre()
-                            + " es obligatorio adjuntar el extracto PDF junto con la factura.");
+                            + " es obligatorio adjuntar el extracto (PDF o Excel) junto con la factura.");
         }
 
         // 4. Parsear
@@ -240,6 +241,18 @@ public class FacturaService {
         );
     }
 
+    /**
+     * Cotejo tras marcar una factura como revisada. Corre fuera de cualquier
+     * transaccion: {@code TicketService.cotejarPendientes} abre la suya y, si
+     * falla, solo se registra en el log, sin revertir el cambio ya guardado
+     * por {@link #marcarRevisada}. (El import, en cambio, coteja dentro de su
+     * propia transaccion para ver las operaciones recien importadas.)
+     */
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    public void recotejarPendientes() {
+        cotejarPendientesAsync();
+    }
+
     private void cotejarPendientesAsync() {
         try {
             ticketService.cotejarPendientes();
@@ -266,6 +279,22 @@ public class FacturaService {
     public FacturaDTO findById(Long id) {
         Factura factura = facturaRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Factura", id));
+        return toDTO(factura);
+    }
+
+    /**
+     * Una persona ha revisado los avisos de una factura importada en modo IA:
+     * la devuelve al cotejo automatico (odd/tasks/paquete-cotejo-b.md, S3).
+     * Solo guarda el flag, en su propia transaccion; el cotejo lo lanza el
+     * controller despues con {@link #recotejarPendientes}, para que un fallo
+     * del cotejo no revierta este cambio.
+     */
+    public FacturaDTO marcarRevisada(Long id) {
+        Factura factura = facturaRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Factura", id));
+        factura.setRequiereRevisionManual(false);
+        factura = facturaRepository.save(factura);
+        log.info("[FacturaService] Factura {} marcada como revisada (id={})", factura.getNumFactura(), id);
         return toDTO(factura);
     }
 
@@ -369,7 +398,8 @@ public class FacturaService {
                 numOperaciones,
                 f.getAvisosImport() != null && !f.getAvisosImport().isBlank()
                         ? List.of(f.getAvisosImport().split("\n"))
-                        : List.of()
+                        : List.of(),
+                f.isRequiereRevisionManual()
         );
     }
 }

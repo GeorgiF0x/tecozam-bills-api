@@ -102,6 +102,19 @@ public class FacturaController {
     }
 
     /**
+     * Marca como revisada una factura con avisos: deja de requerir revisión
+     * manual, vuelve al cotejo automático y se re-cotejan los tickets pendientes.
+     */
+    @PatchMapping("/{id}/revisada")
+    @PreAuthorize("hasAnyRole('ADMIN','GESTOR')")
+    public FacturaDTO marcarRevisada(@PathVariable Long id) {
+        // Dos llamadas: el flag ya queda guardado aunque el cotejo falle
+        FacturaDTO factura = facturaService.marcarRevisada(id);
+        facturaService.recotejarPendientes();
+        return factura;
+    }
+
+    /**
      * NEW-09: borra una factura junto con sus operaciones, tarjetaResumenes y
      * conceptos. Los tickets cotejados contra esta factura se desvinculan a
      * estado PENDIENTE. El PDF físico también se borra (best-effort).

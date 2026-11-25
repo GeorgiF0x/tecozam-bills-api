@@ -183,6 +183,19 @@ class SecurityAccessControlIT {
     }
 
     @Test
+    void campoNoPuedeMarcarFacturaRevisada() {
+        ResponseEntity<String> res = patchWithToken("/api/facturas/999999/revisada", Map.of(), campoAccessToken);
+        assertThat(res.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
+    }
+
+    @Test
+    void gestorPasaElFiltroAlMarcarFacturaRevisada() {
+        // Factura inexistente: si el rol pasa, el servicio responde 404 (no 403)
+        ResponseEntity<String> res = patchWithToken("/api/facturas/999999/revisada", Map.of(), gestorAccessToken);
+        assertThat(res.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+    }
+
+    @Test
     void campoSinPermisoNoPuedeEditarTicketPropio() {
         ResponseEntity<String> res = patchWithToken(
                 "/api/tickets/mis-tickets/999999",

@@ -25,5 +25,7 @@ public record FacturaDTO(
         String creadoPor,
         int numTarjetas,
         int numOperaciones,
-        List<String> avisosImport
+        List<String> avisosImport,
+        /** true si la factura esta fuera del cotejo automatico hasta que alguien la marque como revisada. */
+        boolean requiereRevisionManual
 ) {}

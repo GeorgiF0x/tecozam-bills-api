@@ -651,6 +651,342 @@ class TicketServiceTest {
         assertThat(ticket.getTipoIncidencia()).isEqualTo("FECHA_INCORRECTA");
     }
 
+    // ── Reintento de SIN_COINCIDENCIA e INCIDENCIA automatica (odd/tasks/paquete-cotejo-b.md, S1) ──
+
+    private Ticket ticketReintentable(String estado, String tipoIncidencia, String observaciones) {
+        return Ticket.builder()
+                .estadoCotejo(estado)
+                .tipoIncidencia(tipoIncidencia)
+                .observaciones(observaciones)
+                .fechaHora(LocalDateTime.of(2026, 10, 6, 8, 54))
+                .importeTotal(new BigDecimal("107.00"))
+                .litros(new BigDecimal("53.39"))
+                .numTarjeta4ultimos("2025")
+                .build();
+    }
+
+    private Operacion operacionTicket508() {
+        return Operacion.builder()
+                .fechaHora(LocalDateTime.of(2026, 10, 6, 8, 52, 54))
+                .importeTotal(new BigDecimal("107.00"))
+                .cantidad(new BigDecimal("53.39"))
+                .build();
+    }
+
+    @Test
+    @DisplayName("cotejarPendientes reintenta una INCIDENCIA automatica 'operacion no existe' y, si aparece la operacion en +-2h, la deja COTEJADA y limpia el tipo y la observacion automatica (caso real ticket #508)")
+    void cotejarPendientes_reintentaIncidenciaAutomatica_quedaCotejadaYLimpia() {
+        Ticket ticket = ticketReintentable("INCIDENCIA", "OPERACION_NO_EXISTE",
+                "Auto-detectado: no se encontró operación coincidente en ±24h");
+        Operacion operacion = operacionTicket508();
+
+        when(ticketRepository.findByEstadoCotejoIn(List.of("SIN_COINCIDENCIA", "INCIDENCIA"))).thenReturn(List.of(ticket));
+        when(usuarioRepository.findAll()).thenReturn(List.of());
+        when(operacionRepository.findParaCotejoConTarjeta(any(), any(), eq("2025"))).thenReturn(List.of(operacion));
+
+        var resultado = service.cotejarPendientes();
+
+        assertThat(ticket.getEstadoCotejo()).isEqualTo("COTEJADO");
+        assertThat(ticket.getOperacionCotejada()).isEqualTo(operacion);
+        assertThat(ticket.getTipoIncidencia()).isNull();
+        assertThat(ticket.getObservaciones()).isNull();
+        assertThat(resultado.cotejados()).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("cotejarPendientes marca MULTIPLE un SIN_COINCIDENCIA reintentado cuando aparecen dos candidatas empatadas en importe")
+    void cotejarPendientes_reintentaSinCoincidencia_candidatasEmpatadas_marcaMultiple() {
+        Ticket ticket = ticketReintentable("SIN_COINCIDENCIA", null, null);
+        Operacion op1 = Operacion.builder().fechaHora(ticket.getFechaHora()).importeTotal(new BigDecimal("100.00")).build();
+        Operacion op2 = Operacion.builder().fechaHora(ticket.getFechaHora()).importeTotal(new BigDecimal("114.00")).build();
+
+        when(ticketRepository.findByEstadoCotejoIn(List.of("SIN_COINCIDENCIA", "INCIDENCIA"))).thenReturn(List.of(ticket));
+        when(usuarioRepository.findAll()).thenReturn(List.of());
+        when(operacionRepository.findParaCotejoConTarjeta(any(), any(), eq("2025"))).thenReturn(List.of(op1, op2));
+
+        var resultado = service.cotejarPendientes();
+
+        assertThat(ticket.getEstadoCotejo()).isEqualTo("MULTIPLE");
+        assertThat(ticket.getOperacionCotejada()).isNull();
+        assertThat(resultado.multiples()).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("cotejarPendientes: una incidencia automatica que pasa a MULTIPLE deja de decir que la operacion no existe")
+    void cotejarPendientes_incidenciaAutomaticaPasaAMultiple_limpiaNoExiste() {
+        Ticket ticket = ticketReintentable("INCIDENCIA", "OPERACION_NO_EXISTE",
+                "Auto-detectado: no se encontró operación coincidente en ±24h");
+        Operacion op1 = Operacion.builder().fechaHora(ticket.getFechaHora()).importeTotal(new BigDecimal("100.00")).build();
+        Operacion op2 = Operacion.builder().fechaHora(ticket.getFechaHora()).importeTotal(new BigDecimal("114.00")).build();
+
+        when(ticketRepository.findByEstadoCotejoIn(List.of("SIN_COINCIDENCIA", "INCIDENCIA"))).thenReturn(List.of(ticket));
+        when(usuarioRepository.findAll()).thenReturn(List.of());
+        when(operacionRepository.findParaCotejoConTarjeta(any(), any(), eq("2025"))).thenReturn(List.of(op1, op2));
+
+        service.cotejarPendientes();
+
+        assertThat(ticket.getEstadoCotejo()).isEqualTo("MULTIPLE");
+        assertThat(ticket.getTipoIncidencia()).isNull();
+        assertThat(ticket.getObservaciones()).isNull();
+    }
+
+    @Test
+    @DisplayName("cotejarPendientes no toca un ticket reintentado si sigue sin candidata en +-2h: ni cambia de estado, ni empeora, ni busca en +-24h")
+    void cotejarPendientes_reintentadoSinCandidatas_noSeToca() {
+        Ticket sinCoincidencia = ticketReintentable("SIN_COINCIDENCIA", null, "Nota del operario");
+        Ticket incidenciaAntigua = ticketReintentable("INCIDENCIA", "SIN_COTEJAR_1_MES",
+                "Auto-detectado: han pasado más de 30 días desde la operación sin encontrar una factura que la cubra");
+
+        when(ticketRepository.findByEstadoCotejoIn(List.of("SIN_COINCIDENCIA", "INCIDENCIA")))
+                .thenReturn(List.of(sinCoincidencia, incidenciaAntigua));
+        when(usuarioRepository.findAll()).thenReturn(List.of());
+
+        var resultado = service.cotejarPendientes();
+
+        assertThat(sinCoincidencia.getEstadoCotejo()).isEqualTo("SIN_COINCIDENCIA");
+        assertThat(sinCoincidencia.getObservaciones()).isEqualTo("Nota del operario");
+        assertThat(incidenciaAntigua.getEstadoCotejo()).isEqualTo("INCIDENCIA");
+        assertThat(incidenciaAntigua.getTipoIncidencia()).isEqualTo("SIN_COTEJAR_1_MES");
+        assertThat(incidenciaAntigua.getObservaciones()).startsWith("Auto-detectado");
+        assertThat(resultado).isEqualTo(new com.tecozam.bills.ticket.dto.CotejoResultDTO(0, 0, 0, 0, 0));
+        // Una llamada por ticket (solo la estricta +-2h), nunca la ampliada de +-24h
+        verify(operacionRepository, org.mockito.Mockito.times(2)).findParaCotejoConTarjeta(any(), any(), eq("2025"));
+    }
+
+    @Test
+    @DisplayName("cotejarPendientes nunca toca una INCIDENCIA marcada o resuelta por una persona, ni una con otro tipo de incidencia")
+    void cotejarPendientes_incidenciaHumanaOResuelta_noSeToca() {
+        Ticket marcadaPorPersona = ticketReintentable("INCIDENCIA", "OPERACION_NO_EXISTE", "Revisado por el gestor: falta la factura");
+        Ticket resuelta = ticketReintentable("INCIDENCIA", "OPERACION_NO_EXISTE",
+                "Auto-detectado: no se encontró operación coincidente en ±24h");
+        resuelta.setResueltoEn(LocalDateTime.of(2026, 10, 20, 9, 0));
+        Ticket otroTipo = ticketReintentable("INCIDENCIA", "TARJETA_INCORRECTA",
+                "Auto-detectado: no se encontró operación coincidente en ±24h");
+
+        when(ticketRepository.findByEstadoCotejoIn(List.of("SIN_COINCIDENCIA", "INCIDENCIA")))
+                .thenReturn(List.of(marcadaPorPersona, resuelta, otroTipo));
+        when(usuarioRepository.findAll()).thenReturn(List.of());
+        org.mockito.Mockito.lenient().when(operacionRepository.findParaCotejoConTarjeta(any(), any(), any()))
+                .thenReturn(List.of(operacionTicket508()));
+
+        service.cotejarPendientes();
+
+        for (Ticket t : List.of(marcadaPorPersona, resuelta, otroTipo)) {
+            assertThat(t.getEstadoCotejo()).isEqualTo("INCIDENCIA");
+            assertThat(t.getOperacionCotejada()).isNull();
+        }
+        verify(operacionRepository, never()).findParaCotejoConTarjeta(any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("cotejarPendientes sigue marcando INCIDENCIA OPERACION_NO_EXISTE un PENDIENTE sin ninguna candidata en +-24h (comportamiento previo)")
+    void cotejarPendientes_pendienteSinCandidatas_sigueMarcandoOperacionNoExiste() {
+        Ticket ticket = ticketReintentable("PENDIENTE", null, null);
+
+        when(ticketRepository.findByEstadoCotejo("PENDIENTE")).thenReturn(List.of(ticket));
+        when(usuarioRepository.findAll()).thenReturn(List.of());
+
+        var resultado = service.cotejarPendientes();
+
+        assertThat(ticket.getEstadoCotejo()).isEqualTo("INCIDENCIA");
+        assertThat(ticket.getTipoIncidencia()).isEqualTo("OPERACION_NO_EXISTE");
+        assertThat(ticket.getObservaciones()).startsWith("Auto-detectado");
+        assertThat(resultado.incidencias()).isEqualTo(1);
+    }
+
+    // ── Fallback a ultimos 4 digitos (S2) ──
+
+    @Test
+    @DisplayName("cotejarPendientes, con Tarjeta formal y sin coincidencia por numero exacto, busca por los ultimos 4 digitos de la Tarjeta, no por el numTarjeta4ultimos escrito a mano (createManual los rellena por separado)")
+    void cotejarPendientes_tarjetaExactaSinResultado_usaUltimos4DeLaTarjetaNoDelTextoLibre() {
+        Tarjeta tarjetaCepsa = Tarjeta.builder().numeroTarjeta("708011008022412025").build();
+        tarjetaCepsa.setId(301L); // la operacion es de esta misma Tarjeta (el fallback solo acepta esas)
+        Ticket ticket = ticketReintentable("PENDIENTE", null, null);
+        ticket.setNumTarjeta4ultimos("9999");
+        ticket.setTarjeta(tarjetaCepsa);
+        Operacion operacion = operacionDeResumenConTarjeta(tarjetaCepsa);
+
+        when(ticketRepository.findByEstadoCotejo("PENDIENTE")).thenReturn(List.of(ticket));
+        when(usuarioRepository.findAll()).thenReturn(List.of());
+        when(operacionRepository.findParaCotejoConTarjetaExacta(any(), any(), eq("708011008022412025"))).thenReturn(List.of());
+        when(operacionRepository.findParaCotejoConTarjeta(any(), any(), eq("2025"))).thenReturn(List.of(operacion));
+
+        service.cotejarPendientes();
+
+        assertThat(ticket.getOperacionCotejada()).isEqualTo(operacion);
+        assertThat(ticket.getEstadoCotejo()).isEqualTo("COTEJADO");
+    }
+
+    private Operacion operacionDeResumenConTarjeta(Tarjeta tarjetaDelResumen) {
+        Operacion op = operacionTicket508();
+        op.setTarjetaResumen(com.tecozam.bills.factura.domain.TarjetaResumen.builder()
+                .numTarjeta("708011008099992025")
+                .tarjeta(tarjetaDelResumen)
+                .build());
+        return op;
+    }
+
+    @Test
+    @DisplayName("el fallback por ultimos 4 descarta operaciones de OTRA Tarjeta del maestro que comparte sufijo: el ticket acaba como si no hubiera candidata")
+    void cotejarPendientes_fallbackUltimos4_descartaOperacionDeOtraTarjeta() {
+        Tarjeta tarjetaA = Tarjeta.builder().numeroTarjeta("708011008022412025").build();
+        tarjetaA.setId(201L);
+        Tarjeta tarjetaB = Tarjeta.builder().numeroTarjeta("708011008099992025").build();
+        tarjetaB.setId(202L);
+        Ticket ticket = ticketReintentable("PENDIENTE", null, null);
+        ticket.setTarjeta(tarjetaA);
+
+        when(ticketRepository.findByEstadoCotejo("PENDIENTE")).thenReturn(List.of(ticket));
+        when(usuarioRepository.findAll()).thenReturn(List.of());
+        when(operacionRepository.findParaCotejoConTarjetaExacta(any(), any(), eq("708011008022412025"))).thenReturn(List.of());
+        when(operacionRepository.findParaCotejoConTarjeta(any(), any(), eq("2025")))
+                .thenReturn(List.of(operacionDeResumenConTarjeta(tarjetaB)));
+
+        service.cotejarPendientes();
+
+        assertThat(ticket.getOperacionCotejada()).isNull();
+        assertThat(ticket.getEstadoCotejo()).isEqualTo("INCIDENCIA");
+        assertThat(ticket.getTipoIncidencia()).isEqualTo("OPERACION_NO_EXISTE");
+    }
+
+    @Test
+    @DisplayName("el fallback por ultimos 4 descarta operaciones cuyo resumen no tiene Tarjeta (solo pasa con dispositivos reclasificados a VIAT)")
+    void cotejarPendientes_fallbackUltimos4_descartaResumenSinTarjeta() {
+        Tarjeta tarjetaA = Tarjeta.builder().numeroTarjeta("708011008022412025").build();
+        tarjetaA.setId(201L);
+        Ticket ticket = ticketReintentable("PENDIENTE", null, null);
+        ticket.setTarjeta(tarjetaA);
+        Operacion peajeViat = operacionDeResumenConTarjeta(null);
+
+        when(ticketRepository.findByEstadoCotejo("PENDIENTE")).thenReturn(List.of(ticket));
+        when(usuarioRepository.findAll()).thenReturn(List.of());
+        when(operacionRepository.findParaCotejoConTarjetaExacta(any(), any(), eq("708011008022412025"))).thenReturn(List.of());
+        when(operacionRepository.findParaCotejoConTarjeta(any(), any(), eq("2025"))).thenReturn(List.of(peajeViat));
+
+        service.cotejarPendientes();
+
+        assertThat(ticket.getOperacionCotejada()).isNull();
+        assertThat(ticket.getEstadoCotejo()).isEqualTo("INCIDENCIA");
+        assertThat(ticket.getTipoIncidencia()).isEqualTo("OPERACION_NO_EXISTE");
+    }
+
+    // ── resueltoEn al reabrir una incidencia automatica ──
+
+    @Test
+    @DisplayName("al reabrir como INCIDENCIA OPERACION_NO_EXISTE un ticket ya resuelto antes (resolverIncidencia lo devolvio a PENDIENTE), borra resueltoEn para que se pueda reintentar")
+    void cotejarPendientes_reabreOperacionNoExiste_borraResueltoEn() {
+        Ticket ticket = ticketReintentable("PENDIENTE", null, null);
+        ticket.setResueltoEn(LocalDateTime.of(2026, 10, 20, 9, 0));
+
+        when(ticketRepository.findByEstadoCotejo("PENDIENTE")).thenReturn(List.of(ticket));
+        when(usuarioRepository.findAll()).thenReturn(List.of());
+
+        service.cotejarPendientes();
+
+        assertThat(ticket.getTipoIncidencia()).isEqualTo("OPERACION_NO_EXISTE");
+        assertThat(ticket.getResueltoEn()).isNull();
+    }
+
+    @Test
+    @DisplayName("escalarTicketsAntiguos borra resueltoEn al abrir la INCIDENCIA SIN_COTEJAR_1_MES, para que el cotejo pueda reintentarla")
+    void escalarTicketsAntiguos_borraResueltoEn() {
+        Ticket viejo = Ticket.builder()
+                .estadoCotejo("PENDIENTE")
+                .fechaHora(LocalDateTime.now().minusDays(35))
+                .importeTotal(new BigDecimal("52.30"))
+                .resueltoEn(LocalDateTime.now().minusDays(5))
+                .build();
+
+        when(ticketRepository.findByEstadoCotejoIn(List.of("PENDIENTE", "SIN_COINCIDENCIA"))).thenReturn(List.of(viejo));
+        when(usuarioRepository.findAll()).thenReturn(List.of());
+
+        service.escalarTicketsAntiguos();
+
+        assertThat(viejo.getTipoIncidencia()).isEqualTo("SIN_COTEJAR_1_MES");
+        assertThat(viejo.getResueltoEn()).isNull();
+    }
+
+    // ── Asignacion en el reintento ──
+
+    private com.tecozam.bills.auth.domain.Usuario usuario(long id, com.tecozam.bills.shared.domain.enums.Rol rol) {
+        return com.tecozam.bills.auth.domain.Usuario.builder().id(id).username("u" + id).rol(rol).activo(true).build();
+    }
+
+    @Test
+    @DisplayName("en el reintento, si el resultado es una INCIDENCIA, no se quita el responsable que ya tenia el ticket (reasignacion humana)")
+    void cotejarPendientes_reintentoConDiscrepancia_mantieneAsignadoExistente() {
+        var gestor = usuario(1L, com.tecozam.bills.shared.domain.enums.Rol.GESTOR);
+        var responsable = usuario(7L, com.tecozam.bills.shared.domain.enums.Rol.ADMIN);
+        Ticket ticket = ticketReintentable("SIN_COINCIDENCIA", null, null);
+        ticket.setAsignadoA(responsable);
+        Operacion conOtroImporte = Operacion.builder()
+                .fechaHora(ticket.getFechaHora()).importeTotal(new BigDecimal("50.00")).build();
+
+        when(ticketRepository.findByEstadoCotejoIn(List.of("SIN_COINCIDENCIA", "INCIDENCIA"))).thenReturn(List.of(ticket));
+        when(usuarioRepository.findAll()).thenReturn(List.of(gestor));
+        when(operacionRepository.findParaCotejoConTarjeta(any(), any(), eq("2025"))).thenReturn(List.of(conOtroImporte));
+
+        service.cotejarPendientes();
+
+        assertThat(ticket.getTipoIncidencia()).isEqualTo("PRECIO_NO_CONCUERDA");
+        assertThat(ticket.getAsignadoA()).isEqualTo(responsable);
+    }
+
+    @Test
+    @DisplayName("en un PENDIENTE con discrepancia se sigue asignando el gestor por defecto (comportamiento previo)")
+    void cotejarPendientes_pendienteConDiscrepancia_asignaGestorPorDefecto() {
+        var gestor = usuario(1L, com.tecozam.bills.shared.domain.enums.Rol.GESTOR);
+        Ticket ticket = ticketReintentable("PENDIENTE", null, null);
+        ticket.setAsignadoA(usuario(7L, com.tecozam.bills.shared.domain.enums.Rol.ADMIN));
+        Operacion conOtroImporte = Operacion.builder()
+                .fechaHora(ticket.getFechaHora()).importeTotal(new BigDecimal("50.00")).build();
+
+        when(ticketRepository.findByEstadoCotejo("PENDIENTE")).thenReturn(List.of(ticket));
+        when(usuarioRepository.findAll()).thenReturn(List.of(gestor));
+        when(operacionRepository.findParaCotejoConTarjeta(any(), any(), eq("2025"))).thenReturn(List.of(conOtroImporte));
+
+        service.cotejarPendientes();
+
+        assertThat(ticket.getTipoIncidencia()).isEqualTo("PRECIO_NO_CONCUERDA");
+        assertThat(ticket.getAsignadoA()).isEqualTo(gestor);
+    }
+
+    @Test
+    @DisplayName("cotejarPendientes, con Tarjeta formal y numTarjeta4ultimos vacio, usa los ultimos 4 digitos del numero de la Tarjeta en el fallback")
+    void cotejarPendientes_tarjetaExactaSinResultado_sinUltimos4_usaLosDeLaTarjeta() {
+        Tarjeta tarjetaCepsa = Tarjeta.builder().numeroTarjeta("708011008022412025").build();
+        tarjetaCepsa.setId(301L); // la operacion es de esta misma Tarjeta (el fallback solo acepta esas)
+        Ticket ticket = ticketReintentable("PENDIENTE", null, null);
+        ticket.setNumTarjeta4ultimos(null);
+        ticket.setTarjeta(tarjetaCepsa);
+        Operacion operacion = operacionDeResumenConTarjeta(tarjetaCepsa);
+
+        when(ticketRepository.findByEstadoCotejo("PENDIENTE")).thenReturn(List.of(ticket));
+        when(usuarioRepository.findAll()).thenReturn(List.of());
+        when(operacionRepository.findParaCotejoConTarjeta(any(), any(), eq("2025"))).thenReturn(List.of(operacion));
+
+        service.cotejarPendientes();
+
+        assertThat(ticket.getOperacionCotejada()).isEqualTo(operacion);
+    }
+
+    @Test
+    @DisplayName("cotejarPendientes sin ninguna tarjeta conocida sigue buscando solo por importe (comportamiento previo)")
+    void cotejarPendientes_sinTarjeta_buscaPorImporte() {
+        Ticket ticket = ticketReintentable("PENDIENTE", null, null);
+        ticket.setNumTarjeta4ultimos(null);
+        Operacion operacion = operacionTicket508();
+
+        when(ticketRepository.findByEstadoCotejo("PENDIENTE")).thenReturn(List.of(ticket));
+        when(usuarioRepository.findAll()).thenReturn(List.of());
+        when(operacionRepository.findParaCotejo(any(), any(), eq(new BigDecimal("107.00")))).thenReturn(List.of(operacion));
+
+        service.cotejarPendientes();
+
+        assertThat(ticket.getOperacionCotejada()).isEqualTo(operacion);
+        verify(operacionRepository, never()).findParaCotejoConTarjeta(any(), any(), any());
+    }
+
     @Test
     @DisplayName("vincularOperacion rechaza vincular una operacion que ya esta cotejada contra otro ticket activo")
     void vincularOperacion_operacionYaVinculadaAOtroTicket_lanzaExcepcion() {
